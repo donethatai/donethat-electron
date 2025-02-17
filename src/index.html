@@ -17,57 +17,165 @@
       style-src 'self';
       connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
     ">
-    <title>Sign In</title>
+    <title>Joey</title>
     <!-- Local Tailwind CSS -->
     <link href="../build/output.css" rel="stylesheet" />
-    
   </head>
   <body class="bg-white relative overflow-hidden">
-    <!-- Playful decorative element -->
-    <div class="absolute -top-16 -right-16 w-64 h-64 bg-purple-200 rounded-full opacity-70 blur-3xl"></div>
-    
-    <div class="max-w-md mx-auto mt-20 p-8 bg-white border border-black rounded-lg shadow-xl relative z-10">
-      <h1 class="text-3xl font-bold text-center text-black mb-6">Sign In</h1>
-      <form id="signInForm" class="space-y-5">
-        <div>
-          <label for="signInEmail" class="block text-black font-semibold">
-            Email:
-          </label>
-          <input
-            type="email"
-            id="signInEmail"
-            required
-            class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
-          />
+    <!-- Sign In View -->
+    <div id="signInView" class="min-h-screen flex items-center justify-center">
+      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+        <h1 class="text-3xl font-bold text-center text-black mb-6">Sign In</h1>
+        <form id="signInForm" class="space-y-5">
+          <div>
+            <label for="signInEmail" class="block text-black font-semibold">
+              Email:
+            </label>
+            <input
+              type="email"
+              id="signInEmail"
+              required
+              class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+            />
+          </div>
+          <div>
+            <label for="signInPassword" class="block text-black font-semibold">
+              Password:
+            </label>
+            <input
+              type="password"
+              id="signInPassword"
+              required
+              class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+            />
+          </div>
+          <div>
+            <button
+              type="submit"
+              class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
+            >
+              Sign In
+            </button>
+          </div>
+        </form>
+        <!-- Increased margin-top from mt-4 to mt-8 for extra spacing -->
+        <div class="mt-8 flex justify-between">
+          <a href="#" id="showResetPassword" class="text-purple-500 hover:underline">
+            Forgot Password?
+          </a>
+          <a href="#" id="showSignUp" class="text-purple-500 hover:underline">
+            Sign Up
+          </a>
         </div>
-        <div>
-          <label for="signInPassword" class="block text-black font-semibold">
-            Password:
-          </label>
-          <input
-            type="password"
-            id="signInPassword"
-            required
-            class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
-          />
-        </div>
-        <div>
-          <input
-            type="submit"
-            value="Sign In"
-            class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
-          />
-        </div>
-      </form>
-      <div class="mt-6 flex justify-between text-sm">
-        <a href="signup.html" class="text-purple-500 hover:underline">Sign Up</a>
-        <a href="reset.html" class="text-purple-500 hover:underline"
-          >Forgot Password?</a
-        >
       </div>
     </div>
-  
-    <!-- Reference the external JavaScript file -->
-    <script type="module" src="./index.js"></script>
+
+    <!-- Sign Up View (Hidden by default) -->
+    <div id="signUpView" class="hidden min-h-screen flex items-center justify-center">
+      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+        <h1 class="text-3xl font-bold text-center text-black mb-6">Sign Up</h1>
+        <form id="signUpForm" class="space-y-5">
+          <div>
+            <label for="signUpEmail" class="block text-black font-semibold">
+              Email:
+            </label>
+            <input
+              type="email"
+              id="signUpEmail"
+              required
+              class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+            />
+          </div>
+          <div>
+            <label for="signUpPassword" class="block text-black font-semibold">
+              Password:
+            </label>
+            <input
+              type="password"
+              id="signUpPassword"
+              required
+              class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+            />
+          </div>
+          <div>
+            <button
+              type="submit"
+              class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
+            >
+              Sign Up
+            </button>
+          </div>
+        </form>
+        <div class="mt-6 text-center">
+          <a href="#" id="backToSignIn" class="text-purple-500 hover:underline">
+            Back to Sign In
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Password Reset View (Hidden by default) -->
+    <div id="resetView" class="hidden min-h-screen flex items-center justify-center">
+      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+        <h1 class="text-3xl font-bold text-center text-black mb-6">Reset Password</h1>
+        <form id="resetForm" class="space-y-5">
+          <div>
+            <label for="resetEmail" class="block text-black font-semibold">
+              Email:
+            </label>
+            <input
+              type="email"
+              id="resetEmail"
+              required
+              class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+            />
+          </div>
+          <div>
+            <button
+              type="submit"
+              class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
+            >
+              Reset Password
+            </button>
+          </div>
+        </form>
+        <div class="mt-6 text-center">
+          <a href="#" id="backToSignInFromReset" class="text-purple-500 hover:underline">
+            Back to Sign In
+          </a>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Dashboard View -->
+    <div id="dashboardView" class="hidden h-full flex flex-col">
+      <header class="p-4">
+        <img
+          src="../assets/icon.png"
+          alt="Joey Icon"
+          class="h-12 mx-auto"
+        />
+      </header>
+      <main class="flex-grow flex items-center justify-center">
+        <div class="text-center">
+          <h2 class="text-2xl font-bold mb-4">Welcome to the Dashboard!</h2>
+          <p class="text-gray-600">Placeholder content goes here.</p>
+        </div>
+      </main>
+      <footer class="p-4">
+        <div class="text-center">
+          <a
+            href="#"
+            id="logoutLink"
+            class="text-purple-500 hover:underline text-sm"
+          >
+            Logout
+          </a>
+        </div>
+      </footer>
+    </div>
+    
+    <!-- External script for SPA logic -->
+    <script type="module" src="index.js"></script>
   </body>
 </html>
