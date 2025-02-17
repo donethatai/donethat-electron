@@ -136,8 +136,8 @@ function toggleWindow() {
 
     // This file could be your login page that first shows the email/password
     // form. After successful sign in the UI might transition to your main app.
-    mainWindow.loadFile('index.html')
-    mainWindow.webContents.openDevTools();
+    // do index if user not signed in, otherwise do dashboard
+    mainWindow.loadFile('./src/index.html')
 
     // Position the window once it's ready.
     mainWindow.once('ready-to-show', () => {

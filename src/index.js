@@ -4,17 +4,14 @@ const {
   signInWithEmailAndPassword,
   onAuthStateChanged
 } = require("firebase/auth");
-const firebaseConfig = require("./firebase-config.js");
+const firebaseConfig = require("../firebase-config.js");
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 onAuthStateChanged(auth, (user) => {
-  const statusEl = document.getElementById("auth-status");
   if (user) {
-    statusEl.textContent = `Signed in as ${user.email}`;
-  } else {
-    statusEl.textContent = "Not signed in.";
+    window.location.href = "dashboard.html";
   }
 });
 
@@ -25,7 +22,7 @@ document.getElementById("signInForm").addEventListener("submit", (e) => {
 
   signInWithEmailAndPassword(auth, email, password)
     .then((userCredential) => {
-      alert("Signed in successfully: " + userCredential.user.email);
+      window.location.href = "dashboard.html";
     })
     .catch((error) => {
       alert("Sign in error: " + error.message);

@@ -17,22 +17,36 @@
       style-src 'self';
       connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
     ">
-    <title>Password Reset</title>
+    <title>Sign In</title>
     <!-- Local Tailwind CSS -->
-    <link href="./build/output.css" rel="stylesheet" />
+    <link href="../build/output.css" rel="stylesheet" />
+    
   </head>
   <body class="bg-white relative overflow-hidden">
     <!-- Playful decorative element -->
     <div class="absolute -top-16 -right-16 w-64 h-64 bg-purple-200 rounded-full opacity-70 blur-3xl"></div>
-
+    
     <div class="max-w-md mx-auto mt-20 p-8 bg-white border border-black rounded-lg shadow-xl relative z-10">
-      <h1 class="text-3xl font-bold text-center text-black mb-6">Password Reset</h1>
-      <form id="resetForm" class="space-y-5">
+      <h1 class="text-3xl font-bold text-center text-black mb-6">Sign In</h1>
+      <form id="signInForm" class="space-y-5">
         <div>
-          <label for="resetEmail" class="block text-black font-semibold">Email:</label>
+          <label for="signInEmail" class="block text-black font-semibold">
+            Email:
+          </label>
           <input
             type="email"
-            id="resetEmail"
+            id="signInEmail"
+            required
+            class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+          />
+        </div>
+        <div>
+          <label for="signInPassword" class="block text-black font-semibold">
+            Password:
+          </label>
+          <input
+            type="password"
+            id="signInPassword"
             required
             class="w-full border border-black p-3 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
           />
@@ -40,17 +54,20 @@
         <div>
           <input
             type="submit"
-            value="Reset Password"
+            value="Sign In"
             class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
           />
         </div>
       </form>
-      <div class="mt-6 text-center">
-        <a href="index.html" class="text-purple-500 hover:underline">Back to Sign In</a>
+      <div class="mt-6 flex justify-between text-sm">
+        <a href="signup.html" class="text-purple-500 hover:underline">Sign Up</a>
+        <a href="reset.html" class="text-purple-500 hover:underline"
+          >Forgot Password?</a
+        >
       </div>
     </div>
-
-    <!-- External script for reset functionality -->
-    <script type="module" src="./reset.js"></script>
+  
+    <!-- Reference the external JavaScript file -->
+    <script type="module" src="./index.js"></script>
   </body>
 </html>

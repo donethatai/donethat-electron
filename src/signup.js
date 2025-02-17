@@ -4,7 +4,7 @@ const {
   createUserWithEmailAndPassword,
   onAuthStateChanged
 } = require("firebase/auth");
-const firebaseConfig = require("./firebase-config.js");
+const firebaseConfig = require("../firebase-config.js");
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -26,7 +26,6 @@ document.getElementById("signUpForm").addEventListener("submit", (e) => {
 
   createUserWithEmailAndPassword(auth, email, password)
     .then((userCredential) => {
-      alert("Signed up successfully: " + userCredential.user.email);
       window.location.href = "index.html";
     })
     .catch((error) => {

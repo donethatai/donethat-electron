@@ -4,7 +4,7 @@ const {
   sendPasswordResetEmail,
   onAuthStateChanged
 } = require("firebase/auth");
-const firebaseConfig = require("./firebase-config.js");
+const firebaseConfig = require("../firebase-config.js");
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -25,7 +25,6 @@ document.getElementById("resetForm").addEventListener("submit", (e) => {
 
   sendPasswordResetEmail(auth, email)
     .then(() => {
-      alert("Password reset email sent!");
       window.location.href = "index.html";
     })
     .catch((error) => {
