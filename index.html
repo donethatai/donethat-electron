@@ -5,14 +5,18 @@
     <!-- Ensure proper scaling on mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- CSP Meta Tags -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self';"
-    />
-    <meta
-      http-equiv="X-Content-Security-Policy"
-      content="default-src 'self'; script-src 'self';"
-    />
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self';
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
+    ">
+    <meta http-equiv="X-Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self';
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
+    ">
     <title>Sign In</title>
     <!-- Local Tailwind CSS -->
     <link href="./build/output.css" rel="stylesheet" />
@@ -66,40 +70,7 @@
       </div>
     </div>
   
-    <script type="module">
-      import { initializeApp } from "firebase/app";
-      import {
-        getAuth,
-        signInWithEmailAndPassword,
-        onAuthStateChanged
-      } from "firebase/auth";
-      import firebaseConfig from "./firebase-config.js";
-  
-      const app = initializeApp(firebaseConfig);
-      const auth = getAuth(app);
-  
-      onAuthStateChanged(auth, (user) => {
-        const statusEl = document.getElementById("auth-status");
-        if (user) {
-          statusEl.textContent = `Signed in as ${user.email}`;
-        } else {
-          statusEl.textContent = "Not signed in.";
-        }
-      });
-  
-      document.getElementById("signInForm").addEventListener("submit", (e) => {
-        e.preventDefault();
-        const email = document.getElementById("signInEmail").value;
-        const password = document.getElementById("signInPassword").value;
-  
-        signInWithEmailAndPassword(auth, email, password)
-          .then((userCredential) => {
-            alert("Signed in successfully: " + userCredential.user.email);
-          })
-          .catch((error) => {
-            alert("Sign in error: " + error.message);
-          });
-      });
-    </script>
+    <!-- Reference the external JavaScript file -->
+    <script type="module" src="./index.js"></script>
   </body>
 </html>

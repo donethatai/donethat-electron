@@ -5,22 +5,23 @@
     <!-- Ensure proper scaling on mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- CSP Meta Tags -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self';"
-    />
-    <meta
-      http-equiv="X-Content-Security-Policy"
-      content="default-src 'self'; script-src 'self';"
-    />
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self';
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
+    ">
+    <meta http-equiv="X-Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self';
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
+    ">
     <title>Sign Up</title>
     <!-- Local Tailwind CSS -->
     <link href="./build/output.css" rel="stylesheet" />
   </head>
   <body class="bg-white relative overflow-hidden">
-    <!-- Playful decorative element -->
-    <div class="absolute -top-16 -right-16 w-64 h-64 bg-purple-200 rounded-full opacity-70 blur-3xl"></div>
-
     <div class="max-w-md mx-auto mt-20 p-8 bg-white border border-black rounded-lg shadow-xl relative z-10">
       <h1 class="text-3xl font-bold text-center text-black mb-6">Sign Up</h1>
       <form id="signUpForm" class="space-y-5">
@@ -55,45 +56,11 @@
         </div>
       </form>
       <div class="mt-6 text-center">
-        <a href="index.html" class="text-purple-500 hover:underline">
-          Back to Sign In
-        </a>
+        <a href="index.html" class="text-purple-500 hover:underline">Back to Sign In</a>
       </div>
     </div>
 
-    <script type="module">
-      import { initializeApp } from "firebase/app";
-      import {
-        getAuth,
-        createUserWithEmailAndPassword,
-        onAuthStateChanged
-      } from "firebase/auth";
-      import firebaseConfig from "./firebase-config.js";
-  
-      const app = initializeApp(firebaseConfig);
-      const auth = getAuth(app);
-  
-      onAuthStateChanged(auth, (user) => {
-        if (user) {
-          alert(`Already signed in as ${user.email}. Redirecting to home.`);
-          window.location.href = "index.html";
-        }
-      });
-  
-      document.getElementById("signUpForm").addEventListener("submit", (e) => {
-        e.preventDefault();
-        const email = document.getElementById("signUpEmail").value;
-        const password = document.getElementById("signUpPassword").value;
-  
-        createUserWithEmailAndPassword(auth, email, password)
-          .then((userCredential) => {
-            alert("Signed up successfully: " + userCredential.user.email);
-            window.location.href = "index.html";
-          })
-          .catch((error) => {
-            alert("Sign up error: " + error.message);
-          });
-      });
-    </script>
+    <!-- External script for signup functionality -->
+    <script type="module" src="./signup.js"></script>
   </body>
 </html>
