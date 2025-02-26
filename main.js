@@ -1,13 +1,15 @@
-const { app, Tray, Menu, BrowserWindow, nativeImage, screen } = require('electron')
+const { app, Tray, Menu, BrowserWindow, nativeImage, screen, desktopCapturer } = require('electron')
 const path = require('path')
 const {ipcMain} = require('electron')
 
 // Importing Firebase modules using the new modular API.
-const { initializeApp } = require('firebase/app')
+const { initializeApp, getAuth } = require('firebase/app')
 
 const firebaseConfig = require('./firebase-config')
 const firebaseApp = initializeApp(firebaseConfig)
 
+// Add your Firebase function URL here
+const FIREBASE_CAPTURE_URL = 'https://capturescreenshot-t374dqodfq-ew.a.run.app'
 
 ipcMain.on('login', (event, token) => {
   console.log("ID Token:", token);
@@ -22,6 +24,7 @@ ipcMain.on('logout', (event,) => {
 let tray = null
 let mainWindow = null
 let idToken = null
+let screenshotInterval = null
 
 app.whenReady().then(() => {
   // Setup tray icons as before.
@@ -59,11 +62,26 @@ app.whenReady().then(() => {
     if (isRecording) {
       tray.setImage(baseIcon)
       isRecording = false
+      
+      // Stop screenshot interval
+      if (screenshotInterval) {
+        clearInterval(screenshotInterval)
+        screenshotInterval = null
+        console.log('Screenshot recording stopped')
+      }
     } else {
       tray.setImage(greenIcon)
       isRecording = true
+      
+      // Start screenshot interval (every 1 second)
+      screenshotInterval = setInterval(captureAndSendScreenshot, 1000)
+      console.log('Screenshot recording started')
     }
   })
+  
+  // Initialize screenshot recording since isRecording starts as true
+  screenshotInterval = setInterval(captureAndSendScreenshot, 1000)
+  console.log('Screenshot recording started')
 })
 
 // Function to create or toggle the window.
@@ -124,6 +142,50 @@ function showWindowBelowTray() {
 
   mainWindow.setPosition(x, y, false)
   mainWindow.show()
+}
+
+// Function to capture and send screenshots
+async function captureAndSendScreenshot() {
+  if (!idToken) {
+    console.log('Cannot send screenshot: User not authenticated')
+    return
+  }
+
+  console.log("idToken: ", idToken)
+
+  try {
+    // Get all available sources
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } })
+    const mainSource = sources[0] // Get primary screen (you might want to modify this logic)
+    
+    if (mainSource) {
+      const screenshot = mainSource.thumbnail.toDataURL()
+      
+      // Dynamically import node-fetch
+      const fetch = await import('node-fetch').then(module => module.default)
+      
+      // Send screenshot to Firebase function
+      const response = await fetch(FIREBASE_CAPTURE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          timestamp: Date.now(),
+          screenshot: screenshot
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to send screenshot: ${response.statusText}`)
+      }
+      
+      console.log('Screenshot sent successfully')
+    }
+  } catch (error) {
+    console.error('Error capturing or sending screenshot:', error)
+  }
 }
 
 // Prevent app from quitting when all windows are closed.
