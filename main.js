@@ -164,33 +164,87 @@ async function captureAndSendScreenshot() {
   try {
     // Get all available sources
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } })
-    const mainSource = sources[0] // Get primary screen (you might want to modify this logic)
     
-    if (mainSource) {
-      const screenshot = mainSource.thumbnail.toDataURL()
+    if (sources.length === 0) {
+      console.log('No screens detected')
+      return
+    }
+    
+    let screenshot
+    
+    if (sources.length === 1) {
+      // Single screen - use the thumbnail directly
+      screenshot = sources[0].thumbnail.toDataURL()
+    } else {
+      // Multiple screens - need to merge them
+      console.log(`Merging ${sources.length} screens into one screenshot`)
       
-      // Dynamically import node-fetch
-      const fetch = await import('node-fetch').then(module => module.default)
+      // Create a canvas to hold the merged screenshots
+      const { createCanvas, Image } = require('canvas')
       
-      // Send screenshot to Firebase function
-      const response = await fetch(FIREBASE_CAPTURE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({
-          timestamp: Date.now(),
-          screenshot: screenshot
-        })
-      })
+      // First pass: calculate total dimensions needed
+      const displays = screen.getAllDisplays()
+      let totalWidth = 0
+      let totalHeight = 0
       
-      if (!response.ok) {
-        throw new Error(`Failed to send screenshot: ${response.statusText}`)
+      // Find the maximum boundaries
+      for (const display of displays) {
+        const bounds = display.bounds
+        totalWidth = Math.max(totalWidth, bounds.x + bounds.width)
+        totalHeight = Math.max(totalHeight, bounds.y + bounds.height)
       }
       
-      console.log('Screenshot sent successfully')
+      // Create canvas with calculated dimensions
+      const canvas = createCanvas(totalWidth, totalHeight)
+      const ctx = canvas.getContext('2d')
+      
+      // Fill with black background
+      ctx.fillStyle = '#000'
+      ctx.fillRect(0, 0, totalWidth, totalHeight)
+      
+      // Draw each screen at its correct position
+      for (let i = 0; i < sources.length; i++) {
+        const display = displays[i]
+        const bounds = display.bounds
+        
+        // Convert NativeImage to something canvas can draw
+        const img = new Image()
+        const dataURL = sources[i].thumbnail.toDataURL()
+        
+        await new Promise((resolve) => {
+          img.onload = resolve
+          img.src = dataURL
+        })
+        
+        // Draw this screen at its position relative to the overall desktop space
+        ctx.drawImage(img, bounds.x, bounds.y, bounds.width, bounds.height)
+      }
+      
+      // Get the final merged screenshot
+      screenshot = canvas.toDataURL('image/png')
     }
+    
+    // Dynamically import node-fetch
+    const fetch = await import('node-fetch').then(module => module.default)
+    
+    // Send screenshot to Firebase function
+    const response = await fetch(FIREBASE_CAPTURE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        timestamp: Date.now(),
+        screenshot: screenshot
+      })
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Failed to send screenshot: ${response.statusText}`)
+    }
+    
+    console.log('Screenshot sent successfully')
   } catch (error) {
     console.error('Error capturing or sending screenshot:', error)
   }
