@@ -159,11 +159,12 @@ async function captureAndSendScreenshot() {
     return
   }
 
-  console.log("idToken: ", idToken)
-
   try {
-    // Get all available sources
-    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } })
+    // Reduced thumbnail size for initial capture
+    const sources = await desktopCapturer.getSources({ 
+      types: ['screen'], 
+      thumbnailSize: { width: 1280, height: 720 }
+    })
     
     if (sources.length === 0) {
       console.log('No screens detected')
@@ -173,41 +174,58 @@ async function captureAndSendScreenshot() {
     let screenshot
     
     if (sources.length === 1) {
-      // Single screen - use the thumbnail directly
-      screenshot = sources[0].thumbnail.toDataURL()
+      // Single screen - standard compression
+      screenshot = await compressImage(sources[0].thumbnail.toDataURL(), 1280, 800)
     } else {
-      // Multiple screens - need to merge them
+      // Multiple screens - need to merge them with higher resolution limits
       console.log(`Merging ${sources.length} screens into one screenshot`)
       
-      // Create a canvas to hold the merged screenshots
       const { createCanvas, Image } = require('canvas')
       
-      // First pass: calculate total dimensions needed
+      // Calculate total dimensions needed
       const displays = screen.getAllDisplays()
       let totalWidth = 0
       let totalHeight = 0
       
-      // Find the maximum boundaries
       for (const display of displays) {
         const bounds = display.bounds
         totalWidth = Math.max(totalWidth, bounds.x + bounds.width)
         totalHeight = Math.max(totalHeight, bounds.y + bounds.height)
       }
       
-      // Create canvas with calculated dimensions
-      const canvas = createCanvas(totalWidth, totalHeight)
+      // Calculate dynamic scaling factor based on number of screens
+      // Using a logarithmic scale to handle many screens better
+      const screenCount = sources.length
+      
+      // Base settings for a single screen
+      const BASE_WIDTH = 1280
+      const MAX_WIDTH = 3840 // Cap at 4K width
+      
+      // Dynamic scaling that increases with number of screens but at a decreasing rate
+      // For 1 screen: ~1280px, 2 screens: ~1800px, 3 screens: ~2200px, 4 screens: ~2500px, etc.
+      const dynamicWidth = Math.min(
+        MAX_WIDTH,
+        BASE_WIDTH * (1 + Math.log(screenCount) / Math.log(2))
+      )
+      
+      const scaleFactor = Math.min(1, dynamicWidth / totalWidth)
+      const scaledWidth = Math.floor(totalWidth * scaleFactor)
+      const scaledHeight = Math.floor(totalHeight * scaleFactor)
+      
+      console.log(`Using dynamic resolution: ${scaledWidth}x${scaledHeight} for ${screenCount} screens`)
+      
+      // Create canvas with scaled dimensions
+      const canvas = createCanvas(scaledWidth, scaledHeight)
       const ctx = canvas.getContext('2d')
       
-      // Fill with black background
       ctx.fillStyle = '#000'
-      ctx.fillRect(0, 0, totalWidth, totalHeight)
+      ctx.fillRect(0, 0, scaledWidth, scaledHeight)
       
-      // Draw each screen at its correct position
-      for (let i = 0; i < sources.length; i++) {
+      // Draw each screen at its correct position, scaled down
+      for (let i = 0; i < Math.min(sources.length, displays.length); i++) {
         const display = displays[i]
         const bounds = display.bounds
         
-        // Convert NativeImage to something canvas can draw
         const img = new Image()
         const dataURL = sources[i].thumbnail.toDataURL()
         
@@ -216,18 +234,30 @@ async function captureAndSendScreenshot() {
           img.src = dataURL
         })
         
-        // Draw this screen at its position relative to the overall desktop space
-        ctx.drawImage(img, bounds.x, bounds.y, bounds.width, bounds.height)
+        // Draw scaled to maintain relative positions
+        ctx.drawImage(
+          img, 
+          bounds.x * scaleFactor, 
+          bounds.y * scaleFactor, 
+          bounds.width * scaleFactor, 
+          bounds.height * scaleFactor
+        )
       }
       
-      // Get the final merged screenshot
-      screenshot = canvas.toDataURL('image/png')
+      // Dynamic JPEG quality based on number of screens
+      // More screens = slightly lower quality to keep file size manageable
+      const jpegQuality = Math.max(0.4, 0.7 - (screenCount * 0.05))
+      
+      screenshot = await compressImage(
+        canvas.toDataURL('image/jpeg'), 
+        scaledWidth, // Don't resize width
+        scaledHeight, // Don't resize height
+        jpegQuality  // Dynamic quality
+      )
     }
     
-    // Dynamically import node-fetch
     const fetch = await import('node-fetch').then(module => module.default)
     
-    // Send screenshot to Firebase function
     const response = await fetch(FIREBASE_CAPTURE_URL, {
       method: 'POST',
       headers: {
@@ -248,6 +278,56 @@ async function captureAndSendScreenshot() {
   } catch (error) {
     console.error('Error capturing or sending screenshot:', error)
   }
+}
+
+// Helper function to compress an image with customizable max dimensions and quality
+function compressImage(dataUrl, maxWidth = 1280, maxHeight = 800, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    try {
+      const { createCanvas, Image } = require('canvas')
+      const img = new Image()
+      
+      img.onload = () => {
+        let width = img.width
+        let height = img.height
+        
+        // Only resize if image exceeds the max dimensions
+        if (width > maxWidth) {
+          height = Math.floor(height * (maxWidth / width))
+          width = maxWidth
+        }
+        
+        if (height > maxHeight) {
+          width = Math.floor(width * (maxHeight / height))
+          height = maxHeight
+        }
+        
+        // Create canvas for resized image
+        const canvas = createCanvas(width, height)
+        const ctx = canvas.getContext('2d')
+        
+        // Draw resized image
+        ctx.drawImage(img, 0, 0, width, height)
+        
+        // Convert to JPEG with specified quality
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality)
+        
+        const originalSize = Math.round(dataUrl.length / 1024)
+        const compressedSize = Math.round(compressedDataUrl.length / 1024)
+        console.log(`Image compressed: ${originalSize}KB → ${compressedSize}KB (${Math.round((1 - compressedSize/originalSize) * 100)}% reduction)`)
+        
+        resolve(compressedDataUrl)
+      }
+      
+      img.onerror = (err) => {
+        reject(err)
+      }
+      
+      img.src = dataUrl
+    } catch (error) {
+      reject(error)
+    }
+  })
 }
 
 // Prevent app from quitting when all windows are closed.
