@@ -105,7 +105,6 @@ function toggleWindow() {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
-        webSecurity: false  // This disables CORS restrictions for Electron - use with caution
       }
     })
 
@@ -113,6 +112,8 @@ function toggleWindow() {
     // form. After successful sign in the UI might transition to your main app.
     // do index if user not signed in, otherwise do dashboard
     mainWindow.loadFile('./src/index.html')
+
+    // Debug inspector
     // mainWindow.webContents.openDevTools();
 
     // Position the window once it's ready.

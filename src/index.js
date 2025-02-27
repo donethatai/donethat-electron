@@ -228,6 +228,12 @@ if (generateSummaryBtn) {
         // Store the summary ID
         currentSummaryId = data.summaryId;
         
+        // Check if there are any bullet points to display
+        if (!data.bulletPoints || data.bulletPoints.length === 0) {
+          summaryContainer.innerHTML = "<p class='text-center text-gray-500'>There is no new data to summarize.</p>";
+          return;
+        }
+        
         // Enable submit and discard buttons
         submitSummaryBtn.disabled = false;
         discardSummaryBtn.disabled = false;
@@ -251,7 +257,7 @@ function displayBulletPoints(bulletPoints) {
   summaryContainer.innerHTML = "";
   
   if (!bulletPoints || bulletPoints.length === 0) {
-    summaryContainer.innerHTML = "<p class='text-center text-gray-500'>No bullet points to display.</p>";
+    summaryContainer.innerHTML = "<p class='text-center text-gray-500'>There is no new data to summarize.</p>";
     return;
   }
   
