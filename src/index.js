@@ -97,7 +97,7 @@ onAuthStateChanged(auth, (user) => {
     settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
     // Apply consistent styling to dashboard when shown
-    dashboardView.className = "min-h-screen flex items-center justify-center";
+    // dashboardView.className = "min-h-screen flex items-center justify-center";
     console.log("User logged in:", user.email);
     
     // Get and store the ID token
@@ -332,7 +332,7 @@ if (settingsBtn) {
     dashboardView.classList.add("hidden");
     settingsView.classList.remove("hidden");
     // Apply consistent styling to settings when shown
-    settingsView.className = "min-h-screen flex items-center justify-center";
+    //settingsView.className = "min-h-screen flex items-center justify-center";
   });
 }
 
@@ -342,7 +342,7 @@ if (backToDashboardBtn) {
     settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
     // Apply consistent styling to dashboard when returning
-    dashboardView.className = "min-h-screen flex items-center justify-center";
+    // dashboardView.className = "min-h-screen flex items-center justify-center";
   });
 }
 

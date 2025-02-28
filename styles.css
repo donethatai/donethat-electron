@@ -7,13 +7,8 @@
 
 /* Common view container */
 .view-container {
-  @apply h-full w-full items-center justify-center;
+  @apply h-full w-full items-start justify-center pt-4;
 }
-
-/* Hidden views - no longer needed since we have the general hidden class */
-/* .view-container.hidden {
-  @apply hidden;
-} */
 
 /* Form container */
 .form-container {
@@ -67,7 +62,7 @@
 
 /* Email tag container */
 .email-tags-container {
-  @apply flex flex-col gap-1 mb-2 border border-gray-300 rounded-lg p-2 max-h-[100px] overflow-y-auto bg-gray-50 w-full;
+  @apply flex flex-col gap-1 mb-2 border border-gray-300 rounded-lg p-2 max-h-64 overflow-y-auto bg-gray-50 w-full;
 }
 
 /* Modal */
@@ -75,12 +70,12 @@
   @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
 }
 
-/* Modal content */
+/* Modal content */ß
 .modal-content {
   @apply max-w-xs w-full bg-white p-4 border border-black rounded-lg shadow-xl;
 }
 
 /* Summary container */
 .summary-container {
-  @apply h-24 mb-3 border border-gray-200 rounded p-2 overflow-y-auto text-sm;
+  @apply h-64 mb-3 border border-gray-200 rounded p-2 overflow-y-auto text-sm;
 }
