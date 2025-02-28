@@ -325,12 +325,12 @@ function addEmailTag(email) {
   // Add to array
   recipientEmails.push(email);
   
-  // Create tag element
+  // Create tag element as a separate row with proper styling
   const tag = document.createElement("div");
-  tag.className = "flex items-center bg-purple-100 border border-purple-300 rounded px-2 py-1";
+  tag.className = "flex items-center justify-between bg-white border border-gray-300 rounded-lg p-3 w-full";
   tag.innerHTML = `
-    <span class="mr-2">${email}</span>
-    <button data-email="${email}" class="remove-email text-purple-500 hover:text-purple-700 focus:outline-none">
+    <span class="mr-2 text-gray-800 break-all overflow-hidden text-ellipsis">${email}</span>
+    <button data-email="${email}" class="remove-email shrink-0 text-gray-500 bg-gray-200 hover:bg-gray-300 focus:outline-none h-6 w-6 rounded-full flex items-center justify-center transition-colors">
       &times;
     </button>
   `;
@@ -386,7 +386,7 @@ if (emailTagsContainer) {
   });
 }
 
-// Update the loadUserSettings function to work with tags
+// Update the loadUserSettings function to ensure proper display of multiple emails
 async function loadUserSettings() {
   if (!auth.currentUser) return;
   
@@ -399,7 +399,7 @@ async function loadUserSettings() {
     const result = await getUserSettingsFunction();
     const settings = result.data;
     
-    // Add each email as a tag
+    // Add each email as a separate tag row
     if (settings.emailRecipients && Array.isArray(settings.emailRecipients)) {
       settings.emailRecipients.forEach(email => {
         addEmailTag(email);

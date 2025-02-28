@@ -58,7 +58,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-16 flex justify-between">
+        <div class="mt-8 flex justify-between">
           <a href="#" id="showResetPassword" class="text-purple-500 hover:underline">
             Forgot Password?
           </a>
@@ -105,7 +105,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-16 text-center">
+        <div class="mt-8 text-center">
           <a href="#" id="backToSignIn" class="text-purple-500 hover:underline">
             Back to Sign In
           </a>
@@ -138,7 +138,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-16 text-center">
+        <div class="mt-8 text-center">
           <a href="#" id="backToSignInFromReset" class="text-purple-500 hover:underline">
             Back to Sign In
           </a>
@@ -150,10 +150,10 @@
     <div id="dashboardView" class="hidden h-full w-full flex items-center justify-center">
       <div class="w-full p-8 bg-white rounded-lg">
         <!-- Centered header -->
-        <h1 class="text-3xl font-bold text-center text-black mb-6">Daily Summary</h1>
+        <h1 class="text-3xl font-bold text-center text-black mb-6">Done List</h1>
         
         <!-- Summary container - taller and scrollable -->
-        <div id="summaryContainer" class="h-64 mb-6 border border-gray-200 rounded p-4 overflow-y-auto">
+        <div id="summaryContainer" class="h-48 mb-6 border border-gray-200 rounded p-4 overflow-y-auto">
           <p class="text-gray-500 text-center">
             Generate a summary to see your activities.
           </p>
@@ -188,7 +188,7 @@
         </div>
         
         <!-- Navigation buttons - consistent mt-8 spacing -->
-        <div class="mt-16 flex justify-between items-center">
+        <div class="mt-8 flex justify-between items-center">
           <a href="#" id="settingsBtn" class="text-purple-500 hover:underline">
             Settings
           </a>
@@ -201,7 +201,7 @@
     
     <!-- Settings View -->
     <div id="settingsView" class="hidden h-full w-full flex items-center justify-center">
-      <div class="w-full p-8 bg-white rounded-lg">
+      <div class="w-full max-w-md p-8 bg-white rounded-lg">
         <!-- Centered header -->
         <h1 class="text-3xl font-bold text-center text-black mb-6">Settings</h1>
         
@@ -211,41 +211,41 @@
             <label for="emailInput" class="block text-black font-semibold mb-2">
               Recipient Emails
             </label>
-            <p class="text-sm text-gray-600 mb-2">
-              Add email addresses to receive your summaries.
-            </p>
             
-            <!-- Email tags container -->
-            <div id="emailTagsContainer" class="flex flex-wrap gap-2 mb-2 min-h-[40px] border border-black p-2 rounded">
+            <!-- Email list container - fixed to ensure each email is a separate row -->
+            <div id="emailTagsContainer" class="flex flex-col gap-2 mb-4 border border-gray-300 rounded-lg p-4 max-h-[200px] overflow-y-auto bg-gray-50 w-full">
               <!-- Email tags will be added here dynamically -->
             </div>
             
-            <!-- Email input -->
-            <div class="flex">
+            <!-- Email input with internal plus button - fixed positioning -->
+            <div class="relative w-full">
               <input
                 type="email"
                 id="emailInput"
-                class="flex-grow border border-black p-3 rounded-l focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-200"
+                class="w-full border border-purple-300 p-3 pr-12 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-200"
                 placeholder="Enter an email address"
               />
               <button
                 id="addEmailBtn"
-                class="bg-purple-500 text-white px-4 rounded-r cursor-pointer hover:bg-purple-600 transition duration-200"
+                class="absolute right-3 top-1/2 transform -translate-y-1/2 bg-purple-500 hover:bg-purple-600 text-white rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+                aria-label="Add email"
               >
-                Add
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
               </button>
             </div>
           </div>
           
           <button
             id="saveSettingsBtn"
-            class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
+            class="w-full bg-purple-500 text-white p-3 rounded-lg cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md mt-6"
           >
             Save Settings
           </button>
           
-          <!-- Updated to mt-8 for consistency -->
-          <div class="mt-16 text-center">
+          <div class="mt-8 text-center">
             <a href="#" id="backToDashboardBtn" class="text-purple-500 hover:underline">
               Back to Dashboard
             </a>
