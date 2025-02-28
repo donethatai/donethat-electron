@@ -47,12 +47,12 @@
 
 /* Loading spinner */
 .spinner {
-  @apply animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-purple-500;
+  @apply w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin;
 }
 
 /* Spinner overlay */
 .spinner-overlay {
-  @apply absolute inset-0 bg-white/70 flex items-center justify-center;
+  @apply absolute inset-0 bg-white/80 flex items-center justify-center z-10;
 }
 
 /* Email tag */
@@ -72,7 +72,7 @@
 
 /* Empty state text */
 .empty-state-text {
-  @apply text-gray-400 text-center text-xs italic py-2;
+  @apply text-gray-500 text-center text-sm;
 }
 
 /* Email tag container */
@@ -98,6 +98,15 @@
 /* Make borders consistent between inputs and containers */
 .form-input, .email-tags-container, .summary-container {
   @apply border border-gray-300 rounded-lg;
+}
+
+/* Basic element styles */
+.bullet-item {
+  @apply flex items-start mb-2 w-full;
+}
+
+.bullet-content {
+  @apply flex-1 mx-2;
 }
 
 /* Custom checkbox styles */
@@ -137,15 +146,6 @@
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.3); /* Purple focus ring */
 }
 
-/* Maintain the other styles */
-.bullet-item {
-  @apply flex items-start mb-2 w-full;
-}
-
-.bullet-content {
-  @apply flex-1 mx-2;
-}
-
 /* Heart icon styles */
 .heart-icon {
   @apply ml-auto text-gray-400 cursor-pointer hover:text-gray-600 transition-colors duration-200 text-base;
@@ -158,4 +158,13 @@
 /* Disabled heart icon when item is crossed out */
 .heart-icon.opacity-50.pointer-events-none {
   @apply cursor-default;
+}
+
+/* Text styles for bullet points */
+.bullet-text {
+  @apply text-gray-800;
+}
+
+.bullet-text-crossed {
+  @apply text-gray-400 line-through;
 }

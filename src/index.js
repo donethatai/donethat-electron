@@ -234,7 +234,7 @@ function resetSummaryState() {
   
   // Reset container text
   document.getElementById('summaryContainer').innerHTML = 
-    '<p class="text-gray-500 text-center">Generate a summary to see your activities.</p>';
+    '<p class="empty-state-text">Generate a summary to see your activities.</p>';
 }
 
 // Generate summary button handler
@@ -275,11 +275,11 @@ document.getElementById('generateSummaryBtn').addEventListener('click', () => {
         
         if (this.checked) {
           // Item is checked (normal state)
-          textElement.classList.remove('text-gray-400', 'line-through');
+          textElement.classList.remove('bullet-text-crossed');
           heartIcon.classList.remove('opacity-50', 'pointer-events-none');
         } else {
           // Item is unchecked (crossed out)
-          textElement.classList.add('text-gray-400', 'line-through');
+          textElement.classList.add('bullet-text-crossed');
           
           // Disable and visually dim the heart icon
           heartIcon.classList.add('opacity-50', 'pointer-events-none');
