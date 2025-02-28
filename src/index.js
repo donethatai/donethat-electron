@@ -96,8 +96,6 @@ onAuthStateChanged(auth, (user) => {
     resetView.classList.add("hidden");
     settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
-    // Apply consistent styling to dashboard when shown
-    // dashboardView.className = "min-h-screen flex items-center justify-center";
     console.log("User logged in:", user.email);
     
     // Get and store the ID token
@@ -331,8 +329,6 @@ if (settingsBtn) {
   settingsBtn.addEventListener("click", () => {
     dashboardView.classList.add("hidden");
     settingsView.classList.remove("hidden");
-    // Apply consistent styling to settings when shown
-    //settingsView.className = "min-h-screen flex items-center justify-center";
   });
 }
 
@@ -341,8 +337,6 @@ if (backToDashboardBtn) {
   backToDashboardBtn.addEventListener("click", () => {
     settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
-    // Apply consistent styling to dashboard when returning
-    // dashboardView.className = "min-h-screen flex items-center justify-center";
   });
 }
 
@@ -362,12 +356,17 @@ async function addEmailTag(email) {
   // Add to array
   recipientEmails.push(email);
   
-  // Create tag element as a separate row with proper styling
+  // Clear any empty state message
+  if (recipientEmails.length === 1) {
+    emailTagsContainer.innerHTML = "";
+  }
+  
+  // Create tag element using classes from our CSS
   const tag = document.createElement("div");
-  tag.className = "flex items-center justify-between bg-white border border-gray-300 rounded-lg p-3 w-full";
+  tag.className = "email-tag";
   tag.innerHTML = `
-    <span class="mr-2 text-gray-800 break-all overflow-hidden text-ellipsis">${email}</span>
-    <button data-email="${email}" class="remove-email shrink-0 text-gray-500 bg-gray-200 hover:bg-gray-300 focus:outline-none h-6 w-6 rounded-full flex items-center justify-center transition-colors">
+    <span class="email-text">${email}</span>
+    <button data-email="${email}" class="remove-email remove-email-btn">
       &times;
     </button>
   `;
@@ -401,13 +400,18 @@ async function removeEmailTag(email) {
   recipientEmails = recipientEmails.filter(e => e !== email);
   
   // Remove from UI
-  const tags = emailTagsContainer.querySelectorAll("div");
+  const tags = emailTagsContainer.querySelectorAll(".email-tag");
   tags.forEach(tag => {
     const removeBtn = tag.querySelector(".remove-email");
     if (removeBtn && removeBtn.dataset.email === email) {
       tag.remove();
     }
   });
+  
+  // Show empty state message if no emails
+  if (recipientEmails.length === 0) {
+    emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
+  }
   
   // Auto-save settings
   try {
@@ -466,13 +470,18 @@ async function loadUserSettings() {
     const settings = result.data;
     
     // Add each email as a separate tag row
-    if (settings.emailRecipients && Array.isArray(settings.emailRecipients)) {
+    if (settings.emailRecipients && Array.isArray(settings.emailRecipients) && settings.emailRecipients.length > 0) {
       settings.emailRecipients.forEach(email => {
         addEmailTag(email);
       });
+    } else {
+      // Show empty state message
+      emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
     }
   } catch (error) {
     console.error("Error loading settings:", error);
+    // Show empty state message in case of error
+    emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
   }
 }
 

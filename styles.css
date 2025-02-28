@@ -57,12 +57,27 @@
 
 /* Email tag */
 .email-tag {
-  @apply flex items-center justify-between bg-white border border-gray-300 rounded-lg p-1.5 w-full text-sm;
+  @apply flex items-center justify-between bg-white border border-gray-300 rounded-lg p-3 w-full mb-1;
+}
+
+/* Email text */
+.email-text {
+  @apply mr-2 text-gray-800 break-all overflow-hidden text-ellipsis text-xs;
+}
+
+/* Remove email button */
+.remove-email-btn {
+  @apply shrink-0 text-gray-500 bg-gray-200 hover:bg-gray-300 focus:outline-none h-5 w-5 rounded-full flex items-center justify-center transition-colors text-xs;
+}
+
+/* Empty state text */
+.empty-state-text {
+  @apply text-gray-400 text-center text-xs italic py-2;
 }
 
 /* Email tag container */
 .email-tags-container {
-  @apply flex flex-col gap-1 mb-2 border border-gray-300 rounded-lg p-2 max-h-64 overflow-y-auto bg-gray-50 w-full;
+  @apply flex flex-col gap-1 mb-2 border border-gray-300 rounded-lg p-2 max-h-56 overflow-y-auto bg-gray-50 w-full;
 }
 
 /* Modal */
@@ -77,5 +92,10 @@
 
 /* Summary container */
 .summary-container {
-  @apply h-64 mb-3 border border-gray-200 rounded p-2 overflow-y-auto text-sm;
+  @apply h-56 mb-3 border border-gray-200 rounded p-2 overflow-y-auto text-sm;
+}
+
+/* Make borders consistent between inputs and containers */
+.form-input, .email-tags-container, .summary-container {
+  @apply border border-gray-300 rounded-lg;
 }
