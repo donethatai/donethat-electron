@@ -102,8 +102,8 @@ function toggleWindow() {
   } else {
     // Create the window if it doesn't exist.
     mainWindow = new BrowserWindow({
-      width: 250, 
-      height: 400,
+      width: 250, // 250, 
+      height: 400, //400,
       frame: false,
       resizable: false,
       movable: false,

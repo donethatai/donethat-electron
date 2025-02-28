@@ -21,9 +21,9 @@
     <!-- Local Tailwind CSS -->
     <link href="../build/output.css" rel="stylesheet" />
   </head>
-  <body class="bg-white h-full w-full overflow-hidden">
+  <body class="bg-white h-full w-full overflow-y-auto">
     <!-- Sign In View -->
-    <div id="signInView" class="h-full w-full flex items-center justify-center">
+    <div id="signInView" class="h-full w-full items-center justify-center">
       <div class="w-full p-8 bg-white rounded-lg">
         <h1 class="text-3xl font-bold text-center text-black mb-6">Sign In</h1>
         <form id="signInForm" class="space-y-5">
@@ -58,7 +58,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-8 flex justify-between">
+        <div class="mt-2 flex justify-between">
           <a href="#" id="showResetPassword" class="text-purple-500 hover:underline">
             Forgot Password?
           </a>
@@ -70,7 +70,7 @@
     </div>
 
     <!-- Sign Up View (Hidden by default) -->
-    <div id="signUpView" class="hidden h-full w-full flex items-center justify-center">
+    <div id="signUpView" class="hidden h-full w-full items-center justify-center">
       <div class="w-full p-8 bg-white rounded-lg">
         <h1 class="text-3xl font-bold text-center text-black mb-6">Sign Up</h1>
         <form id="signUpForm" class="space-y-5">
@@ -105,7 +105,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-8 text-center">
+        <div class="mt-2 text-center">
           <a href="#" id="backToSignIn" class="text-purple-500 hover:underline">
             Back to Sign In
           </a>
@@ -114,7 +114,7 @@
     </div>
 
     <!-- Password Reset View (Hidden by default) -->
-    <div id="resetView" class="hidden h-full w-full flex items-center justify-center">
+    <div id="resetView" class="hidden h-full w-full items-center justify-center">
       <div class="w-full p-8 bg-white rounded-lg">
         <h1 class="text-3xl font-bold text-center text-black mb-6">Reset Password</h1>
         <form id="resetForm" class="space-y-5">
@@ -138,7 +138,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-8 text-center">
+        <div class="mt-2 text-center">
           <a href="#" id="backToSignInFromReset" class="text-purple-500 hover:underline">
             Back to Sign In
           </a>
@@ -147,7 +147,7 @@
     </div>
     
     <!-- Dashboard View -->
-    <div id="dashboardView" class="hidden h-full w-full flex items-center justify-center">
+    <div id="dashboardView" class="hidden h-full w-full items-center justify-center">
       <div class="w-full p-8 bg-white rounded-lg">
         <!-- Centered header -->
         <h1 class="text-3xl font-bold text-center text-black mb-6">Done List</h1>
@@ -162,7 +162,7 @@
         <!-- Primary action button - now below the summary container -->
         <button
           id="generateSummaryBtn"
-          class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md mb-6"
+          class="w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
         >
           Generate Summary
         </button>
@@ -170,7 +170,7 @@
         <!-- Save button (under summary container) -->
         <button
           id="submitSummaryBtn"
-          class="hidden w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md mb-3"
+          class="hidden w-full bg-purple-500 text-white p-3 rounded cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
         >
           Save Summary
         </button>
@@ -188,7 +188,7 @@
         </div>
         
         <!-- Navigation buttons - consistent mt-8 spacing -->
-        <div class="mt-8 flex justify-between items-center">
+        <div class="mt-2 flex justify-between items-center">
           <a href="#" id="settingsBtn" class="text-purple-500 hover:underline">
             Settings
           </a>
@@ -200,7 +200,7 @@
     </div>
     
     <!-- Settings View -->
-    <div id="settingsView" class="hidden h-full w-full flex items-center justify-center">
+    <div id="settingsView" class="hidden h-full w-full items-center justify-center">
       <div class="w-full max-w-md p-8 bg-white rounded-lg">
         <!-- Centered header -->
         <h1 class="text-3xl font-bold text-center text-black mb-6">Settings</h1>
@@ -237,19 +237,18 @@
               </button>
             </div>
           </div>
-          
-          <button
+            <button
             id="saveSettingsBtn"
-            class="w-full bg-purple-500 text-white p-3 rounded-lg cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md mt-6"
+            class="w-full bg-purple-500 text-white p-3 rounded-lg cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
           >
             Save Settings
           </button>
+        </div>
           
-          <div class="mt-8 text-center">
-            <a href="#" id="backToDashboardBtn" class="text-purple-500 hover:underline">
-              Back to Dashboard
-            </a>
-          </div>
+        <div class="mt-2 text-center">
+          <a href="#" id="backToDashboardBtn" class="text-purple-500 hover:underline">
+            Back to Dashboard
+          </a>
         </div>
       </div>
     </div>
