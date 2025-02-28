@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full w-full">
   <head>
     <meta charset="UTF-8" />
     <!-- Ensure proper scaling on mobile devices -->
@@ -21,10 +21,10 @@
     <!-- Local Tailwind CSS -->
     <link href="../build/output.css" rel="stylesheet" />
   </head>
-  <body class="bg-white flex items-center justify-center min-h-screen">
+  <body class="bg-white h-full w-full overflow-hidden">
     <!-- Sign In View -->
-    <div id="signInView" class="min-h-screen flex items-center justify-center">
-      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+    <div id="signInView" class="h-full w-full flex items-center justify-center">
+      <div class="w-full p-8 bg-white rounded-lg">
         <h1 class="text-3xl font-bold text-center text-black mb-6">Sign In</h1>
         <form id="signInForm" class="space-y-5">
           <div>
@@ -70,8 +70,8 @@
     </div>
 
     <!-- Sign Up View (Hidden by default) -->
-    <div id="signUpView" class="hidden min-h-screen flex items-center justify-center">
-      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+    <div id="signUpView" class="hidden h-full w-full flex items-center justify-center">
+      <div class="w-full p-8 bg-white rounded-lg">
         <h1 class="text-3xl font-bold text-center text-black mb-6">Sign Up</h1>
         <form id="signUpForm" class="space-y-5">
           <div>
@@ -114,8 +114,8 @@
     </div>
 
     <!-- Password Reset View (Hidden by default) -->
-    <div id="resetView" class="hidden min-h-screen flex items-center justify-center">
-      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+    <div id="resetView" class="hidden h-full w-full flex items-center justify-center">
+      <div class="w-full p-8 bg-white rounded-lg">
         <h1 class="text-3xl font-bold text-center text-black mb-6">Reset Password</h1>
         <form id="resetForm" class="space-y-5">
           <div>
@@ -147,8 +147,8 @@
     </div>
     
     <!-- Dashboard View -->
-    <div id="dashboardView" class="hidden min-h-screen flex items-center justify-center">
-      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+    <div id="dashboardView" class="hidden h-full w-full flex items-center justify-center">
+      <div class="w-full p-8 bg-white rounded-lg">
         <!-- Centered header -->
         <h1 class="text-3xl font-bold text-center text-black mb-6">Daily Summary</h1>
         
@@ -200,8 +200,8 @@
     </div>
     
     <!-- Settings View -->
-    <div id="settingsView" class="hidden min-h-screen flex items-center justify-center">
-      <div class="max-w-md w-full p-8 bg-white border border-black rounded-lg shadow-xl">
+    <div id="settingsView" class="hidden h-full w-full flex items-center justify-center">
+      <div class="w-full p-8 bg-white rounded-lg">
         <!-- Centered header -->
         <h1 class="text-3xl font-bold text-center text-black mb-6">Settings</h1>
         

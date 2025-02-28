@@ -102,8 +102,8 @@ function toggleWindow() {
   } else {
     // Create the window if it doesn't exist.
     mainWindow = new BrowserWindow({
-      width: 450,  // Reduced from 500 to better match max-w-md
-      height: 650, // Adjusted to better fit the content
+      width: 250, 
+      height: 400,
       frame: false,
       resizable: false,
       movable: false,
@@ -120,7 +120,7 @@ function toggleWindow() {
     mainWindow.loadFile('./src/index.html')
 
     // Debug inspector
-    // mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
 
     // Position the window once it's ready.
     mainWindow.once('ready-to-show', () => {
