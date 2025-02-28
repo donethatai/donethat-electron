@@ -20,7 +20,6 @@ const functions = getFunctions(app, "europe-west1");
 // Create callable function references
 const generateRawSummaryFunction = httpsCallable(functions, "generateRawSummary");
 const saveFinalSummaryFunction = httpsCallable(functions, "saveFinalSummary");
-const discardSummaryFunction = httpsCallable(functions, "discardSummary");
 const getUserSettingsFunction = httpsCallable(functions, "getUserSettings");
 const updateUserSettingsFunction = httpsCallable(functions, "updateUserSettings");
 
@@ -55,14 +54,10 @@ const backToSignInFromReset = document.getElementById("backToSignInFromReset");
 // Add references to dashboard UI elements
 const generateSummaryBtn = document.getElementById("generateSummaryBtn");
 const submitSummaryBtn = document.getElementById("submitSummaryBtn");
-const discardSummaryBtn = document.getElementById("discardSummaryBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const backToDashboardBtn = document.getElementById("backToDashboardBtn");
 const summaryContainer = document.getElementById("summaryContainer");
 const loadingSpinner = document.getElementById("loadingSpinner");
-const confirmDiscardModal = document.getElementById("confirmDiscardModal");
-const confirmDiscardBtn = document.getElementById("confirmDiscardBtn");
-const cancelDiscardBtn = document.getElementById("cancelDiscardBtn");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const recipientEmailsInput = document.getElementById("recipientEmails");
 
@@ -266,7 +261,6 @@ async function loadUserSettings() {
 // Only add event listeners if elements exist
 if (submitSummaryBtn) {
   submitSummaryBtn.addEventListener('click', () => {
-    console.log("Submit summary button clicked");
     summaryLoadingSpinner.classList.remove('hidden');
     
     const selectedBullets = [];
@@ -288,83 +282,88 @@ if (submitSummaryBtn) {
     
     const commentText = document.getElementById('commentInput').value.trim();
     
-    console.log('Selected bullets to submit:', selectedBullets);
-    console.log('Comment to submit:', commentText);
-    
-    setTimeout(() => {
-      summaryLoadingSpinner.classList.add('hidden');
-      resetSummaryState();
-      alert('Summary submitted successfully!');
-    }, 1000);
+    // Call the cloud function to save the final summary
+    saveFinalSummaryFunction({
+      summaryId: currentSummaryId,
+      selectedBullets: selectedBullets,
+      comment: commentText
+    })
+      .then((result) => {
+        summaryLoadingSpinner.classList.add('hidden');
+        resetSummaryState();
+      })
+      .catch((error) => {
+        summaryLoadingSpinner.classList.add('hidden');
+        console.error("Error submitting summary:", error);
+        alert(`Error submitting summary: ${error.message}`);
+        // Keep the current state for retry
+      });
   });
 }
 
-// Add null check for discardSummaryBtn, which is likely the source of the error
-// Removing this event listener completely as it seems the element doesn't exist
-// If you need it later, just re-add it with a null check
-// if (discardSummaryBtn) {
-//   discardSummaryBtn.addEventListener('click', (e) => {
-//     e.preventDefault();
-//     console.log("Discard summary button clicked");
-//     resetSummaryState();
-//   });
-// }
-
-// Add event listeners for critical UI elements with console logs to debug
+// Update the event listener for the generate summary button
 if (generateSummaryBtn) {
   generateSummaryBtn.addEventListener('click', () => {
-    console.log('Generate summary button clicked');
     summaryLoadingSpinner.classList.remove('hidden');
     
-    setTimeout(() => {
-      summaryLoadingSpinner.classList.add('hidden');
-      
-      const bulletPoints = [
-        'Completed project presentation for client',
-        'Attended team meeting about new feature release',
-        'Reviewed 3 pull requests from junior developers',
-        'Spent 2 hours on bug fixes for mobile app',
-        'Researched new technologies for upcoming project'
-      ];
-      
-      const bulletHTML = bulletPoints.map(point => `
-        <div class="bullet-item">
-          <input type="checkbox" class="bullet-checkbox" checked>
-          <span class="bullet-content bullet-text">${point}</span>
-          <span class="heart-icon">♥</span>
-        </div>
-      `).join('');
-      
-      const commentHTML = `
-        <textarea id="commentInput" class="comment-input" placeholder="Add a comment here"></textarea>
-      `;
-      
-      document.getElementById('summaryContainer').innerHTML = bulletHTML + commentHTML;
-      
-      document.querySelectorAll('.bullet-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-          const textElement = this.nextElementSibling;
-          const heartIcon = textElement.nextElementSibling;
-          
-          if (this.checked) {
-            textElement.classList.remove('bullet-text-crossed');
-            heartIcon.classList.remove('opacity-50', 'pointer-events-none');
-          } else {
-            textElement.classList.add('bullet-text-crossed');
-            heartIcon.classList.add('opacity-50', 'pointer-events-none');
-            heartIcon.classList.remove('active');
-          }
+    // Call the actual Cloud Function instead of using dummy data
+    generateRawSummaryFunction()
+      .then((result) => {
+        summaryLoadingSpinner.classList.add('hidden');
+        
+        // Process the result from the cloud function
+        const bulletPoints = result.data.bulletPoints || [];
+        currentSummaryId = result.data.summaryId;
+        
+        if (bulletPoints.length === 0) {
+          summaryContainer.innerHTML = '<p class="empty-state-text">No activities found for today.</p>';
+          return;
+        }
+        
+        const bulletHTML = bulletPoints.map(point => `
+          <div class="bullet-item">
+            <input type="checkbox" class="bullet-checkbox" checked>
+            <span class="bullet-content bullet-text">${point}</span>
+            <span class="heart-icon">♥</span>
+          </div>
+        `).join('');
+        
+        const commentHTML = `
+          <textarea id="commentInput" class="comment-input" placeholder="Add a comment here"></textarea>
+        `;
+        
+        summaryContainer.innerHTML = bulletHTML + commentHTML;
+        
+        // Add event listeners for checkboxes and heart icons
+        document.querySelectorAll('.bullet-checkbox').forEach(checkbox => {
+          checkbox.addEventListener('change', function() {
+            const textElement = this.nextElementSibling;
+            const heartIcon = textElement.nextElementSibling;
+            
+            if (this.checked) {
+              textElement.classList.remove('bullet-text-crossed');
+              heartIcon.classList.remove('opacity-50', 'pointer-events-none');
+            } else {
+              textElement.classList.add('bullet-text-crossed');
+              heartIcon.classList.add('opacity-50', 'pointer-events-none');
+              heartIcon.classList.remove('active');
+            }
+          });
         });
-      });
-      
-      document.querySelectorAll('.heart-icon').forEach(heart => {
-        heart.addEventListener('click', function() {
-          this.classList.toggle('active');
+        
+        document.querySelectorAll('.heart-icon').forEach(heart => {
+          heart.addEventListener('click', function() {
+            this.classList.toggle('active');
+          });
         });
+        
+        showSummaryGeneratedState();
+      })
+      .catch((error) => {
+        summaryLoadingSpinner.classList.add('hidden');
+        console.error("Error generating summary:", error);
+        summaryContainer.innerHTML = `<p class="empty-state-text">Error: ${error.message}</p>`;
       });
-      
-      showSummaryGeneratedState();
-    }, 1500);
   });
 } else {
   console.error("Generate summary button not found");
