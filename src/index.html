@@ -242,19 +242,27 @@
           </div>
         </div>
       </div>
-      
-      <!-- Settings Modal -->
-      <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg p-6 max-w-md w-full border border-black shadow-xl">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-xl font-bold text-black">Settings</h3>
-            <button id="closeSettingsBtn" class="text-gray-500 hover:text-gray-700">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          
+    </div>
+    
+    <!-- Settings View -->
+    <div id="settingsView" class="hidden min-h-screen bg-white relative overflow-hidden">
+      <div class="max-w-md mx-auto p-4 pt-8">
+        <!-- Header with back button -->
+        <div class="flex items-center mb-8">
+          <button
+            id="backToDashboardBtn"
+            class="px-4 py-2 border border-black rounded bg-gray-200 hover:bg-gray-300 text-black font-semibold focus:outline-none focus:ring-2 focus:ring-gray-500 transition duration-200 flex items-center"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Dashboard
+          </button>
+          <h2 class="text-2xl font-bold text-black ml-4">Settings</h2>
+        </div>
+        
+        <!-- Settings content -->
+        <div class="border border-black rounded-lg shadow-xl p-6 bg-white">
           <div class="mb-6">
             <label for="recipientEmails" class="block text-black font-semibold mb-2">
               Recipient Emails

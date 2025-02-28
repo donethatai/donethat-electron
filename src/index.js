@@ -43,6 +43,7 @@ const signInView = document.getElementById("signInView");
 const signUpView = document.getElementById("signUpView");
 const resetView = document.getElementById("resetView");
 const dashboardView = document.getElementById("dashboardView");
+const settingsView = document.getElementById("settingsView");
 
 const signInForm = document.getElementById("signInForm");
 const signUpForm = document.getElementById("signUpForm");
@@ -61,8 +62,7 @@ const generateSummaryBtn = document.getElementById("generateSummaryBtn");
 const submitSummaryBtn = document.getElementById("submitSummaryBtn");
 const discardSummaryBtn = document.getElementById("discardSummaryBtn");
 const settingsBtn = document.getElementById("settingsBtn");
-const settingsModal = document.getElementById("settingsModal");
-const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+const backToDashboardBtn = document.getElementById("backToDashboardBtn");
 const summaryContainer = document.getElementById("summaryContainer");
 const loadingSpinner = document.getElementById("loadingSpinner");
 const confirmDiscardModal = document.getElementById("confirmDiscardModal");
@@ -83,6 +83,7 @@ onAuthStateChanged(auth, (user) => {
     signInView.classList.add("hidden");
     signUpView.classList.add("hidden");
     resetView.classList.add("hidden");
+    settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
     console.log("User logged in:", user.email);
     
@@ -97,6 +98,7 @@ onAuthStateChanged(auth, (user) => {
     dashboardView.classList.add("hidden");
     signUpView.classList.add("hidden");
     resetView.classList.add("hidden");
+    settingsView.classList.add("hidden");
     signInView.classList.remove("hidden");
     console.log("No user is signed in.");
     userIdToken = null;
@@ -419,14 +421,16 @@ if (cancelDiscardBtn) {
 // Settings button click handler
 if (settingsBtn) {
   settingsBtn.addEventListener("click", () => {
-    settingsModal.classList.remove("hidden");
+    dashboardView.classList.add("hidden");
+    settingsView.classList.remove("hidden");
   });
 }
 
-// Close settings button click handler
-if (closeSettingsBtn) {
-  closeSettingsBtn.addEventListener("click", () => {
-    settingsModal.classList.add("hidden");
+// Back to dashboard button click handler
+if (backToDashboardBtn) {
+  backToDashboardBtn.addEventListener("click", () => {
+    settingsView.classList.add("hidden");
+    dashboardView.classList.remove("hidden");
   });
 }
 
@@ -476,8 +480,9 @@ if (saveSettingsBtn) {
       loadingSpinner.classList.add("hidden");
       
       if (data.success) {
-        // Close modal
-        settingsModal.classList.add("hidden");
+        // Switch back to dashboard view
+        settingsView.classList.add("hidden");
+        dashboardView.classList.remove("hidden");
         
         // Show success message
         alert("Settings updated successfully!");
