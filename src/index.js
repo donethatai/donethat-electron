@@ -90,7 +90,6 @@ onAuthStateChanged(auth, (user) => {
     resetView.classList.add("hidden");
     settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
-    console.log("User logged in:", user.email);
     
     user.getIdToken().then(idToken => {
       userIdToken = idToken;
@@ -102,8 +101,10 @@ onAuthStateChanged(auth, (user) => {
     resetView.classList.add("hidden");
     settingsView.classList.add("hidden");
     signInView.classList.remove("hidden");
-    console.log("No user is signed in.");
     userIdToken = null;
+    
+    // Clear email state when logged out
+    recipientEmails = [];
   }
 });
 
@@ -196,6 +197,7 @@ backToSignInFromReset.addEventListener("click", (e) => {
 // Handle logout click
 logoutLink.addEventListener("click", (e) => {
   e.preventDefault();
+  
   signOut(auth)
     .then(() => {
       console.log("User signed out.");
@@ -223,38 +225,142 @@ function resetSummaryState() {
     '<p class="empty-state-text">Generate a summary to see your activities.</p>';
 }
 
-// Update the loadUserSettings function to ensure proper display of multiple emails
+// Completely redesigned loadUserSettings function
 async function loadUserSettings() {
   if (!auth.currentUser) return;
   
   try {
+    loadingSpinner.classList.remove("hidden");
+    
+    // Reset state
     recipientEmails = [];
     emailTagsContainer.innerHTML = "";
     
     const result = await getUserSettingsFunction();
-    const settings = result.data;
     
-    if (settings.emailRecipients && Array.isArray(settings.emailRecipients) && settings.emailRecipients.length > 0) {
-      settings.emailRecipients.forEach(email => {
-        recipientEmails.push(email);
-        
-        const tag = document.createElement("div");
-        tag.className = "email-tag";
-        tag.innerHTML = `
-          <span class="email-text">${email}</span>
-          <button data-email="${email}" class="remove-email remove-email-btn">
-            &times;
-          </button>
-        `;
-        
-        emailTagsContainer.appendChild(tag);
-      });
+    if (result.data && 
+        result.data.emailRecipients && 
+        Array.isArray(result.data.emailRecipients) && 
+        result.data.emailRecipients.length > 0) {
+      
+      // Get unique emails from server response
+      const uniqueEmails = [...new Set(result.data.emailRecipients)];
+      
+      // Set our internal state
+      recipientEmails = uniqueEmails;
+      
+      // Render the email tags
+      renderEmailTags();
     } else {
+      // No emails, show empty state
       emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
     }
   } catch (error) {
     console.error("Error loading settings:", error);
+    emailTagsContainer.innerHTML = '<p class="empty-state-text">Error loading recipients. Please try again.</p>';
+  } finally {
+    loadingSpinner.classList.add("hidden");
+  }
+}
+
+// New function to render email tags
+function renderEmailTags() {
+  // Clear container first
+  emailTagsContainer.innerHTML = "";
+  
+  if (recipientEmails.length === 0) {
     emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
+    return;
+  }
+  
+  // Create a tag for each email
+  recipientEmails.forEach(email => {
+    const tag = document.createElement("div");
+    tag.className = "email-tag";
+    tag.innerHTML = `
+      <span class="email-text">${email}</span>
+      <button data-email="${email}" class="remove-email remove-email-btn">
+        &times;
+      </button>
+    `;
+    
+    emailTagsContainer.appendChild(tag);
+  });
+}
+
+// Simplified addEmailTag function
+async function addEmailTag(email) {
+  if (!email) return;
+  
+  email = email.trim();
+  
+  if (recipientEmails.includes(email)) {
+    alert(`Email ${email} is already in the list.`);
+    return;
+  }
+  
+  if (!email.includes("@") || !email.includes(".")) {
+    alert(`Invalid email format: ${email}`);
+    return;
+  }
+  
+  loadingSpinner.classList.remove("hidden");
+  
+  try {
+    // Add to our local array
+    recipientEmails.push(email);
+    
+    // Clear input field
+    emailInput.value = "";
+    
+    // Render the updated list
+    renderEmailTags();
+    
+    // Save to server
+    await updateUserSettingsFunction({
+      emailRecipients: recipientEmails
+    });
+  } catch (error) {
+    // If error, remove the email we just added
+    recipientEmails = recipientEmails.filter(e => e !== email);
+    renderEmailTags();
+    
+    console.error("Error saving settings:", error);
+    alert(`Error saving: ${error.message}`);
+  } finally {
+    loadingSpinner.classList.add("hidden");
+  }
+}
+
+// Simplified removeEmailTag function
+async function removeEmailTag(email) {
+  if (!email || !recipientEmails.includes(email)) return;
+  
+  loadingSpinner.classList.remove("hidden");
+  
+  try {
+    // Create a backup of the current list
+    const originalList = [...recipientEmails];
+    
+    // Update our local array
+    recipientEmails = recipientEmails.filter(e => e !== email);
+    
+    // Render the updated list
+    renderEmailTags();
+    
+    // Save to server
+    await updateUserSettingsFunction({
+      emailRecipients: recipientEmails
+    });
+  } catch (error) {
+    // If error, restore original list
+    recipientEmails = originalList;
+    renderEmailTags();
+    
+    console.error("Error saving settings:", error);
+    alert(`Error saving: ${error.message}`);
+  } finally {
+    loadingSpinner.classList.add("hidden");
   }
 }
 
@@ -433,96 +539,4 @@ if (emailTagsContainer) {
   });
 } else {
   console.error("Email tags container not found");
-}
-
-// Add email tag function
-async function addEmailTag(email) {
-  if (!email) return;
-  
-  console.log("Adding email tag:", email);
-  
-  if (recipientEmails.includes(email)) {
-    alert(`Email ${email} is already in the list.`);
-    return;
-  }
-  
-  if (!email.includes("@") || !email.includes(".")) {
-    alert(`Invalid email format: ${email}`);
-    return;
-  }
-  
-  loadingSpinner.classList.remove("hidden");
-  
-  try {
-    recipientEmails.push(email);
-    
-    if (emailTagsContainer.querySelector('.empty-state-text')) {
-      emailTagsContainer.innerHTML = "";
-    }
-    
-    const tag = document.createElement("div");
-    tag.className = "email-tag";
-    tag.innerHTML = `
-      <span class="email-text">${email}</span>
-      <button data-email="${email}" class="remove-email remove-email-btn">
-        &times;
-      </button>
-    `;
-    
-    emailTagsContainer.appendChild(tag);
-    
-    emailInput.value = "";
-    emailInput.focus();
-    
-    await updateUserSettingsFunction({
-      emailRecipients: recipientEmails
-    });
-    
-    console.log("Email added and settings saved:", email);
-  } catch (error) {
-    recipientEmails = recipientEmails.filter(e => e !== email);
-    console.error("Error saving settings:", error);
-    alert(`Error saving: ${error.message}`);
-  } finally {
-    loadingSpinner.classList.add("hidden");
-  }
-}
-
-// Remove email tag function
-async function removeEmailTag(email) {
-  if (!email || !recipientEmails.includes(email)) return;
-  
-  console.log("Removing email tag:", email);
-  
-  loadingSpinner.classList.remove("hidden");
-  
-  try {
-    recipientEmails = recipientEmails.filter(e => e !== email);
-    
-    const tags = emailTagsContainer.querySelectorAll(".email-tag");
-    tags.forEach(tag => {
-      const removeBtn = tag.querySelector(".remove-email");
-      if (removeBtn && removeBtn.dataset.email === email) {
-        tag.remove();
-      }
-    });
-    
-    if (recipientEmails.length === 0) {
-      emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
-    }
-    
-    await updateUserSettingsFunction({
-      emailRecipients: recipientEmails
-    });
-    
-    console.log("Email removed and settings saved:", email);
-  } catch (error) {
-    if (!recipientEmails.includes(email)) {
-      recipientEmails.push(email);
-    }
-    console.error("Error saving settings:", error);
-    alert(`Error saving: ${error.message}`);
-  } finally {
-    loadingSpinner.classList.add("hidden");
-  }
 } 
