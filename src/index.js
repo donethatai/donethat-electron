@@ -71,10 +71,18 @@ const cancelDiscardBtn = document.getElementById("cancelDiscardBtn");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const recipientEmailsInput = document.getElementById("recipientEmails");
 
+// Reference to new email elements
+const emailInput = document.getElementById("emailInput");
+const addEmailBtn = document.getElementById("addEmailBtn");
+const emailTagsContainer = document.getElementById("emailTagsContainer");
+
 // Global variables to store state
 let currentSummaryId = null;
 let userIdToken = null;
 let selectedBulletPoints = [];
+
+// Global array to store emails
+let recipientEmails = [];
 
 // Get the auth state listener to store the ID token when state changes
 onAuthStateChanged(auth, (user) => {
@@ -85,6 +93,8 @@ onAuthStateChanged(auth, (user) => {
     resetView.classList.add("hidden");
     settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
+    // Apply consistent styling to dashboard when shown
+    dashboardView.className = "min-h-screen flex items-center justify-center";
     console.log("User logged in:", user.email);
     
     // Get and store the ID token
@@ -208,221 +218,87 @@ logoutLink.addEventListener("click", (e) => {
     });
 });
 
-// Dashboard functionality
-// Generate summary button click handler
-if (generateSummaryBtn) {
-  generateSummaryBtn.addEventListener("click", async () => {
-    try {
-      // Show loading spinner
-      loadingSpinner.classList.remove("hidden");
-      summaryContainer.innerHTML = "";
-      submitSummaryBtn.disabled = true;
-      discardSummaryBtn.disabled = true;
-      
-      // Call the function using Firebase SDK
-      const result = await generateRawSummaryFunction();
-      const data = result.data;
-      
-      // Hide loading spinner
-      loadingSpinner.classList.add("hidden");
-      
-      if (data.success) {
-        // Store the summary ID
-        currentSummaryId = data.summaryId;
-        
-        // Check if there are any bullet points to display
-        if (!data.bulletPoints || data.bulletPoints.length === 0) {
-          summaryContainer.innerHTML = "<p class='text-center text-gray-500'>There is no new data to summarize.</p>";
-          return;
-        }
-        
-        // Enable submit and discard buttons
-        submitSummaryBtn.disabled = false;
-        discardSummaryBtn.disabled = false;
-        
-        // Display the bullet points with checkboxes
-        selectedBulletPoints = [...data.bulletPoints]; // Start with all selected
-        displayBulletPoints(data.bulletPoints);
-      } else {
-        summaryContainer.innerHTML = `<p class="text-red-500">${data.message || "Failed to generate summary"}</p>`;
-      }
-    } catch (error) {
-      console.error("Error generating summary:", error);
-      loadingSpinner.classList.add("hidden");
-      summaryContainer.innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
-    }
-  });
-}
-
-// Function to display bullet points with checkboxes
-function displayBulletPoints(bulletPoints) {
-  summaryContainer.innerHTML = "";
+// Update visibility when summary is generated
+function showSummaryGeneratedState() {
+  // Hide generate button, show save button
+  document.getElementById('generateSummaryBtn').classList.add('hidden');
+  document.getElementById('submitSummaryBtn').classList.remove('hidden');
   
-  if (!bulletPoints || bulletPoints.length === 0) {
-    summaryContainer.innerHTML = "<p class='text-center text-gray-500'>There is no new data to summarize.</p>";
-    return;
-  }
+  // Show discard option
+  document.getElementById('discardSummaryOption').classList.remove('hidden');
+}
+
+// Reset to initial state
+function resetSummaryState() {
+  // Show generate button, hide save button
+  document.getElementById('generateSummaryBtn').classList.remove('hidden');
+  document.getElementById('submitSummaryBtn').classList.add('hidden');
   
-  const ul = document.createElement("ul");
-  ul.className = "space-y-4";
+  // Hide discard option
+  document.getElementById('discardSummaryOption').classList.add('hidden');
   
-  bulletPoints.forEach((point, index) => {
-    const li = document.createElement("li");
-    li.className = "flex items-start space-x-3";
-    
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.id = `bullet-${index}`;
-    checkbox.className = "mt-1 h-5 w-5 text-purple-600 rounded border-black focus:ring-purple-500";
-    checkbox.checked = true; // Default to checked
-    
-    const label = document.createElement("label");
-    label.htmlFor = `bullet-${index}`;
-    label.className = "text-black";
-    label.textContent = point;
-    
-    // Add event listener to update the selectedBulletPoints array
-    checkbox.addEventListener("change", function() {
-      if (this.checked) {
-        if (!selectedBulletPoints.includes(point)) {
-          selectedBulletPoints.push(point);
-        }
-        label.classList.remove("line-through", "text-gray-400");
-        label.classList.add("text-black");
-      } else {
-        selectedBulletPoints = selectedBulletPoints.filter(p => p !== point);
-        label.classList.remove("text-black");
-        label.classList.add("line-through", "text-gray-400");
-      }
-    });
-    
-    li.appendChild(checkbox);
-    li.appendChild(label);
-    ul.appendChild(li);
-  });
+  // Reset container text
+  document.getElementById('summaryContainer').innerHTML = 
+    '<p class="text-gray-500 text-center">Generate a summary to see your activities.</p>';
+}
+
+// Generate summary button handler
+document.getElementById('generateSummaryBtn').addEventListener('click', () => {
+  // Show loading spinner
+  document.getElementById('loadingSpinner').classList.remove('hidden');
   
-  summaryContainer.appendChild(ul);
-}
-
-// Submit summary button click handler
-if (submitSummaryBtn) {
-  submitSummaryBtn.addEventListener("click", async () => {
-    if (!currentSummaryId || selectedBulletPoints.length === 0) {
-      alert("Please generate a summary and select at least one bullet point.");
-      return;
-    }
+  // Simulate API call (replace with your actual API call)
+  setTimeout(() => {
+    // Hide loading spinner
+    document.getElementById('loadingSpinner').classList.add('hidden');
     
-    try {
-      // Show loading spinner
-      loadingSpinner.classList.remove("hidden");
-      
-      // Call the function using Firebase SDK
-      const result = await saveFinalSummaryFunction({
-        bulletPoints: selectedBulletPoints,
-        rawSummaryId: currentSummaryId
-      });
-      
-      const data = result.data;
-      
-      // Hide loading spinner
-      loadingSpinner.classList.add("hidden");
-      
-      if (data.success) {
-        // Clear the current summary
-        summaryContainer.innerHTML = `
-          <div class="p-4 bg-green-100 text-green-700 rounded-md">
-            <p>Summary saved successfully!</p>
-            ${data.emailSent ? "<p>Email has been sent to recipients.</p>" : ""}
-          </div>
-        `;
-        
-        // Reset state
-        currentSummaryId = null;
-        selectedBulletPoints = [];
-        
-        // Disable buttons
-        submitSummaryBtn.disabled = true;
-        discardSummaryBtn.disabled = true;
-      } else {
-        summaryContainer.innerHTML = `<p class="text-red-500">${data.message || "Failed to save summary"}</p>`;
-      }
-    } catch (error) {
-      console.error("Error saving summary:", error);
-      loadingSpinner.classList.add("hidden");
-      summaryContainer.innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
-    }
-  });
-}
-
-// Discard summary button click handler
-if (discardSummaryBtn) {
-  discardSummaryBtn.addEventListener("click", () => {
-    if (!currentSummaryId) {
-      alert("No summary to discard.");
-      return;
-    }
+    // Update summary container with generated content
+    document.getElementById('summaryContainer').innerHTML = 
+      '<ul class="list-disc pl-5 space-y-2">' +
+      '<li>Completed project presentation for client</li>' +
+      '<li>Attended team meeting about new feature release</li>' +
+      '<li>Reviewed 3 pull requests from junior developers</li>' +
+      '<li>Spent 2 hours on bug fixes for mobile app</li>' +
+      '<li>Researched new technologies for upcoming project</li>' +
+      '</ul>';
     
-    // Show confirmation modal
-    confirmDiscardModal.classList.remove("hidden");
-  });
-}
+    // Show save/discard options
+    showSummaryGeneratedState();
+  }, 1500);
+});
 
-// Confirm discard button click handler
-if (confirmDiscardBtn) {
-  confirmDiscardBtn.addEventListener("click", async () => {
-    try {
-      // Hide the modal and show loading spinner
-      confirmDiscardModal.classList.add("hidden");
-      loadingSpinner.classList.remove("hidden");
-      
-      // Call the function using Firebase SDK
-      const result = await discardSummaryFunction({
-        summaryId: currentSummaryId
-      });
-      
-      const data = result.data;
-      
-      // Hide loading spinner
-      loadingSpinner.classList.add("hidden");
-      
-      if (data.success) {
-        // Clear the current summary
-        summaryContainer.innerHTML = `
-          <div class="p-4 bg-yellow-100 text-yellow-700 rounded-md">
-            <p>Summary discarded. The next summary will include all activities since this time.</p>
-          </div>
-        `;
-        
-        // Reset state
-        currentSummaryId = null;
-        selectedBulletPoints = [];
-        
-        // Disable buttons
-        submitSummaryBtn.disabled = true;
-        discardSummaryBtn.disabled = true;
-      } else {
-        summaryContainer.innerHTML = `<p class="text-red-500">${data.message || "Failed to discard summary"}</p>`;
-      }
-    } catch (error) {
-      console.error("Error discarding summary:", error);
-      loadingSpinner.classList.add("hidden");
-      summaryContainer.innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
-    }
-  });
-}
+// Submit summary button handler
+document.getElementById('submitSummaryBtn').addEventListener('click', () => {
+  // Show loading spinner
+  document.getElementById('loadingSpinner').classList.remove('hidden');
+  
+  // Simulate API call (replace with your actual API call)
+  setTimeout(() => {
+    // Hide loading spinner
+    document.getElementById('loadingSpinner').classList.add('hidden');
+    
+    // Reset to initial state
+    resetSummaryState();
+    
+    // Show success message
+    alert('Summary saved successfully!');
+  }, 1000);
+});
 
-// Cancel discard button click handler
-if (cancelDiscardBtn) {
-  cancelDiscardBtn.addEventListener("click", () => {
-    confirmDiscardModal.classList.add("hidden");
-  });
-}
+// Discard summary button handler
+document.getElementById('discardSummaryBtn').addEventListener('click', (e) => {
+  e.preventDefault();
+  // Simply reset to initial state
+  resetSummaryState();
+});
 
 // Settings button click handler
 if (settingsBtn) {
   settingsBtn.addEventListener("click", () => {
     dashboardView.classList.add("hidden");
     settingsView.classList.remove("hidden");
+    // Apply consistent styling to settings when shown
+    settingsView.className = "min-h-screen flex items-center justify-center";
   });
 }
 
@@ -431,47 +307,119 @@ if (backToDashboardBtn) {
   backToDashboardBtn.addEventListener("click", () => {
     settingsView.classList.add("hidden");
     dashboardView.classList.remove("hidden");
+    // Apply consistent styling to dashboard when returning
+    dashboardView.className = "min-h-screen flex items-center justify-center";
   });
 }
 
-// Load user settings from API
+// Add email to UI as tag
+function addEmailTag(email) {
+  if (!email || recipientEmails.includes(email)) return;
+  
+  // Basic email validation
+  if (!email.includes("@") || !email.includes(".")) {
+    alert(`Invalid email format: ${email}`);
+    return;
+  }
+  
+  // Add to array
+  recipientEmails.push(email);
+  
+  // Create tag element
+  const tag = document.createElement("div");
+  tag.className = "flex items-center bg-purple-100 border border-purple-300 rounded px-2 py-1";
+  tag.innerHTML = `
+    <span class="mr-2">${email}</span>
+    <button data-email="${email}" class="remove-email text-purple-500 hover:text-purple-700 focus:outline-none">
+      &times;
+    </button>
+  `;
+  
+  // Add to container
+  emailTagsContainer.appendChild(tag);
+  
+  // Clear input
+  emailInput.value = "";
+  emailInput.focus();
+}
+
+// Remove email tag
+function removeEmailTag(email) {
+  recipientEmails = recipientEmails.filter(e => e !== email);
+  
+  // Remove from UI
+  const tags = emailTagsContainer.querySelectorAll("div");
+  tags.forEach(tag => {
+    const removeBtn = tag.querySelector(".remove-email");
+    if (removeBtn && removeBtn.dataset.email === email) {
+      tag.remove();
+    }
+  });
+}
+
+// Event listener for adding emails
+if (addEmailBtn) {
+  addEmailBtn.addEventListener("click", () => {
+    const email = emailInput.value.trim();
+    addEmailTag(email);
+  });
+}
+
+// Allow adding emails by pressing Enter
+if (emailInput) {
+  emailInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const email = emailInput.value.trim();
+      addEmailTag(email);
+    }
+  });
+}
+
+// Event delegation for removing emails
+if (emailTagsContainer) {
+  emailTagsContainer.addEventListener("click", (e) => {
+    if (e.target.classList.contains("remove-email")) {
+      const email = e.target.dataset.email;
+      removeEmailTag(email);
+    }
+  });
+}
+
+// Update the loadUserSettings function to work with tags
 async function loadUserSettings() {
   if (!auth.currentUser) return;
   
   try {
+    // Clear existing emails
+    recipientEmails = [];
+    emailTagsContainer.innerHTML = "";
+    
     // Call the function using Firebase SDK
     const result = await getUserSettingsFunction();
     const settings = result.data;
     
-    // Update the UI with settings
-    if (recipientEmailsInput) {
-      recipientEmailsInput.value = settings.emailRecipients ? settings.emailRecipients.join(", ") : "";
+    // Add each email as a tag
+    if (settings.emailRecipients && Array.isArray(settings.emailRecipients)) {
+      settings.emailRecipients.forEach(email => {
+        addEmailTag(email);
+      });
     }
   } catch (error) {
     console.error("Error loading settings:", error);
   }
 }
 
-// Save settings button click handler
+// Update the save settings handler
 if (saveSettingsBtn) {
   saveSettingsBtn.addEventListener("click", async () => {
     try {
-      const emailsText = recipientEmailsInput.value;
-      const emails = emailsText.split(",").map(email => email.trim()).filter(email => email);
-      
-      // Basic email validation
-      const invalidEmails = emails.filter(email => !email.includes("@") || !email.includes("."));
-      if (invalidEmails.length > 0) {
-        alert(`Invalid email format: ${invalidEmails.join(", ")}`);
-        return;
-      }
-      
       // Show loading spinner
       loadingSpinner.classList.remove("hidden");
       
       // Call the function using Firebase SDK
       const result = await updateUserSettingsFunction({
-        emailRecipients: emails
+        emailRecipients: recipientEmails
       });
       
       const data = result.data;
@@ -483,6 +431,7 @@ if (saveSettingsBtn) {
         // Switch back to dashboard view
         settingsView.classList.add("hidden");
         dashboardView.classList.remove("hidden");
+        dashboardView.className = "min-h-screen flex items-center justify-center";
         
         // Show success message
         alert("Settings updated successfully!");
