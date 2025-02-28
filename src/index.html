@@ -152,11 +152,18 @@
         <!-- Centered header -->
         <h1 class="text-3xl font-bold text-center text-black mb-6">Done List</h1>
         
-        <!-- Summary container - taller and scrollable -->
-        <div id="summaryContainer" class="h-48 mb-6 border border-gray-200 rounded p-4 overflow-y-auto">
-          <p class="text-gray-500 text-center">
-            Generate a summary to see your activities.
-          </p>
+        <!-- Summary container with relative positioning for overlay -->
+        <div class="relative">
+          <div id="summaryContainer" class="h-48 mb-6 border border-gray-200 rounded p-4 overflow-y-auto">
+            <p class="text-gray-500 text-center">
+              Generate a summary to see your activities.
+            </p>
+          </div>
+          
+          <!-- Loading spinner overlay -->
+          <div id="summaryLoadingSpinner" class="hidden absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center">
+            <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-purple-500"></div>
+          </div>
         </div>
         
         <!-- Primary action button - now below the summary container -->
@@ -175,13 +182,8 @@
           Save Summary
         </button>
         
-        <!-- Loading spinner -->
-        <div id="loadingSpinner" class="hidden flex justify-center my-4">
-          <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-purple-500"></div>
-        </div>
-        
         <!-- Discard summary option -->
-        <div id="discardSummaryOption" class="hidden mb-4 text-center">
+        <div id="discardSummaryOption" class="hidden mb-4 mt-2 text-center">
           <a href="#" id="discardSummaryBtn" class="text-red-500 hover:underline">
             Discard Summary
           </a>
@@ -212,9 +214,16 @@
               Recipient Emails
             </label>
             
-            <!-- Email list container - fixed to ensure each email is a separate row -->
-            <div id="emailTagsContainer" class="flex flex-col gap-2 mb-4 border border-gray-300 rounded-lg p-4 max-h-[200px] overflow-y-auto bg-gray-50 w-full">
-              <!-- Email tags will be added here dynamically -->
+            <!-- Email list container with relative positioning for overlay -->
+            <div class="relative">
+              <div id="emailTagsContainer" class="flex flex-col gap-2 mb-4 border border-gray-300 rounded-lg p-4 max-h-[200px] overflow-y-auto bg-gray-50 w-full">
+                <!-- Email tags will be added here dynamically -->
+              </div>
+              
+              <!-- Loading spinner overlay -->
+              <div id="loadingSpinner" class="hidden absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center">
+                <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-purple-500"></div>
+              </div>
             </div>
             
             <!-- Email input with internal plus button - fixed positioning -->
@@ -237,12 +246,6 @@
               </button>
             </div>
           </div>
-            <button
-            id="saveSettingsBtn"
-            class="w-full bg-purple-500 text-white p-3 rounded-lg cursor-pointer hover:bg-purple-600 transition duration-200 shadow-md"
-          >
-            Save Settings
-          </button>
         </div>
           
         <div class="mt-2 text-center">

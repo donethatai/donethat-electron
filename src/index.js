@@ -84,6 +84,9 @@ let selectedBulletPoints = [];
 // Global array to store emails
 let recipientEmails = [];
 
+// Update variable reference to the new summary spinner
+const summaryLoadingSpinner = document.getElementById("summaryLoadingSpinner");
+
 // Get the auth state listener to store the ID token when state changes
 onAuthStateChanged(auth, (user) => {
   if (user) {
@@ -244,13 +247,13 @@ function resetSummaryState() {
 
 // Generate summary button handler
 document.getElementById('generateSummaryBtn').addEventListener('click', () => {
-  // Show loading spinner
-  document.getElementById('loadingSpinner').classList.remove('hidden');
+  // Show loading spinner overlay
+  summaryLoadingSpinner.classList.remove('hidden');
   
   // Simulate API call (replace with your actual API call)
   setTimeout(() => {
     // Hide loading spinner
-    document.getElementById('loadingSpinner').classList.add('hidden');
+    summaryLoadingSpinner.classList.add('hidden');
     
     // Update summary container with generated content
     document.getElementById('summaryContainer').innerHTML = 
@@ -269,13 +272,13 @@ document.getElementById('generateSummaryBtn').addEventListener('click', () => {
 
 // Submit summary button handler
 document.getElementById('submitSummaryBtn').addEventListener('click', () => {
-  // Show loading spinner
-  document.getElementById('loadingSpinner').classList.remove('hidden');
+  // Show loading spinner overlay
+  summaryLoadingSpinner.classList.remove('hidden');
   
   // Simulate API call (replace with your actual API call)
   setTimeout(() => {
     // Hide loading spinner
-    document.getElementById('loadingSpinner').classList.add('hidden');
+    summaryLoadingSpinner.classList.add('hidden');
     
     // Reset to initial state
     resetSummaryState();
@@ -313,7 +316,7 @@ if (backToDashboardBtn) {
 }
 
 // Add email to UI as tag
-function addEmailTag(email) {
+async function addEmailTag(email) {
   if (!email || recipientEmails.includes(email)) return;
   
   // Basic email validation
@@ -321,6 +324,9 @@ function addEmailTag(email) {
     alert(`Invalid email format: ${email}`);
     return;
   }
+  
+  // Show loading spinner overlay
+  loadingSpinner.classList.remove("hidden");
   
   // Add to array
   recipientEmails.push(email);
@@ -341,10 +347,26 @@ function addEmailTag(email) {
   // Clear input
   emailInput.value = "";
   emailInput.focus();
+  
+  // Auto-save settings
+  try {
+    await updateUserSettingsFunction({
+      emailRecipients: recipientEmails
+    });
+  } catch (error) {
+    console.error("Error saving settings:", error);
+    alert(`Error saving: ${error.message}`);
+  } finally {
+    // Hide loading spinner regardless of success/failure
+    loadingSpinner.classList.add("hidden");
+  }
 }
 
 // Remove email tag
-function removeEmailTag(email) {
+async function removeEmailTag(email) {
+  // Show loading spinner overlay
+  loadingSpinner.classList.remove("hidden");
+  
   recipientEmails = recipientEmails.filter(e => e !== email);
   
   // Remove from UI
@@ -355,6 +377,19 @@ function removeEmailTag(email) {
       tag.remove();
     }
   });
+  
+  // Auto-save settings
+  try {
+    await updateUserSettingsFunction({
+      emailRecipients: recipientEmails
+    });
+  } catch (error) {
+    console.error("Error saving settings:", error);
+    alert(`Error saving: ${error.message}`);
+  } finally {
+    // Hide loading spinner regardless of success/failure
+    loadingSpinner.classList.add("hidden");
+  }
 }
 
 // Event listener for adding emails
@@ -410,38 +445,11 @@ async function loadUserSettings() {
   }
 }
 
-// Update the save settings handler
+// Remove the save settings button event listener or comment it out
+/* 
 if (saveSettingsBtn) {
   saveSettingsBtn.addEventListener("click", async () => {
-    try {
-      // Show loading spinner
-      loadingSpinner.classList.remove("hidden");
-      
-      // Call the function using Firebase SDK
-      const result = await updateUserSettingsFunction({
-        emailRecipients: recipientEmails
-      });
-      
-      const data = result.data;
-      
-      // Hide loading spinner
-      loadingSpinner.classList.add("hidden");
-      
-      if (data.success) {
-        // Switch back to dashboard view
-        settingsView.classList.add("hidden");
-        dashboardView.classList.remove("hidden");
-        dashboardView.className = "min-h-screen flex items-center justify-center";
-        
-        // Show success message
-        alert("Settings updated successfully!");
-      } else {
-        alert(data.message || "Failed to update settings");
-      }
-    } catch (error) {
-      console.error("Error saving settings:", error);
-      loadingSpinner.classList.add("hidden");
-      alert(`Error: ${error.message}`);
-    }
+    // ... existing implementation ...
   });
-} 
+}
+*/ 

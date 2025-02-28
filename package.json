@@ -4,7 +4,7 @@
   "description": "Remembering your work for you",
   "main": "main.js",
   "scripts": {
-    "build:css": "npx postcss styles.css -o ./build/output.css --verbose",
+    "build:css": "postcss styles.css -o ./build/output.css --verbose",
     "start": "electron .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
