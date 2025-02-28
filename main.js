@@ -102,12 +102,12 @@ function toggleWindow() {
   } else {
     // Create the window if it doesn't exist.
     mainWindow = new BrowserWindow({
-      width: 500,  // Adjust size as needed.
-      height: 600,
-      frame: false,         // No title bar or window frame.
+      width: 450,  // Reduced from 500 to better match max-w-md
+      height: 650, // Adjusted to better fit the content
+      frame: false,
       resizable: false,
-      movable: false,       // Optional: disable dragging if you want a popover.
-      show: false,          // Start hidden and show after positioning.
+      movable: false,
+      show: false,
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
