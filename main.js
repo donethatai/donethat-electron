@@ -20,21 +20,41 @@ let isPaused = false
 let summaryNotificationTime = null
 let summaryNotificationTimeout = null
 let summarySubmittedTimestamp = null
+let hasScreenCapturePermission = false
 
-app.whenReady().then(() => {
+// Check if we have screen recording permission
+async function checkScreenCapturePermission() {
+  try {
+    const sources = await desktopCapturer.getSources({ 
+      types: ['screen'], 
+      thumbnailSize: { width: 1, height: 1 }
+    })
+    hasScreenCapturePermission = sources.length > 0
+    return hasScreenCapturePermission
+  } catch (error) {
+    console.error('Error checking screen capture permission:', error)
+    hasScreenCapturePermission = false
+    return false
+  }
+}
+
+app.whenReady().then(async () => {
   // Create the tray
   tray = new Tray(nativeImage.createEmpty())
   tray.setToolTip('Done List')
   
+  // Check screen capture permission
+  await checkScreenCapturePermission()
+  
   // Initial state - if not logged in, show crossed out checkmark and don't record
   const isLoggedIn = Boolean(idToken)
-  updateTrayIcon(isLoggedIn && !isPaused)
+  updateTrayIcon(isLoggedIn && !isPaused && hasScreenCapturePermission)
   
-  // Only start recording if logged in
-  if (isLoggedIn) {
+  // Only start recording if logged in and has permission
+  if (isLoggedIn && hasScreenCapturePermission) {
     startRecording()
   } else {
-    console.log('Not starting recording - user not logged in')
+    console.log('Not starting recording - user not logged in or missing permissions')
   }
 
   // Left-click opens the window
@@ -60,13 +80,18 @@ ipcMain.on('login', (event, token) => {
   console.log("ID Token:", token);
   idToken = token
   
-  // Start recording if we weren't already and not paused
-  if (!screenshotInterval && !isPaused) {
+  // Start recording if we weren't already and not paused and have permissions
+  if (!screenshotInterval && !isPaused && hasScreenCapturePermission) {
     startRecording()
   }
   
-  // Update icon to show active state
-  updateTrayIcon(!isPaused)
+  // Update icon to show active state (only if we have permission)
+  updateTrayIcon(!isPaused && hasScreenCapturePermission)
+
+  // Send permission status to renderer
+  if (mainWindow) {
+    mainWindow.webContents.send('screenCapturePermission', hasScreenCapturePermission)
+  }
 })
 
 ipcMain.on('logout', (event) => {
@@ -90,7 +115,7 @@ function updateTrayIcon(isRecording) {
     tray.setTitle('✓')
     tray.setToolTip('Done List - Recording')
   } else {
-    // Use crossed out checkmark when paused or not logged in
+    // Use crossed out checkmark when paused or not logged in or no permission
     tray.setTitle('⏸')
     tray.setToolTip('Done List - Not Recording')
   }
@@ -219,7 +244,7 @@ function toggleWindow() {
   } else {
     // Create the window if it doesn't exist.
     mainWindow = new BrowserWindow({
-      width: 250, 
+      width: 600, // 250, 
       height: 400,
       frame: false,
       resizable: false,
@@ -237,10 +262,12 @@ function toggleWindow() {
     mainWindow.loadFile('./src/index.html')
 
     // Debug inspector
-    // mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
 
     // Position the window once it's ready.
     mainWindow.once('ready-to-show', () => {
+      // Send permission status to renderer
+      mainWindow.webContents.send('screenCapturePermission', hasScreenCapturePermission)
       showWindowBelowTray()
     })
 
@@ -567,4 +594,42 @@ function shouldSkipNotification() {
 // Prevent app from quitting when all windows are closed.
 app.on('window-all-closed', (event) => {
   event.preventDefault()
+})
+
+// Add a new IPC handler for requesting screen capture permission
+ipcMain.on('requestScreenCapturePermission', async () => {
+  // On macOS this would open System Preferences > Security & Privacy > Screen Recording
+  // On Windows there isn't a direct way to open system settings for this
+  const { shell } = require('electron')
+  
+  if (process.platform === 'darwin') {
+    // macOS
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
+  } else if (process.platform === 'win32') {
+    // Windows - open general privacy settings
+    shell.openExternal('ms-settings:privacy')
+  } else {
+    // Linux or other platforms
+    console.log('No direct way to open screen capture settings on this platform')
+  }
+  
+  // After opening settings, we should check permission again when app regains focus
+  app.on('browser-window-focus', async () => {
+    const hasPermission = await checkScreenCapturePermission()
+    if (hasPermission && mainWindow) {
+      mainWindow.webContents.send('screenCapturePermission', true)
+      
+      // Update icon and start recording if logged in
+      if (idToken && !isPaused) {
+        updateTrayIcon(true)
+        startRecording()
+      }
+    }
+  })
+})
+
+// Add IPC handler for notification permission status
+ipcMain.handle('checkNotificationPermission', async () => {
+  // This will be used by the renderer to get the current notification permission
+  return Notification.isSupported()
 })

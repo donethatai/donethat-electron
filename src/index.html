@@ -58,7 +58,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-1 flex justify-between">
+        <div class="mt-2 flex justify-between">
           <a href="#" id="showResetPassword" class="link">
             Forgot Password?
           </a>
@@ -105,7 +105,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-1 text-center">
+        <div class="mt-2 text-center">
           <a href="#" id="backToSignIn" class="link">
             Back to Sign In
           </a>
@@ -138,7 +138,7 @@
             </button>
           </div>
         </form>
-        <div class="mt-1 text-center">
+        <div class="mt-2 text-center">
           <a href="#" id="backToSignInFromReset" class="link">
             Back to Sign In
           </a>
@@ -183,11 +183,34 @@
         </button>
         
         <!-- Navigation buttons - consistent mt-8 spacing -->
-        <div class="mt-1 flex justify-between items-center">
+        <div class="mt-2 flex justify-between items-center">
           <a href="#" id="settingsBtn" class="link">
             Settings
           </a>
           <a href="#" id="logoutLink" class="link">
+            Logout
+          </a>
+        </div>
+      </div>
+    </div>
+    
+    <!-- New Screen Recording Permission View -->
+    <div id="permissionView" class="view-container hidden">
+      <div class="form-container">
+        <h1 class="section-header">Done List</h1>
+        <div class="text-center">
+          <p class="text-sm text-gray-600 mb-4">
+            Done List needs screen recording permission to track your activities.
+          </p>
+          <p class="text-sm text-gray-600 mb-4">
+            Your privacy is protected. Screenshots are encrypted and stored securely.
+          </p>
+          <button id="openSettingsBtn" class="btn-primary">
+            Open System Settings
+          </button>
+        </div>
+        <div class="mt-2 text-center">
+          <a href="#" id="logoutFromPermission" class="link">
             Logout
           </a>
         </div>
@@ -242,10 +265,12 @@
           
           <!-- New notification time setting with its own spinner -->
           <div class="mt-4 relative">
-            <label for="notificationTimeInput" class="form-label mb-1">
+            <label class="form-label mb-1">
               Daily Reminder
             </label>
-            <div class="relative cursor-pointer time-input-container">
+            
+            <!-- Show either the time input or the permission button -->
+            <div id="notificationTimeContainer" class="relative cursor-pointer time-input-container">
               <input
                 type="time"
                 id="notificationTimeInput"
@@ -259,10 +284,17 @@
                 <div class="spinner"></div>
               </div>
             </div>
+            
+            <!-- Button to enable notifications (hidden by default) -->
+            <div id="notificationPermissionContainer" class="hidden">
+              <button id="enableNotificationsBtn" class="btn-secondary w-full">
+                Enable Notifications
+              </button>
+            </div>
           </div>
         </div>
           
-        <div class="mt-1 text-center">
+        <div class="mt-2 text-center">
           <a href="#" id="backToDashboardBtn" class="link">
             Back to Dashboard
           </a>
