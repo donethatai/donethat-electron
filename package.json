@@ -1,5 +1,5 @@
 {
-  "name": "donelist",
+  "name": "donethat",
   "version": "1.0.0",
   "description": "Remembering your work for you",
   "main": "main.js",
@@ -10,14 +10,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chrhartm/joey-electron.git"
+    "url": "git+https://github.com/donethatai/donethat-electron.git"
   },
   "author": "Christoph Hartmann",
   "license": "UNLICENSED",
   "bugs": {
-    "url": "https://github.com/chrhartm/joey-electron/issues"
+    "url": "https://github.com/donethatai/donethat-electron/issues"
   },
-  "homepage": "https://github.com/chrhartm/joey-electron#readme",
+  "homepage": "https://github.com/donethatai/donethat-electron#readme",
   "devDependencies": {
     "electron": "^34.2.0",
     "postcss-cli": "^11.0.0"
@@ -32,13 +32,13 @@
     "tailwindcss": "^4.0.6"
   },
   "build": {
-    "appId": "com.donelist.app",
-    "productName": "Done List",
+    "appId": "com.donethat.app",
+    "productName": "donethat",
     "publish": [
       {
         "provider": "github",
-        "owner": "chrhartm",
-        "repo": "joey-electron"
+        "owner": "donethatai",
+        "repo": "donethat-electron"
       }
     ],
     "mac": {
