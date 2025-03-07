@@ -26,6 +26,9 @@ let summaryNotificationTimeout = null
 let summarySubmittedTimestamp = null
 let hasScreenCapturePermission = false
 
+// Screenshot interval duration in minutes
+const SCREENSHOT_INTERVAL_MINUTES = 10
+
 // Configure autoUpdater
 function setupAutoUpdater() {
   // Log update events
@@ -220,8 +223,8 @@ function updateTrayIcon(isRecording) {
 // Function to start the recording
 function startRecording() {
   if (!screenshotInterval) {
-    screenshotInterval = setInterval(captureAndSendScreenshot, 60000)
-    console.log('Screenshot recording started')
+    screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000)
+    console.log(`Screenshot recording started (every ${SCREENSHOT_INTERVAL_MINUTES} minutes)`)
   }
 }
 
@@ -319,8 +322,8 @@ function resumeRecording() {
 
     // Restart screenshot interval
     if (!screenshotInterval) {
-      screenshotInterval = setInterval(captureAndSendScreenshot, 60000)
-      console.log('Screenshot recording resumed')
+      screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000)
+      console.log(`Screenshot recording resumed (every ${SCREENSHOT_INTERVAL_MINUTES} minutes)`)
     }
   } else {
     updateTrayIcon(false)
