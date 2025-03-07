@@ -1,14 +1,14 @@
 {
   "name": "donethat",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Remembering your work for you",
   "main": "main.js",
   "scripts": {
     "build:css": "postcss styles.css -o ./build/output.css --verbose",
     "start": "npm run build:css && electron .",
-    "build": "npm run build:css && electron-builder -mwl",
-    "pack": "electron-builder --dir",
-    "release": "dotenv -- npm run build && dotenv -- electron-builder -mwl --publish always"
+    "build": "npm run build:css && electron-builder",
+    "build:all": "npm run build:css && electron-builder -mwl",
+    "release": "dotenv -- npm run build:all && dotenv -- electron-builder -mwl --publish always"
   },
   "repository": {
     "type": "git",

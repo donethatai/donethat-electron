@@ -12,6 +12,7 @@ MACOS:
 * Download xcode, sign in with dev account, go to settings>accounts, manage certificates, add all certificates
 
 WINDOWS:
+* TODO
 * Download [java](https://www.java.com/en/download/) and [jsign](https://github.com/jpackage-dev/jsign)
 * Run `npm run release`
 

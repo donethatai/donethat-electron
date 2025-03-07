@@ -12,6 +12,7 @@ const firebaseApp = initializeApp(firebaseConfig)
 // Add your Firebase function URL here
 const FIREBASE_CAPTURE_URL = 'https://capturescreenshot-t374dqodfq-ew.a.run.app'
 
+let debug = true
 let tray = null
 let mainWindow = null
 let idToken = null
@@ -34,32 +35,14 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   
-  
-  // Print diagnostic information
-  console.log(`Current app version: ${app.getVersion()}`);
-  console.log(`App is packaged: ${app.isPackaged}`);
-  console.log(`Application name: ${app.getName()}`);
-  console.log(`Update feed URL: ${autoUpdater.getFeedURL ? autoUpdater.getFeedURL() : 'Method not available'}`);
-
-  // Handle update events
-  autoUpdater.on('checking-for-update', () => {
-    console.log('Checking for updates...')
-  })
-
-  autoUpdater.on('update-available', (info) => {
-    console.log('Update available:', info)
-    console.log(`Available version: ${info.version}, current version: ${app.getVersion()}`)
-  })
-
-  autoUpdater.on('update-not-available', (info) => {
-    console.log('No updates available:', info)
-    console.log(`Latest version: ${info.version}, current version: ${app.getVersion()}`)
-    console.log('If this seems incorrect, check package.json version and GitHub releases')
-  })
-
-  autoUpdater.on('download-progress', (progress) => {
-    console.log(`Download progress: ${progress.percent.toFixed(2)}%`)
-  })
+  // Uncomment to check for updates in development mode
+  /*
+  if (!app.isPackaged) {
+    // Instead of trying to modify internal objects, let's use a more direct approach
+    autoUpdater.forceDevUpdateConfig = true;
+    
+  }
+  */
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log('Update downloaded:', info)
@@ -72,16 +55,6 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (error) => {
     console.error('Update error:', error);
-    console.error('Update error details:', error.stack || 'No stack trace available');
-    
-    if (error.message && error.message.includes('Could not locate update bundle')) {
-      console.error('Bundle ID mismatch issue detected.');
-      // Try another approach - create a temporary build for testing
-      console.log('Suggestion: For testing updates in development, consider:');
-      console.log('1. Build a test version with a lower version number');
-      console.log('2. Install that version');
-      console.log('3. Then run the development build to test update detection');
-    }
   })
 }
 
@@ -104,7 +77,20 @@ async function checkScreenCapturePermission() {
   }
 }
 
+// Start at login
+const appFolder = path.dirname(process.execPath)
+const ourExeName = path.basename(process.execPath)
+const stubLauncher = path.resolve(appFolder, '..', ourExeName)
+app.setLoginItemSettings({
+  openAtLogin: true,
+  path: stubLauncher, // Windows only, one dir higher for latest
+})
+
 app.whenReady().then(async () => {
+  // We still need electron-store for other app settings, but not for auth
+  const { default: Store } = await import('electron-store');
+  store = new Store();
+  
   // Create the tray
   tray = new Tray(nativeImage.createEmpty())
   tray.setToolTip('donethat')
@@ -113,16 +99,11 @@ app.whenReady().then(async () => {
   await checkScreenCapturePermission()
 
   // Initial state - if not logged in, show crossed out checkmark and don't record
-  const isLoggedIn = Boolean(idToken)
-  updateTrayIcon(isLoggedIn && !isPaused && hasScreenCapturePermission)
+  // We don't know auth state yet, so default to not recording
+  updateTrayIcon(false)
 
-  // Only start recording if logged in and has permission
-  if (isLoggedIn && hasScreenCapturePermission) {
-    startRecording()
-  } else {
-    console.log('Not starting recording - user not logged in or missing permissions')
-  }
-
+  // We'll start recording when we receive the login event from renderer
+  
   // Left-click opens the window
   tray.on('click', () => {
     toggleWindow()
@@ -134,11 +115,8 @@ app.whenReady().then(async () => {
     tray.popUpContextMenu(contextMenu)
   })
 
-  // Open window automatically if user not logged in
-  if (!isLoggedIn) {
-    toggleWindow()
-    console.log('Window opened automatically - user not logged in')
-  }
+  // Always open window on startup to check auth state
+  toggleWindow()
 
   // Check for updates with proper error handling
   try {
@@ -184,11 +162,11 @@ ipcMain.on('install-update', () => {
   autoUpdater.quitAndInstall(true, true)
 })
 
-// Updated listener for login event to start recording when user logs in
+// Updated listener for login event - simplified to not store token
 ipcMain.on('login', (event, token) => {
-  console.log("ID Token:", token);
+  console.log("ID Token received from renderer");
   idToken = token
-
+  
   // Start recording if we weren't already and not paused and have permissions
   if (!screenshotInterval && !isPaused && hasScreenCapturePermission) {
     startRecording()
@@ -206,7 +184,7 @@ ipcMain.on('login', (event, token) => {
 ipcMain.on('logout', (event) => {
   console.log("User logged out");
   idToken = null
-
+  
   // Stop recording if we were recording
   if (screenshotInterval) {
     clearInterval(screenshotInterval)
@@ -353,8 +331,8 @@ function toggleWindow() {
   } else {
     // Create the window if it doesn't exist.
     mainWindow = new BrowserWindow({
-      width: 250,
-      height: 400,
+      width: debug ? 600 : 250,
+      height: debug ? 600 : 400,
       frame: false,
       resizable: false,
       movable: false,
@@ -362,16 +340,19 @@ function toggleWindow() {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
+        // Add this option to help with persistence
+        partition: 'persist:donethat', // Use a named partition for persistence
+        backgroundThrottling: false,   // Prevent background throttling
       }
     })
 
-    // This file could be your login page that first shows the email/password
-    // form. After successful sign in the UI might transition to your main app.
-    // do index if user not signed in, otherwise do dashboard
+    // Load the index.html file
     mainWindow.loadFile('./src/index.html')
 
     // Debug inspector
-    // mainWindow.webContents.openDevTools();
+    if (debug) {
+      mainWindow.webContents.openDevTools();
+    }
 
     // Position the window once it's ready.
     mainWindow.once('ready-to-show', () => {
@@ -689,15 +670,37 @@ function shouldSkipNotification() {
   // Two hour window before notification time
   const twoHoursBeforeNotification = new Date(notificationTimeToday);
   twoHoursBeforeNotification.setHours(notificationTimeToday.getHours() - 2);
-
   // If submitted within 2 hours before notification time or any time after
   return submittedDate >= twoHoursBeforeNotification;
 }
 
-// Prevent app from quitting when all windows are closed.
+// Handle OS-level quit events properly - especially important for macOS
+app.on('before-quit', () => {
+  // Flag that we're actually quitting, not just closing windows
+  app.isQuitting = true;
+  
+  // Clean up resources
+  if (screenshotInterval) {
+    clearInterval(screenshotInterval);
+  }
+  
+  if (pauseTimeout) {
+    clearTimeout(pauseTimeout);
+  }
+  
+  if (summaryNotificationTimeout) {
+    clearTimeout(summaryNotificationTimeout);
+  }
+});
+
+// Modify the window-all-closed handler to respect system quit
 app.on('window-all-closed', (event) => {
-  event.preventDefault()
-})
+  // Only prevent default if we're not in the quit process
+  if (!app.isQuitting) {
+    event.preventDefault();
+  }
+  // Otherwise let the app quit normally
+});
 
 // Add a new IPC handler for requesting screen capture permission
 ipcMain.on('requestScreenCapturePermission', async () => {
