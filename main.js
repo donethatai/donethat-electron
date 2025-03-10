@@ -259,7 +259,7 @@ function buildContextMenu() {
       enabled: isLoggedIn && !isPaused && screenshotInterval
     },
     {
-      label: 'Pause until next week',
+      label: 'Pause for this week',
       click: () => pauseUntilNextWeek(),
       enabled: isLoggedIn && !isPaused && screenshotInterval
     },
@@ -651,7 +651,14 @@ function scheduleNextSummaryNotification() {
 
 // Function to show the summary notification
 function showSummaryNotification() {
-  // Check if summary was submitted recently (within the last 2 hours or any time after the notification time today)
+  // Skip notification if recording is paused or not active
+  if (isPaused || !screenshotInterval) {
+    console.log("Skipping notification - recording is paused or not active");
+    scheduleNextSummaryNotification(); // Schedule for next time
+    return;
+  }
+
+  // Check if summary was submitted recently
   if (shouldSkipNotification()) {
     console.log("Skipping notification - summary already submitted today");
     scheduleNextSummaryNotification(); // Schedule for next time
@@ -659,7 +666,7 @@ function showSummaryNotification() {
   }
 
   const notification = new Notification({
-    title: 'donethat',
+    title: 'Done That',
     body: 'Time to submit your daily summary!',
     silent: false
   });
