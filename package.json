@@ -75,7 +75,10 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "extendInfo": {
+        "LSUIElement": 1
+      }
     },
     "win": {
       "target": [
@@ -97,7 +100,12 @@
       "target": [
         "AppImage"
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "desktop": {
+        "StartupWMClass": "done-that",
+        "NoDisplay": true,
+        "Type": "Application"
+      }
     }
   }
 }

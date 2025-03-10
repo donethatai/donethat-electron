@@ -29,6 +29,14 @@ let hasScreenCapturePermission = false
 // Screenshot interval duration in minutes
 const SCREENSHOT_INTERVAL_MINUTES = 10
 
+// Hide from taskbar on all platforms
+if (process.platform === 'darwin') {
+  app.dock.hide()  // macOS
+} else if (process.platform === 'win32') {
+  // Windows
+  app.setAppUserModelId('none') // This helps hide from taskbar
+}
+
 // Configure autoUpdater
 function setupAutoUpdater() {
   // Log update events
@@ -358,6 +366,7 @@ function createWindow() {
       resizable: false,
       movable: false,
       show: false,
+      skipTaskbar: true, // Hide from taskbar on Windows/Linux
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
