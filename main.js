@@ -105,7 +105,7 @@ app.setLoginItemSettings({
 app.whenReady().then(async () => {
   // Create the tray
   tray = new Tray(nativeImage.createEmpty())
-  tray.setToolTip('donethat')
+  tray.setToolTip('Done That')
 
   // Check screen capture permission
   hasScreenCapturePermission = await checkScreenCapturePermission()
@@ -212,11 +212,11 @@ function updateTrayIcon(isRecording) {
   if (isRecording) {
     // Use checkmark symbol when recording
     tray.setTitle('✓')
-    tray.setToolTip('donethat - Recording')
+    tray.setToolTip('Done That - Recording')
   } else {
     // Use crossed out checkmark when paused or not logged in or no permission
     tray.setTitle('⏸')
-    tray.setToolTip('donethat - Not Recording')
+    tray.setToolTip('Done That - Not Recording')
   }
 }
 

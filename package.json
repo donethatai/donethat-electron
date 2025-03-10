@@ -44,7 +44,7 @@
   },
   "build": {
     "appId": "com.donethat.app",
-    "productName": "donethat",
+    "productName": "Done That",
     "afterSign": "scripts/notarize.js",
     "files": [
       "main.js",
