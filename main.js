@@ -258,6 +258,11 @@ function buildContextMenu() {
       click: () => pauseUntilTomorrow(),
       enabled: isLoggedIn && !isPaused && screenshotInterval
     },
+    {
+      label: 'Pause until next week',
+      click: () => pauseUntilNextWeek(),
+      enabled: isLoggedIn && !isPaused && screenshotInterval
+    },
     { type: 'separator' },
     {
       label: 'Resume',
@@ -305,6 +310,18 @@ function pauseUntilTomorrow() {
   const duration = tomorrow - now
   pauseRecording(duration)
   console.log(`Screenshot recording paused until tomorrow`)
+}
+
+// Add new function to pause until next week
+function pauseUntilNextWeek() {
+  const now = new Date()
+  const nextMonday = new Date(now)
+  nextMonday.setDate(now.getDate() + (8 - now.getDay()) % 7)
+  nextMonday.setHours(0, 0, 0, 0)
+
+  const duration = nextMonday - now
+  pauseRecording(duration)
+  console.log(`Screenshot recording paused until next Monday`)
 }
 
 // Function to resume recording
