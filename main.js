@@ -5,12 +5,13 @@ const { autoUpdater } = require('electron-updater')
 
 // Importing Firebase modules using the new modular API.
 const { initializeApp, getAuth } = require('firebase/app')
-
 const firebaseConfig = require('./firebase-config')
+
+// Initialize Firebase with the new config
 const firebaseApp = initializeApp(firebaseConfig)
 
 // Add your Firebase function URL here
-const FIREBASE_CAPTURE_URL = 'https://capturescreenshot-t374dqodfq-ew.a.run.app'
+const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/captureScreenshot'
 
 // To show dev tools next to main window
 let debug = false
@@ -26,8 +27,13 @@ let summaryNotificationTimeout = null
 let summarySubmittedTimestamp = null
 let hasScreenCapturePermission = false
 
-// Screenshot interval duration in minutes
-const SCREENSHOT_INTERVAL_MINUTES = 10
+// Update screenshot interval logic
+let SCREENSHOT_INTERVAL_MINUTES = 5; // Default to 5 minutes for release
+
+// Set interval based on whether it's development or production
+if (!app.isPackaged) {
+  SCREENSHOT_INTERVAL_MINUTES = 1; // Every minute for development
+}
 
 // Hide from taskbar on all platforms
 if (process.platform === 'darwin') {
@@ -543,14 +549,22 @@ async function captureAndSendScreenshot() {
         screenshot: screenshot
       })
     })
-
+    
     if (!response.ok) {
-      throw new Error(`Failed to send screenshot: ${response.statusText}`)
+      const errorText = await response.text()
+      throw new Error(`Server error: ${response.status}`)
     }
-
-    console.log('Screenshot sent successfully')
   } catch (error) {
-    console.error('Error capturing or sending screenshot:', error)
+    // Simplified error handling
+    console.error('Screenshot error:', error.message)
+    
+    // If it's an auth error, clear the token to force re-login
+    if (error.message.includes('401') || error.message.includes('403')) {
+      idToken = null
+      if (mainWindow) {
+        mainWindow.webContents.send('auth-error')
+      }
+    }
   }
 }
 
