@@ -9,13 +9,17 @@
     "start": "npm run build:css && npm run build:webpack && electron .",
     "build": "npm run build:css && npm run build:webpack && electron-builder",
     "build:all": "npm run build:css && npm run build:webpack && electron-builder -mwl",
+    "build:linux": "npm run build:css && npm run build:webpack && electron-builder --linux",
     "release": "dotenv -- npm run build:all && dotenv -- electron-builder -mwl --publish always"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/donethatai/donethat-electron.git"
   },
-  "author": "Christoph Hartmann",
+  "author": {
+    "name": "Christoph Hartmann",
+    "email": "christoph@donethat.ai"
+  },
   "license": "UNLICENSED",
   "bugs": {
     "url": "https://github.com/donethatai/donethat-releases/issues"
@@ -98,7 +102,10 @@
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb",
+        "rpm",
+        "apk"
       ],
       "category": "Utility",
       "desktop": {
