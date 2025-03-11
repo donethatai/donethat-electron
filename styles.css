@@ -255,3 +255,10 @@
 .time-input-container {
   @apply relative w-full;
 }
+
+/* Summary period display */
+.summary-period {
+  @apply text-xs text-center py-2 mb-3 border-b;
+  color: var(--color-neutral-600);
+  border-color: var(--color-neutral-200);
+}

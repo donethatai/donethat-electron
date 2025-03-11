@@ -287,6 +287,9 @@ async function performFullLogout() {
     currentSummaryId = null;
     userIdToken = null;
     
+    // Reset the UI state
+    resetSummaryState();
+    
     // Notify main process
     ipcRenderer.send('logout');
     
@@ -321,6 +324,8 @@ function showSummaryGeneratedState() {
 function resetSummaryState() {
   document.getElementById('generateSummaryBtn').classList.remove('hidden');
   document.getElementById('submitSummaryBtn').classList.add('hidden');
+  currentSummaryId = null;
+  selectedBulletPoints = [];
   
   document.getElementById('summaryContainer').innerHTML = 
     '<p class="empty-state-text">Generate a summary to see your activities.</p>';
@@ -590,11 +595,31 @@ if (generateSummaryBtn) {
         // Process the result from the cloud function
         const bulletPoints = result.data.bulletPoints || [];
         currentSummaryId = result.data.summaryId;
+        const period = result.data.period;
         
         if (bulletPoints.length === 0) {
           summaryContainer.innerHTML = '<p class="empty-state-text">No activities found for today.</p>';
           return;
         }
+        
+        // Format the period timestamps
+        const formatDateTime = (timestamp) => {
+          if (!timestamp) return '';
+          const date = new Date(timestamp);
+          return date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          });
+        };
+        
+        const periodHTML = period ? `
+          <div class="summary-period">
+            Activities from ${formatDateTime(period.start)} to ${formatDateTime(period.end)}
+          </div>
+        ` : '';
         
         const bulletHTML = bulletPoints.map(point => `
           <div class="bullet-item">
@@ -608,7 +633,7 @@ if (generateSummaryBtn) {
           <textarea id="commentInput" class="comment-input" placeholder="Add a comment here"></textarea>
         `;
         
-        summaryContainer.innerHTML = bulletHTML + commentHTML;
+        summaryContainer.innerHTML = periodHTML + bulletHTML + commentHTML;
         
         // Add event listeners for checkboxes and heart icons
         document.querySelectorAll('.bullet-checkbox').forEach(checkbox => {
@@ -651,6 +676,9 @@ if (settingsBtn) {
     e.preventDefault();
     dashboardView.classList.add('hidden');
     settingsView.classList.remove('hidden');
+    
+    // Reset summary state when leaving dashboard
+    resetSummaryState();
     
     // Update the time input to the current value
     const notificationTimeInput = document.getElementById("notificationTimeInput");
