@@ -246,11 +246,6 @@
   background-color: var(--color-primary-dark);
 }
 
-/* Pause explainer styling */
-.pause-explainer {
-  @apply text-gray-500 text-center text-xs mt-1;
-}
-
 /* Time input container styling */
 .time-input-container {
   @apply relative w-full;
@@ -261,4 +256,10 @@
   @apply text-xs text-center py-2 mb-3 border-b;
   color: var(--color-neutral-600);
   border-color: var(--color-neutral-200);
+}
+
+/* Disabled button styling */
+.disabled-btn {
+  @apply bg-gray-400 cursor-not-allowed;
+  color: white;
 }

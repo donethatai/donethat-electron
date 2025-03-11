@@ -557,7 +557,20 @@ if (submitSummaryBtn) {
     })
       .then((result) => {
         summaryLoadingSpinner.classList.add('hidden');
-        resetSummaryState();
+        
+        // Clear summary content immediately before resetSummary later after delay
+        document.getElementById('summaryContainer').innerHTML = 
+          '<p class="empty-state-text"></p>';
+        
+        // Reset internal state
+        currentSummaryId = null;
+        selectedBulletPoints = [];
+        
+        // Update button text and disable it
+        submitSummaryBtn.textContent = "Well done! Paused recording.";
+        submitSummaryBtn.disabled = true; // Disable the button
+        submitSummaryBtn.classList.add('disabled-btn'); // Add a class for styling
+        submitSummaryBtn.classList.remove('hidden'); // Make sure button is visible
         
         // Notify main process that summary was submitted
         ipcRenderer.send("summarySubmitted");
@@ -565,12 +578,12 @@ if (submitSummaryBtn) {
         // Pause recording until tomorrow
         ipcRenderer.send("pauseUntilTomorrow");
         
-        // Show the explainer text about pausing
-        document.getElementById('pauseExplainer').classList.remove('hidden');
-        
-        // Hide the explainer after 10 seconds
+        // Reset summary state AFTER button update and ensure button stays visible
         setTimeout(() => {
-          document.getElementById('pauseExplainer').classList.add('hidden');
+          resetSummaryState();
+          submitSummaryBtn.textContent = "Submit"; // Reset button text
+          submitSummaryBtn.classList.remove('disabled-btn'); // Remove disabled styling
+          submitSummaryBtn.disabled = false; // Re-enable the button
         }, 10000);
       })
       .catch((error) => {
