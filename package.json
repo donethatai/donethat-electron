@@ -6,11 +6,15 @@
   "scripts": {
     "build:css": "postcss styles.css -o ./build/output.css --verbose",
     "build:webpack": "webpack --config webpack.config.js",
-    "start": "npm run build:css && npm run build:webpack && electron .",
-    "build": "npm run build:css && npm run build:webpack && electron-builder",
-    "build:all": "npm run build:css && npm run build:webpack && electron-builder -mwl",
-    "build:linux": "npm run build:css && npm run build:webpack && electron-builder --linux",
-    "release": "dotenv -- npm run build:all && dotenv -- electron-builder -mwl --publish always"
+    "build:prepare": "npm run build:css && npm run build:webpack",
+    "start": "npm run build:prepare && electron .",
+    "build": "npm run build:prepare && electron-builder",
+    "build:all:arm64": "npm run build:prepare && electron-builder --mwl",
+    "build:all:x64": "npm run build:prepare && electron-builder -mwl --x64",
+    "build:all": "npm run build:all:arm64 && npm run build:all:x64",
+    "release:arm64": "dotenv -- npm run build:prepare && dotenv -- electron-builder --mwl --publish always",
+    "release:x64": "dotenv -- npm run build:prepare && dotenv -- electron-builder -mwl --x64 --publish always",
+    "release": "npm run release:arm64 && npm run release:x64"
   },
   "repository": {
     "type": "git",
@@ -51,6 +55,7 @@
     "productName": "Done That",
     "afterSign": "scripts/notarize.js",
     "icon": "resources/icon_inverse.png",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "main.js",
       "firebase-config.js",
@@ -103,9 +108,7 @@
     "linux": {
       "target": [
         "AppImage",
-        "deb",
-        "rpm",
-        "apk"
+        "deb"
       ],
       "category": "Utility",
       "desktop": {
