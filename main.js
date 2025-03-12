@@ -35,12 +35,19 @@ if (!app.isPackaged) {
   SCREENSHOT_INTERVAL_MINUTES = 1; // Every minute for development
 }
 
-// Hide from taskbar on all platforms
-if (process.platform === 'darwin') {
-  app.dock.hide()  // macOS
-} else if (process.platform === 'win32') {
-  // Windows
-  app.setAppUserModelId('none') // This helps hide from taskbar
+// Define paths to the different icon images based on platform
+let iconRecordingPath, iconPausedPath, iconErrorPath;
+
+if (process.platform === 'win32') {
+  // Use .ico files for Windows
+  iconRecordingPath = path.join(__dirname, 'resources', 'icon-recording.ico')
+  iconPausedPath = path.join(__dirname, 'resources', 'icon-paused.ico')
+  iconErrorPath = path.join(__dirname, 'resources', 'icon-error.ico')
+} else {
+  // Use .png files for macOS and Linux
+  iconRecordingPath = path.join(__dirname, 'resources', 'icon_recording.png')
+  iconPausedPath = path.join(__dirname, 'resources', 'icon_paused.png')
+  iconErrorPath = path.join(__dirname, 'resources', 'icon_error.png')
 }
 
 // Configure autoUpdater
@@ -117,14 +124,25 @@ app.setLoginItemSettings({
 })
 
 app.whenReady().then(async () => {
-  // Create the tray
-  tray = new Tray(nativeImage.createEmpty())
+  // Create tray with initial error icon
+  let trayIcon = nativeImage.createFromPath(iconErrorPath)
+  
+  // Apply platform-specific resizing for initial icon
+  if (process.platform === 'win32') {
+    // Windows typically uses 16x16 icons for the system tray
+    trayIcon = trayIcon.resize({ width: 16, height: 16 })
+  } else if (process.platform === 'darwin') {
+    // macOS menu bar icons should be 18-22px
+    trayIcon = trayIcon.resize({ width: 18, height: 18 })
+  }
+  
+  tray = new Tray(trayIcon)
   tray.setToolTip('Done That')
 
   // Check screen capture permission
   hasScreenCapturePermission = await checkScreenCapturePermission()
 
-  // Initial state - if not logged in, show crossed out checkmark and don't record
+  // Initial state - update icon after tray is created
   updateTrayIcon(false)
 
   // Left-click opens the window
@@ -216,14 +234,40 @@ ipcMain.on('logout', (event) => {
 
 // Function to update the tray icon based on recording state
 function updateTrayIcon(isRecording) {
+  let iconPath;
+  
   if (isRecording) {
-    // Use checkmark symbol when recording
-    tray.setTitle('✓')
+    // Use recording icon when recording
+    iconPath = iconRecordingPath
     tray.setToolTip('Done That - Recording')
+  } else if (isPaused) {
+    // Use paused icon when paused
+    iconPath = iconPausedPath
+    tray.setToolTip('Done That - Paused')
   } else {
-    // Use crossed out checkmark when paused or not logged in or no permission
-    tray.setTitle('⏸')
+    // Use error icon when not recording and not paused (e.g., not logged in)
+    iconPath = iconErrorPath
     tray.setToolTip('Done That - Not Recording')
+  }
+  
+  // Load and set the appropriate icon
+  let icon = nativeImage.createFromPath(iconPath)
+  
+  // Platform-specific icon resizing
+  if (process.platform === 'win32') {
+    // Windows typically uses 16x16 icons for the system tray
+    icon = icon.resize({ width: 16, height: 16 })
+  } else if (process.platform === 'darwin') {
+    // macOS menu bar icons look best at 18-22px
+    // Uses 'aspectFit' to maintain aspect ratio
+    icon = icon.resize({ width: 18, height: 18 })
+  }
+  
+  tray.setImage(icon)
+  
+  // Clear any previous title (macOS specific)
+  if (process.platform === 'darwin') {
+    tray.setTitle('')
   }
 }
 

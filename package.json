@@ -9,7 +9,7 @@
     "build:prepare": "npm run build:css && npm run build:webpack",
     "start": "npm run build:prepare && electron .",
     "build": "npm run build:prepare && electron-builder",
-    "build:all:arm64": "npm run build:prepare && electron-builder --mwl",
+    "build:all:arm64": "npm run build:prepare && electron-builder -mwl",
     "build:all:x64": "npm run build:prepare && electron-builder -mwl --x64",
     "build:all": "npm run build:all:arm64 && npm run build:all:x64",
     "release:arm64": "dotenv -- npm run build:prepare && dotenv -- electron-builder --mwl --publish always",
@@ -93,7 +93,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "resources/icon.ico",
+      "icon": "resources/icon.png",
       "asarUnpack": [
         "node_modules/canvas"
       ],
@@ -116,6 +116,7 @@
         "NoDisplay": true,
         "Type": "Application"
       }
-    }
+    },
+    "compression": "maximum"
   }
 }
