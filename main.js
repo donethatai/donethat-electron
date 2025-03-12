@@ -59,20 +59,9 @@ if (!app.isPackaged) {
   SCREENSHOT_INTERVAL_MINUTES = 1; // Every minute for development
 }
 
-// Define paths to the different icon images based on platform
-let iconRecordingPath, iconPausedPath, iconErrorPath;
-
-if (process.platform === 'win32') {
-  // Use .ico files for Windows
-  iconRecordingPath = path.join(__dirname, 'resources', 'icon-recording.ico')
-  iconPausedPath = path.join(__dirname, 'resources', 'icon-paused.ico')
-  iconErrorPath = path.join(__dirname, 'resources', 'icon-error.ico')
-} else {
-  // Use .png files for macOS and Linux
-  iconRecordingPath = path.join(__dirname, 'resources', 'icon_recording.png')
-  iconPausedPath = path.join(__dirname, 'resources', 'icon_paused.png')
-  iconErrorPath = path.join(__dirname, 'resources', 'icon_error.png')
-}
+let iconRecordingPath = path.join(__dirname, 'resources', 'icon_recording.png')
+let iconPausedPath = path.join(__dirname, 'resources', 'icon_paused.png')
+let iconErrorPath = path.join(__dirname, 'resources', 'icon_error.png')
 
 // Configure autoUpdater
 function setupAutoUpdater() {
@@ -181,7 +170,7 @@ async function captureAndSendScreenshot() {
   }
 }
 
-// New function for Linux screenshot capture using native commands
+// Modified function for Linux screenshot capture with multi-display support
 async function captureScreenshotsLinux() {
   try {
     const fs = require('fs')
@@ -189,24 +178,21 @@ async function captureScreenshotsLinux() {
     const tempDir = os.tmpdir()
     const screenshotPath = path.join(tempDir, `screenshot-${Date.now()}.png`)
     
-    // Check for available tools and use the best one
+    // Take a combined screenshot first
     let screenshotTool = null
     try {
-      // Check for gnome-screenshot (common on Ubuntu/Gnome)
-      execSync('which gnome-screenshot')
-      screenshotTool = 'gnome-screenshot'
+      execSync('which scrot')
+      screenshotTool = 'scrot'
     } catch (e) {
       try {
-        // Check for scrot (common on many distros)
-        execSync('which scrot')
-        screenshotTool = 'scrot'
+        execSync('which import')
+        screenshotTool = 'import'
       } catch (e) {
         try {
-          // Check for import from ImageMagick
-          execSync('which import')
-          screenshotTool = 'import'
+          execSync('which gnome-screenshot')
+          screenshotTool = 'gnome-screenshot'
         } catch (e) {
-          log.error('No suitable screenshot tool found on Linux')
+          log.error('No suitable screenshot tool found.')
           return []
         }
       }
@@ -215,16 +201,41 @@ async function captureScreenshotsLinux() {
     log.debug(`Using Linux screenshot tool: ${screenshotTool}`)
     
     // Capture screenshot with the available tool
-    if (screenshotTool === 'gnome-screenshot') {
-      execSync(`gnome-screenshot -f "${screenshotPath}"`)
-    } else if (screenshotTool === 'scrot') {
-      execSync(`scrot "${screenshotPath}"`)
+    if (screenshotTool === 'scrot') {
+      execSync(`scrot -m -z "${screenshotPath}"`)
     } else if (screenshotTool === 'import') {
-      execSync(`import -window root "${screenshotPath}"`)
+      execSync(`import -window root -silent "${screenshotPath}"`)
+    } else if (screenshotTool === 'gnome-screenshot') {
+      try {
+        execSync(`gnome-screenshot --silent -f "${screenshotPath}" 2>/dev/null`)
+      } catch (e) {
+        try {
+          execSync(`gnome-screenshot -f "${screenshotPath}" 2>/dev/null`)
+        } catch (e) {
+          execSync(`gnome-screenshot -f "${screenshotPath}"`)
+        }
+      }
     }
     
-    // Read the file and convert to base64
+    // Read the screenshot file
     const screenshotData = fs.readFileSync(screenshotPath)
+    
+    // Try to get display information using xrandr
+    try {
+      const displays = await getLinuxDisplayInfo()
+      
+      if (displays.length > 1) {
+        // We have multiple displays, try to crop them using nativeImage
+        const results = await cropScreenshotsWithNativeImage(screenshotData, displays)
+        // Clean up the temporary file
+        fs.unlinkSync(screenshotPath)
+        return results
+      }
+    } catch (err) {
+      log.warn('Failed to get display info, using combined screenshot:', err)
+    }
+    
+    // Fallback to single combined screenshot
     const base64Data = `data:image/png;base64,${screenshotData.toString('base64')}`
     
     // Clean up the temporary file
@@ -233,10 +244,81 @@ async function captureScreenshotsLinux() {
     // Process the screenshot to the right size
     const processedImage = await processScreenshotForUpload(base64Data)
     
+    // Return as array to match Windows/macOS behavior
     return [processedImage]
   } catch (error) {
     log.error('Failed to capture Linux screenshot:', error)
     return []
+  }
+}
+
+// New function to get display information using xrandr
+async function getLinuxDisplayInfo() {
+  try {
+    const output = execSync('xrandr --current').toString()
+    const displays = []
+    
+    // Parse xrandr output to extract connected displays
+    const connectedDisplays = output.match(/^(.*) connected.*/gm)
+    
+    if (!connectedDisplays) {
+      throw new Error('No connected displays found in xrandr output')
+    }
+    
+    for (const displayLine of connectedDisplays) {
+      // Get display name and position info
+      const displayName = displayLine.split(' ')[0]
+      
+      // Look for the resolution and position like 1920x1080+0+0
+      const geometryMatch = displayLine.match(/(\d+)x(\d+)\+(\d+)\+(\d+)/)
+      
+      if (geometryMatch) {
+        displays.push({
+          name: displayName,
+          width: parseInt(geometryMatch[1]),
+          height: parseInt(geometryMatch[2]),
+          x: parseInt(geometryMatch[3]),
+          y: parseInt(geometryMatch[4])
+        })
+      }
+    }
+    
+    return displays
+  } catch (error) {
+    log.error('Error getting display info:', error)
+    return []
+  }
+}
+
+// New function to crop screenshots using Electron's nativeImage
+async function cropScreenshotsWithNativeImage(imageBuffer, displays) {
+  try {
+    const results = []
+    
+    // Create nativeImage from buffer
+    const fullImage = nativeImage.createFromBuffer(imageBuffer)
+    
+    for (const display of displays) {
+      const { width, height, x, y } = display
+      
+      // Crop the image for this display
+      const croppedImage = fullImage.crop({ x, y, width, height })
+      
+      // Convert to data URL
+      const dataUrl = croppedImage.toDataURL()
+      
+      // Process the cropped screenshot
+      const processedImage = await processScreenshotForUpload(dataUrl)
+      results.push(processedImage)
+    }
+    
+    return results
+  } catch (error) {
+    log.error('Error cropping screenshots:', error)
+    // Fall back to processing the full image
+    const dataUrl = nativeImage.createFromBuffer(imageBuffer).toDataURL()
+    const processedImage = await processScreenshotForUpload(dataUrl)
+    return [processedImage]
   }
 }
 
@@ -294,10 +376,7 @@ app.whenReady().then(async () => {
   let trayIcon = nativeImage.createFromPath(iconErrorPath)
   
   // Apply platform-specific resizing for initial icon
-  if (process.platform === 'win32') {
-    // Windows typically uses 16x16 icons for the system tray
-    trayIcon = trayIcon.resize({ width: 16, height: 16 })
-  } else if (process.platform === 'darwin') {
+  if (process.platform === 'darwin') {
     // macOS menu bar icons should be 18-22px
     trayIcon = trayIcon.resize({ width: 18, height: 18 })
   }
@@ -311,16 +390,23 @@ app.whenReady().then(async () => {
   // Initial state - update icon after tray is created
   updateTrayIcon(false)
 
-  // Left-click opens the window
-  tray.on('click', () => {
-    toggleWindow()
-  })
-
-  // Show context menu with pause options on right-click
-  tray.on('right-click', () => {
+  // Platform-specific tray click handlers
+  if (process.platform === 'linux') {
+    // For Linux: Set a persistent context menu and don't handle left-click
     const contextMenu = buildContextMenu()
-    tray.popUpContextMenu(contextMenu)
-  })
+    tray.setContextMenu(contextMenu)
+    // No click handler - all functionality is in the context menu
+  } else {
+    // Windows & macOS: Use separate events
+    tray.on('click', () => {
+      toggleWindow()
+    })
+    
+    tray.on('right-click', () => {
+      const contextMenu = buildContextMenu()
+      tray.popUpContextMenu(contextMenu)
+    })
+  }
 
   // Create window but don't show it yet
   createWindow()
@@ -419,13 +505,9 @@ function updateTrayIcon(isRecording) {
   // Load and set the appropriate icon
   let icon = nativeImage.createFromPath(iconPath)
   
-  // Platform-specific icon resizing
-  if (process.platform === 'win32') {
-    // Windows typically uses 16x16 icons for the system tray
-    icon = icon.resize({ width: 16, height: 16 })
-  } else if (process.platform === 'darwin') {
+  // MODIFY the resizing code to skip Windows
+  if (process.platform === 'darwin') {
     // macOS menu bar icons look best at 18-22px
-    // Uses 'aspectFit' to maintain aspect ratio
     icon = icon.resize({ width: 18, height: 18 })
   }
   
@@ -434,6 +516,12 @@ function updateTrayIcon(isRecording) {
   // Clear any previous title (macOS specific)
   if (process.platform === 'darwin') {
     tray.setTitle('')
+  }
+  
+  // Update context menu on Linux to reflect current state
+  if (process.platform === 'linux') {
+    const contextMenu = buildContextMenu()
+    tray.setContextMenu(contextMenu)
   }
 }
 
@@ -449,7 +537,17 @@ function startRecording() {
 function buildContextMenu() {
   const isLoggedIn = Boolean(idToken)
 
-  return Menu.buildFromTemplate([
+  // Start with basic template
+  const template = []
+  
+  // Add "Open App" as the first option for all platforms
+  template.push({
+    label: 'Open App',
+    click: () => toggleWindow()
+  }, { type: 'separator' })
+
+  // Add pause options
+  template.push(
     {
       label: 'Pause for 5 minutes',
       click: () => pauseRecording(5 * 60 * 1000),
@@ -491,7 +589,9 @@ function buildContextMenu() {
       label: 'Quit',
       click: () => app.quit()
     }
-  ])
+  )
+
+  return Menu.buildFromTemplate(template)
 }
 
 // Function to pause recording for a specified duration
@@ -571,9 +671,11 @@ function createWindow() {
     mainWindow = new BrowserWindow({
       width: debug ? 600 : 250,
       height: debug ? 600 : 400,
+      // Add frame on Linux, keep frameless on other platforms
       frame: false,
       resizable: false,
-      movable: false,
+      // Make window movable on Linux but keep it fixed on other platforms
+      movable: !(process.platform === 'darwin'),
       show: false,
       skipTaskbar: true, // Hide from taskbar on Windows/Linux
       webPreferences: {
@@ -648,24 +750,46 @@ function showWindowBelowTray() {
   // Use the working area of the display containing the tray
   const { workArea } = trayDisplay
   
-  // Calculate x position: center window horizontally relative to the tray icon
-  let x = Math.round(trayBounds.x + (trayBounds.width / 2) - (windowBounds.width / 2))
+  let x, y;
+  
+  // Linux-specific positioning logic
+  if (process.platform === 'linux') {
+    // On Linux, center in the primary display as a fallback
+    // since tray positioning can be unreliable
+    x = Math.round(workArea.x + (workArea.width / 2) - (windowBounds.width / 2))
+    y = Math.round(workArea.y + (workArea.height / 2) - (windowBounds.height / 2))
+    
+    // If we have valid tray bounds, try to position near it
+    if (trayBounds.width > 0 && trayBounds.height > 0) {
+      // Position at the bottom of the screen if the tray appears to be at the bottom
+      // Common for panels at bottom of screen
+      if (trayBounds.y > workArea.y + (workArea.height / 2)) {
+        y = workArea.y + workArea.height - windowBounds.height - 50; // 50px buffer
+      } else {
+        // Otherwise position at top with offset
+        y = workArea.y + 50;
+      }
+    }
+  } else {
+    // Original positioning for Windows and macOS
+    // Calculate x position: center window horizontally relative to the tray icon
+    x = Math.round(trayBounds.x + (trayBounds.width / 2) - (windowBounds.width / 2))
+    
+    // Determine if tray is closer to top or bottom of the display
+    const distanceToTop = trayBounds.y - workArea.y
+    const distanceToBottom = (workArea.y + workArea.height) - (trayBounds.y + trayBounds.height)
+    
+    if (distanceToTop < distanceToBottom) {
+      // Tray is closer to top - position window below tray
+      y = trayBounds.y + trayBounds.height
+    } else {
+      // Tray is closer to bottom - position window above tray
+      y = trayBounds.y - windowBounds.height
+    }
+  }
   
   // Ensure window doesn't go off-screen horizontally
   x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - windowBounds.width))
-  
-  // Determine if tray is closer to top or bottom of the display
-  const distanceToTop = trayBounds.y - workArea.y
-  const distanceToBottom = (workArea.y + workArea.height) - (trayBounds.y + trayBounds.height)
-  
-  let y;
-  if (distanceToTop < distanceToBottom) {
-    // Tray is closer to top - position window below tray
-    y = trayBounds.y + trayBounds.height
-  } else {
-    // Tray is closer to bottom - position window above tray
-    y = trayBounds.y - windowBounds.height
-  }
   
   // Ensure window doesn't go off-screen vertically
   y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - windowBounds.height))
@@ -675,60 +799,56 @@ function showWindowBelowTray() {
   mainWindow.focus() // Ensure window gets focus
 }
 
-// New function to process screenshots for upload with 819px constraint on shorter edge
+// Simplified function to process screenshots using only Electron's nativeImage
 async function processScreenshotForUpload(dataUrl) {
-  return new Promise((resolve, reject) => {
-    try {
-      const { createCanvas, Image } = require('canvas')
-      const img = new Image()
-
-      img.onload = () => {
-        let width = img.width
-        let height = img.height
-        const targetShortEdge = 819 // Maximum size for the shorter edge
-        
-        // Determine which dimension is shorter
-        const isWidthShorter = width < height
-        
-        // Calculate new dimensions ensuring shorter edge is max 819px
-        // while maintaining aspect ratio
-        if (isWidthShorter) {
-          if (width > targetShortEdge) {
-            const aspectRatio = height / width
-            width = targetShortEdge
-            height = Math.round(width * aspectRatio)
-          }
-        } else {
-          if (height > targetShortEdge) {
-            const aspectRatio = width / height
-            height = targetShortEdge
-            width = Math.round(height * aspectRatio)
-          }
-        }
-
-        // Create canvas for resized image
-        const canvas = createCanvas(width, height)
-        const ctx = canvas.getContext('2d')
-
-        // Draw resized image
-        ctx.drawImage(img, 0, 0, width, height)
-
-        // Convert to JPEG with quality adjusted based on image size
-        const quality = 0.7 // Slightly higher quality since we're controlling dimensions
-        const processedDataUrl = canvas.toDataURL('image/jpeg', quality)
-
-        resolve(processedDataUrl)
+  try {
+    // Convert data URL to buffer
+    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Create native image from buffer
+    let img = nativeImage.createFromBuffer(buffer);
+    
+    // Get original dimensions
+    const { width, height } = img.getSize();
+    
+    // Calculate new dimensions with 819px constraint on shorter edge
+    let newWidth = width;
+    let newHeight = height;
+    const targetShortEdge = 819;
+    
+    if (width < height) {
+      // Width is shorter
+      if (width > targetShortEdge) {
+        const aspectRatio = height / width;
+        newWidth = targetShortEdge;
+        newHeight = Math.round(newWidth * aspectRatio);
       }
-
-      img.onerror = (err) => {
-        reject(err)
+    } else {
+      // Height is shorter
+      if (height > targetShortEdge) {
+        const aspectRatio = width / height;
+        newHeight = targetShortEdge;
+        newWidth = Math.round(newHeight * aspectRatio);
       }
-
-      img.src = dataUrl
-    } catch (error) {
-      reject(error)
     }
-  })
+    
+    // Resize image if needed
+    if (newWidth !== width || newHeight !== height) {
+      img = img.resize({ width: newWidth, height: newHeight });
+    }
+    
+    // Convert to JPEG with 70% quality
+    const jpegOptions = { quality: 70 };
+    const jpegBuffer = img.toJPEG(jpegOptions.quality);
+    
+    // Convert back to data URL
+    return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
+  } catch (error) {
+    console.error('Error processing screenshot:', error);
+    // Return original as fallback
+    return dataUrl;
+  }
 }
 
 // Add new listener for receiving summary notification settings
