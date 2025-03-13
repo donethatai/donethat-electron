@@ -391,14 +391,47 @@ async function checkScreenCapturePermission() {
   }
 }
 
-// Start at login
-const appFolder = path.dirname(process.execPath)
-const ourExeName = path.basename(process.execPath)
-const stubLauncher = path.resolve(appFolder, '..', ourExeName)
-app.setLoginItemSettings({
-  openAtLogin: true,
-  path: stubLauncher, // Windows only, one dir higher for latest
-})
+// Fix autostart implementation with platform-specific logic
+function setupAutoStart() {
+  try {
+    if (process.platform === 'win32') {
+      // For Windows, use the exact process path without going up a directory
+      app.setLoginItemSettings({
+        openAtLogin: true,
+        path: process.execPath,
+        args: []
+      });
+      
+      log.info('Windows autostart configured with path:', process.execPath);
+    } else if (process.platform === 'darwin') {
+      // For macOS, use the special path resolution needed for app bundles
+      const appFolder = path.dirname(process.execPath);
+      const exeName = path.basename(process.execPath);
+      const macOSPath = path.resolve(appFolder, '..', exeName);
+      
+      app.setLoginItemSettings({
+        openAtLogin: true,
+        path: macOSPath
+      });
+      
+      log.info('macOS autostart configured with path:', macOSPath);
+    } else {
+      // Linux - include the --no-sandbox flag which is often needed
+      app.setLoginItemSettings({
+        openAtLogin: true,
+        path: process.execPath,
+        args: ['--no-sandbox']
+      });
+      
+      log.info('Linux autostart configured with path:', process.execPath, 'with --no-sandbox flag');
+    }
+    
+    // After update is installed, this will run again with the new executable path
+    // when the app restarts, ensuring the autostart always points to latest version
+  } catch (error) {
+    log.error('Failed to configure autostart:', error);
+  }
+}
 
 app.whenReady().then(async () => {
   // Create tray with initial error icon
@@ -412,6 +445,9 @@ app.whenReady().then(async () => {
   
   tray = new Tray(trayIcon)
   tray.setToolTip('Done That')
+
+  // Call setupAutoStart here to ensure it runs after app is ready
+  setupAutoStart();
 
   // Check screen capture permission
   hasScreenCapturePermission = await checkScreenCapturePermission()
