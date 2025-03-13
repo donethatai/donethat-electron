@@ -105,18 +105,10 @@ function setupAutoUpdater() {
   autoUpdater.allowPrerelease = false
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
-  
-  // Uncomment to check for updates in development mode
-  /*
-  if (!app.isPackaged) {
-    // Instead of trying to modify internal objects, let's use a more direct approach
-    autoUpdater.forceDevUpdateConfig = true;
-    
-  }
-  */
+
 
   autoUpdater.on('update-downloaded', (info) => {
-    console.log('Update downloaded:', info)
+    log.info('Update downloaded:', info.version)
 
     // Send event to renderer to show update view
     if (mainWindow) {
@@ -125,7 +117,15 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('error', (error) => {
-    console.error('Update error:', error);
+    log.error('Update error:', error);
+    
+    // More detailed error logging
+    if (error.stack) {
+      log.error('Error stack:', error.stack);
+    }
+    if (error.code) {
+      log.error('Error code:', error.code);
+    }
   })
 }
 
@@ -416,14 +416,8 @@ function setupAutoStart() {
       
       log.info('macOS autostart configured with path:', macOSPath);
     } else {
-      // Linux - include the --no-sandbox flag which is often needed
-      app.setLoginItemSettings({
-        openAtLogin: true,
-        path: process.execPath,
-        args: ['--no-sandbox']
-      });
-      
-      log.info('Linux autostart configured with path:', process.execPath, 'with --no-sandbox flag');
+      // Linux - autostart is not currently supported
+      log.info('Autostart on Linux is not currently supported');
     }
     
     // After update is installed, this will run again with the new executable path
@@ -478,20 +472,17 @@ app.whenReady().then(async () => {
 
   // Check for updates with proper error handling
   try {
-    if (!app.isPackaged) {
-      console.log('Setting custom update URL for development testing')
-      const options = {
-        provider: 'github',
-        owner: 'donethatai',
-        repo: 'donethat-releases'
-      }
-      await autoUpdater.setFeedURL(options)
+    // Setup updater
+    setupAutoUpdater();
+    
+    if (app.isPackaged) {
+      log.info('Setting up auto-update checks...');
+      scheduleUpdateChecks();
+    } else {
+      log.info('Skipping update checks in development mode');
     }
-
-    await autoUpdater.checkForUpdates()
-    console.log('Update check completed')
   } catch (error) {
-    console.error('Error checking for updates:', error)
+    log.error('Error setting up updater:', error);
   }
 
   // Also check permissions when the app is activated
@@ -1132,6 +1123,25 @@ app.on('browser-window-focus', async () => {
 
 // Add new IPC handler for pausing until tomorrow from renderer
 ipcMain.on('pauseUntilTomorrow', () => {
-  console.log('Pausing recording until tomorrow due to summary submission');
+  log.info('Pausing recording until tomorrow due to summary submission');
   pauseUntilTomorrow();
 });
+
+// Function to handle scheduled update checks
+function scheduleUpdateChecks() {
+  log.info('Setting up update check schedule...');
+  
+  // First check after 1 minute to let the app fully initialize
+  setTimeout(() => {
+    log.info('Running first scheduled update check...');
+    autoUpdater.checkForUpdates()
+      .catch(err => log.error('Error in first update check:', err));
+    
+    // Then check every hour
+    setInterval(() => {
+      log.info('Running hourly update check...');
+      autoUpdater.checkForUpdates()
+        .catch(err => log.error('Error in hourly update check:', err));
+    }, 60 * 60 * 1000);
+  }, 1 * 60 * 1000);
+}

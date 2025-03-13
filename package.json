@@ -1,6 +1,6 @@
 {
   "name": "donethat",
-  "version": "0.1.5",
+  "version": "0.1.0",
   "description": "Remembering your work for you",
   "main": "main.js",
   "scripts": {
@@ -20,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/donethatai/donethat-electron.git"
+    "url": "git+https://github.com/donethatai/donethat-releases.git"
   },
   "author": {
     "name": "Christoph Hartmann",
@@ -56,7 +56,7 @@
     "productName": "Done That",
     "afterSign": "scripts/notarize.js",
     "icon": "resources/icon_inverse.png",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "artifactName": "${productName}-${os}-${arch}.${ext}",
     "files": [
       "main.js",
       "firebase-config.js",
@@ -73,7 +73,8 @@
       {
         "provider": "github",
         "owner": "donethatai",
-        "repo": "donethat-releases"
+        "repo": "donethat-releases",
+        "releaseType": "release"
       }
     ],
     "mac": {
@@ -105,8 +106,7 @@
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        "AppImage"
       ],
       "category": "Utility",
       "desktop": {
