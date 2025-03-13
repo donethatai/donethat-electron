@@ -96,6 +96,20 @@ let iconRecordingPath = path.join(__dirname, 'resources', 'icon_recording.png')
 let iconPausedPath = path.join(__dirname, 'resources', 'icon_paused.png')
 let iconErrorPath = path.join(__dirname, 'resources', 'icon_error.png')
 
+// Add a global variable for the Linux screenshot tool
+let linuxScreenshotTool = null; // Will be 'gnome-screenshot', 'scrot', or 'maim'
+
+// Add global variable for session type
+let isWaylandSession = null;
+
+// Function to check if running on Wayland or X11
+function checkSessionType() {
+  // Check if running on Wayland
+  isWaylandSession = process.env.XDG_SESSION_TYPE === 'wayland';
+  log.info(`Session type: ${isWaylandSession ? 'Wayland' : 'X11'}`);
+  return isWaylandSession;
+}
+
 // Configure autoUpdater
 function setupAutoUpdater() {
   // Use the centralized logger
@@ -132,7 +146,7 @@ function setupAutoUpdater() {
 // Call setup function
 setupAutoUpdater()
 
-// Modified function to capture and send screenshots with Linux-specific handling
+// Use a single unified method for all platforms
 async function captureAndSendScreenshot() {
   if (!idToken) {
     log.warn('Cannot send screenshots: User not authenticated');
@@ -140,33 +154,32 @@ async function captureAndSendScreenshot() {
   }
 
   try {
-    let screenshots = []
+    let screenshots = [];
     
-    // Use different screenshot methods based on platform
+    // Use Linux-specific method on Linux platforms
     if (process.platform === 'linux') {
-      log.info('Using Linux screenshot method');
-      screenshots = await captureScreenshotsLinux()
+      log.info('Using Linux-specific screenshot method');
+      screenshots = await captureScreenshotsLinux();
     } else {
-      log.info('Using Electron desktopCapturer');
+      // Use the standard Electron approach for other platforms
       const sources = await desktopCapturer.getSources({
         types: ['screen'],
         thumbnailSize: { width: 1920, height: 1080 }
-      })
-
+      });
+      
       if (sources.length === 0) {
-        log.warn('No screens detected');
+        log.warn('No screen sources found');
         return;
       }
-
-      log.info(`Found ${sources.length} screen(s)`);
-
-      // Process all screenshots to proper dimensions
+      
+      log.info(`Captured ${sources.length} screen sources`);
+      
+      // Process each source
       screenshots = await Promise.all(
-        sources.map(async (source) => {
-          log.info(`Processing screenshot from source: ${source.name}`);
+        sources.map(async source => {
           return await processScreenshotForUpload(source.thumbnail.toDataURL());
         })
-      )
+      );
     }
     
     if (screenshots.length === 0) {
@@ -174,11 +187,9 @@ async function captureAndSendScreenshot() {
       return;
     }
 
-    log.info(`Captured ${screenshots.length} screenshot(s), preparing to upload...`);
+    log.info(`Processing ${screenshots.length} screenshots for upload`);
 
     const fetch = await import('node-fetch').then(module => module.default);
-
-    log.info('Sending screenshots to server...');
     
     const response = await fetch(FIREBASE_CAPTURE_URL, {
       method: 'POST',
@@ -210,184 +221,301 @@ async function captureAndSendScreenshot() {
   }
 }
 
-// Modified function for Linux screenshot capture with multi-display support
-async function captureScreenshotsLinux() {
+// Linux-specific permission checking and tool detection
+async function checkLinuxScreenCapturePermission() {
+  checkSessionType();
+  // Session type already checked by parent function
   try {
-    const fs = require('fs')
-    const os = require('os')
-    const tempDir = os.tmpdir()
-    const screenshotPath = path.join(tempDir, `screenshot-${Date.now()}.png`)
+    log.info(`Checking Linux screenshot permission (Wayland: ${isWaylandSession})`);
     
-    // Define screenshot tools to try (excluding gnome-screenshot and import)
-    const tools = [
-      { name: 'scrot', cmd: `scrot -m -z "${screenshotPath}"` },
-      { name: 'maim', cmd: `maim "${screenshotPath}"` },             // Alternative modern tool
-      { name: 'spectacle', cmd: `spectacle -b -n -o "${screenshotPath}"` }, // KDE screenshot tool
-      { name: 'flameshot', cmd: `flameshot full -p "${screenshotPath}"` }   // Another alternative
-    ]
-    
-    for (const tool of tools) {
+    // Check available tools based on the environment
+    if (isWaylandSession) {
+      // For Wayland, check if gnome-screenshot is available
       try {
-        // Check if tool exists
-        execSync(`which ${tool.name}`)
+        execSync('which gnome-screenshot', { stdio: 'ignore' });
+        log.info('gnome-screenshot is available for Wayland');
         
-        log.info(`Using ${tool.name} for screenshot: ${tool.cmd}`)
-        execSync(tool.cmd, { timeout: 5000 })
+        // Test if it actually works
+        const fs = require('fs');
+        const os = require('os');
+        const tempDir = os.tmpdir();
+        const testPath = path.join(tempDir, `test-screenshot-${Date.now()}.png`);
         
-        // Check if screenshot was taken successfully
-        if (fs.existsSync(screenshotPath)) {
-          const stats = fs.statSync(screenshotPath)
-          log.info(`Screenshot file size: ${stats.size} bytes`)
-          
-          if (stats.size > 0) {
-            const screenshotData = fs.readFileSync(screenshotPath)
-            const base64Data = `data:image/png;base64,${screenshotData.toString('base64')}`
-            fs.unlinkSync(screenshotPath)
-            
-            // Try to detect multiple displays
-            try {
-              // Get display information using xrandr
-              const displays = await getLinuxDisplays()
-              
-              if (displays.length > 1) {
-                // If we have multiple displays, try to split the screenshot
-                // Convert base64 to buffer for nativeImage
-                const imageBuffer = Buffer.from(base64Data.replace(/^data:image\/\w+;base64,/, ''), 'base64')
-                
-                // Use Electron's nativeImage to crop the screenshots
-                const croppedImages = await cropScreenshotsWithNativeImage(imageBuffer, displays)
-                return croppedImages
-              }
-            } catch (e) {
-              log.info(`Failed to process multi-display: ${e.message}, using full screenshot`)
-            }
-            
-            // If multi-display handling fails or there's only one display,
-            // process the single full screenshot
-            const processedImage = await processScreenshotForUpload(base64Data)
-            return [processedImage]
-          } else {
-            log.info(`${tool.name} created an empty file, trying next tool`)
-          }
-        } else {
-          log.info(`${tool.name} did not create a file, trying next tool`)
+        // Try to take a test screenshot 
+        execSync(`gnome-screenshot -f "${testPath}"`, { timeout: 3000 });
+        
+        if (fs.existsSync(testPath)) {
+          fs.unlinkSync(testPath);
+          linuxScreenshotTool = 'gnome-screenshot';
+          log.info('gnome-screenshot permission test successful');
+          return true;
         }
       } catch (e) {
-        log.info(`${tool.name} failed: ${e.message}`)
-        // Continue to next tool
+        log.warn(`gnome-screenshot not available or failed: ${e.message}`);
       }
+      
+      log.error('No working screenshot tool found for Wayland');
+      linuxScreenshotTool = null;
+      return false;
+    } else {
+      // For X11, try scrot first, then maim
+      try {
+        execSync('which scrot', { stdio: 'ignore' });
+        log.info('scrot is available for X11');
+        
+        // Test if it works
+        const fs = require('fs');
+        const os = require('os');
+        const tempDir = os.tmpdir();
+        const testPath = path.join(tempDir, `test-screenshot-${Date.now()}.png`);
+        
+        execSync(`scrot -z "${testPath}"`, { timeout: 3000 });
+        
+        if (fs.existsSync(testPath)) {
+          fs.unlinkSync(testPath);
+          linuxScreenshotTool = 'scrot';
+          log.info('scrot permission test successful');
+          return true;
+        }
+      } catch (e) {
+        log.warn(`scrot not available or failed: ${e.message}`);
+      }
+      
+      // Try maim as alternative
+      try {
+        execSync('which maim', { stdio: 'ignore' });
+        log.info('maim is available for X11');
+        
+        // Test if it works
+        const fs = require('fs');
+        const os = require('os');
+        const tempDir = os.tmpdir();
+        const testPath = path.join(tempDir, `test-screenshot-${Date.now()}.png`);
+        
+        execSync(`maim "${testPath}"`, { timeout: 3000 });
+        
+        if (fs.existsSync(testPath)) {
+          fs.unlinkSync(testPath);
+          linuxScreenshotTool = 'maim';
+          log.info('maim permission test successful');
+          return true;
+        }
+      } catch (e) {
+        log.warn(`maim not available or failed: ${e.message}`);
+      }
+      
+      log.error('No working screenshot tool found for X11');
+      linuxScreenshotTool = null;
+      return false;
     }
-    
-    // If we got here, all tools failed
-    log.error('No screenshot tools were successful. Please install scrot: sudo apt-get install scrot. Fallbacks are maim, kde-spectacle, flameshot, or shutter.')
-    return []
   } catch (error) {
-    log.error('Failed to capture Linux screenshot:', error)
-    return []
+    log.error('Linux screenshot permission check failed:', error);
+    linuxScreenshotTool = null;
+    return false;
   }
 }
 
-// Helper function to get display information on Linux
-async function getLinuxDisplays() {
+// Function to check screen capture permission
+async function checkScreenCapturePermission() {
   try {
-    // Try to get display info using xrandr
-    const xrandrOutput = execSync('xrandr --current').toString()
-    const displays = []
-    
-    // Parse xrandr output to find connected displays
-    const displayRegex = /(\S+) connected.*?(\d+)x(\d+)\+(\d+)\+(\d+)/g
-    let match
-    
-    while ((match = displayRegex.exec(xrandrOutput)) !== null) {
-      const [, name, width, height, x, y] = match
-      displays.push({
-        name,
-        width: parseInt(width, 10),
-        height: parseInt(height, 10),
-        x: parseInt(x, 10),
-        y: parseInt(y, 10)
-      })
-      
-      if (debug) log.info(`Detected display: ${name} ${width}x${height}+${x}+${y}`)
+    // Linux-specific handling
+    if (process.platform === 'linux') {    
+      hasScreenCapturePermission = await checkLinuxScreenCapturePermission();
+      return hasScreenCapturePermission;
     }
     
-    return displays
+    // For other platforms (macOS, Windows)
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1, height: 1 }
+    });
+    
+    hasScreenCapturePermission = sources && sources.length > 0;
+    return hasScreenCapturePermission;
   } catch (error) {
-    if (debug) log.info(`Failed to get display information: ${error.message}`)
-    // Return a default display if xrandr fails
-    return [{ name: 'default', width: 1920, height: 1080, x: 0, y: 0 }]
+    console.error('Error checking screen capture permission:', error);
+    hasScreenCapturePermission = false;
+    return false;
+  }
+}
+
+// Simplified Linux screenshot function using the detected tool
+async function captureScreenshotsLinux() {
+  try {
+    // If no tool was found during permission check, abort
+    if (!linuxScreenshotTool) {
+      log.error('No screenshot tool available for Linux');
+      return [];
+    }
+    
+    const fs = require('fs');
+    const os = require('os');
+    const tempDir = os.tmpdir();
+    const screenshotPath = path.join(tempDir, `screenshot-${Date.now()}.png`);
+    
+    // Use the appropriate tool based on what was detected
+    if (linuxScreenshotTool === 'gnome-screenshot') {
+      // For Wayland with gnome-screenshot
+      try {
+        // Save original animation and sound settings to restore later
+        const getOriginalAnimationSetting = execSync('gsettings get org.gnome.desktop.interface enable-animations').toString().trim();
+        const getOriginalSoundSetting = execSync('gsettings get org.gnome.desktop.sound event-sounds').toString().trim();
+        
+        try {
+          // Disable animations and sounds
+          execSync('gsettings set org.gnome.desktop.interface enable-animations false');
+          execSync('gsettings set org.gnome.desktop.sound event-sounds false');
+          
+          // Take screenshot with gnome-screenshot
+          execSync(`gnome-screenshot -f "${screenshotPath}"`, { timeout: 5000 });
+        } finally {
+          // Restore original settings (even if screenshot fails)
+          execSync(`gsettings set org.gnome.desktop.interface enable-animations ${getOriginalAnimationSetting}`);
+          execSync(`gsettings set org.gnome.desktop.sound event-sounds ${getOriginalSoundSetting}`);
+        }
+      } catch (e) {
+        log.error(`gnome-screenshot failed: ${e.message}`);
+        return [];
+      }
+    } else if (linuxScreenshotTool === 'scrot') {
+      // For X11 with scrot
+      try {
+        execSync(`scrot -z "${screenshotPath}"`, { timeout: 5000 });
+      } catch (e) {
+        log.error(`scrot failed: ${e.message}`);
+        return [];
+      }
+    } else if (linuxScreenshotTool === 'maim') {
+      // For X11 with maim
+      try {
+        execSync(`maim "${screenshotPath}"`, { timeout: 5000 });
+      } catch (e) {
+        log.error(`maim failed: ${e.message}`);
+        return [];
+      }
+    } else {
+      log.error(`Unknown screenshot tool: ${linuxScreenshotTool}`);
+      return [];
+    }
+    
+    // Process the screenshot if it was created successfully
+    if (fs.existsSync(screenshotPath) && fs.statSync(screenshotPath).size > 0) {
+      log.info(`Screenshot captured successfully with ${linuxScreenshotTool}`);
+      const screenshotData = fs.readFileSync(screenshotPath);
+      const base64Data = `data:image/png;base64,${screenshotData.toString('base64')}`;
+      fs.unlinkSync(screenshotPath);
+      
+      // For multi-monitor setups
+      if (linuxScreenshotTool === 'gnome-screenshot') {
+        // Process for all displays if needed
+        const displays = await getLinuxDisplays();
+        
+        if (displays.length <= 1) {
+          // If only one display, just process the whole image
+          const processedImage = await processScreenshotForUpload(base64Data);
+          return [processedImage];
+        } else {
+          // For multiple displays, crop the image for each display
+          return await cropScreenshotsWithNativeImage(
+            Buffer.from(base64Data.split(',')[1], 'base64'),
+            displays.map(d => d.bounds)
+          );
+        }
+      } else {
+        // For scrot and maim, just process the whole image
+        const processedImage = await processScreenshotForUpload(base64Data);
+        return [processedImage];
+      }
+    } else {
+      log.error('Screenshot file was not created or is empty');
+      return [];
+    }
+  } catch (error) {
+    log.error('Failed to capture Linux screenshot:', error);
+    return [];
   }
 }
 
 // Modified function to crop screenshots using Electron's nativeImage
 async function cropScreenshotsWithNativeImage(imageBuffer, displays) {
   try {
-    const results = []
+    const results = [];
     
     // Create nativeImage from buffer
-    const fullImage = nativeImage.createFromBuffer(imageBuffer)
+    const fullImage = nativeImage.createFromBuffer(imageBuffer);
     
     for (const display of displays) {
-      const { width, height, x, y } = display
+      const { width, height, x, y } = display;
       
       // Crop the image for this display
-      const croppedImage = fullImage.crop({ x, y, width, height })
+      const croppedImage = fullImage.crop({ x, y, width, height });
       
       // Convert to data URL
-      const dataUrl = croppedImage.toDataURL()
+      const dataUrl = croppedImage.toDataURL();
       
       // Process the cropped screenshot
-      const processedImage = await processScreenshotForUpload(dataUrl)
-      results.push(processedImage)
+      const processedImage = await processScreenshotForUpload(dataUrl);
+      results.push(processedImage);
     }
     
-    return results
+    return results;
   } catch (error) {
-    log.error('Error cropping screenshots:', error)
+    log.error('Error cropping screenshots:', error);
     // Fall back to processing the full image
-    const dataUrl = nativeImage.createFromBuffer(imageBuffer).toDataURL()
-    const processedImage = await processScreenshotForUpload(dataUrl)
-    return [processedImage]
+    const dataUrl = nativeImage.createFromBuffer(imageBuffer).toDataURL();
+    const processedImage = await processScreenshotForUpload(dataUrl);
+    return [processedImage];
   }
 }
 
-// Modified checkScreenCapturePermission function
-async function checkScreenCapturePermission() {
+// Helper function to get Linux display information for multi-monitor setups
+async function getLinuxDisplays() {
   try {
-    // For Linux, we'll check if we have one of the screenshot tools available
-    if (process.platform === 'linux') {
-      try {
-        // Try to detect if any screenshot tool is available
-        execSync('which gnome-screenshot || which scrot || which import')
-        hasScreenCapturePermission = true
-        return true
-      } catch (e) {
-        console.error('No screenshot tools available on Linux')
-        hasScreenCapturePermission = false
-        return false
+    // For X11, we can use xrandr to get display information
+    if (process.env.XDG_SESSION_TYPE !== 'wayland') {
+      const { execSync } = require('child_process');
+      const xrandrOutput = execSync('xrandr --current').toString();
+      
+      // Parse the output to get display information
+      const displays = [];
+      const displayRegex = /(\S+) connected (\d+)x(\d+)\+(\d+)\+(\d+)/g;
+      let match;
+      
+      while ((match = displayRegex.exec(xrandrOutput)) !== null) {
+        const [, name, width, height, x, y] = match;
+        displays.push({
+          name,
+          bounds: {
+            x: parseInt(x),
+            y: parseInt(y),
+            width: parseInt(width),
+            height: parseInt(height)
+          }
+        });
+      }
+      
+      if (displays.length > 0) {
+        log.info(`Found ${displays.length} displays using xrandr`);
+        return displays;
       }
     }
     
-    // For other platforms, use the existing method
-    await new Promise(resolve => setTimeout(resolve, 500))
+    // Fallback to electron's screen module
+    const displays = screen.getAllDisplays().map(display => ({
+      name: `Display ${display.id}`,
+      bounds: display.bounds
+    }));
     
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 1, height: 1 },
-      fetchWindowIcons: false
-    })
-    
-    if (sources && sources.length > 0) {
-      hasScreenCapturePermission = true
-      return true
-    }
-    
-    hasScreenCapturePermission = false
-    return false
+    log.info(`Found ${displays.length} displays using Electron screen API`);
+    return displays;
   } catch (error) {
-    console.error('Error checking screen capture permission:', error)
-    hasScreenCapturePermission = false
-    return false
+    log.error('Failed to get Linux displays:', error);
+    // Default to the primary display
+    const primaryDisplay = screen.getPrimaryDisplay();
+    return [{
+      name: 'Primary Display',
+      bounds: primaryDisplay.bounds
+    }];
   }
 }
 
@@ -488,8 +616,13 @@ app.whenReady().then(async () => {
   // Also check permissions when the app is activated
   app.on('activate', async () => {
     hasScreenCapturePermission = await checkScreenCapturePermission();
+    log.warn(`A Sending permission check result: hasPermission=${hasScreenCapturePermission}, isWaylandSession=${isWaylandSession}`);
+
     if (mainWindow) {
-      mainWindow.webContents.send('screenCapturePermission', hasScreenCapturePermission);
+      mainWindow.webContents.send('screenCapturePermission', {
+        hasPermission: hasScreenCapturePermission,
+        isWaylandSession: isWaylandSession
+      });
     }
   });
 
@@ -522,7 +655,10 @@ ipcMain.on('login', (event, token) => {
 
   // Send permission status to renderer
   if (mainWindow) {
-    mainWindow.webContents.send('screenCapturePermission', hasScreenCapturePermission)
+    mainWindow.webContents.send('screenCapturePermission', {
+      hasPermission: hasScreenCapturePermission,
+      isWaylandSession: isWaylandSession
+    });
   }
 })
 
@@ -760,7 +896,10 @@ function createWindow() {
 
     // Position the window once it's ready.
     mainWindow.once('ready-to-show', () => {
-      mainWindow.webContents.send('screenCapturePermission', hasScreenCapturePermission)
+      mainWindow.webContents.send('screenCapturePermission', {
+        hasPermission: hasScreenCapturePermission,
+        isWaylandSession: isWaylandSession
+      });
     })
 
     mainWindow.on('blur', () => {
@@ -1047,7 +1186,7 @@ app.on('before-quit', () => {
   if (summaryNotificationTimeout) {
     clearTimeout(summaryNotificationTimeout);
   }
-});
+})
 
 // Modify the window-all-closed handler to respect system quit
 app.on('window-all-closed', (event) => {
@@ -1078,8 +1217,13 @@ ipcMain.on('requestScreenCapturePermission', async () => {
   // After opening settings, we should check permission again when app regains focus
   app.on('browser-window-focus', async () => {
     const hasPermission = await checkScreenCapturePermission()
+    log.warn(`S Sending permission check result: hasPermission=${hasScreenCapturePermission}, isWaylandSession=${isWaylandSession}`);
+
     if (hasPermission && mainWindow) {
-      mainWindow.webContents.send('screenCapturePermission', true)
+      mainWindow.webContents.send('screenCapturePermission', {
+        hasPermission: hasPermission,
+        isWaylandSession: isWaylandSession
+      });
 
       // Update icon and start recording if logged in
       if (idToken && !isPaused) {
@@ -1104,20 +1248,39 @@ ipcMain.on('initialAuthCheck', (event, isAuthenticated) => {
   }
 })
 
-// Update the focus handler to be more specific
+// Update the focus handler to use the global isWaylandSession variable
 app.on('browser-window-focus', async () => {
   const oldPermission = hasScreenCapturePermission;
   hasScreenCapturePermission = await checkScreenCapturePermission();
   
   // Only send update if permission status actually changed
   if (oldPermission !== hasScreenCapturePermission && mainWindow) {
-    mainWindow.webContents.send('screenCapturePermission', hasScreenCapturePermission);
+    // Use the global isWaylandSession variable
+    mainWindow.webContents.send('screenCapturePermission', {
+      hasPermission: hasScreenCapturePermission,
+      isWaylandSession: isWaylandSession
+    });
     
     // Update icon and recording state if needed
     if (hasScreenCapturePermission && idToken && !isPaused) {
       updateTrayIcon(true);
       startRecording();
     }
+  }
+});
+
+// Also update the explicit permission check handler
+ipcMain.on('checkScreenCapturePermission', async () => {
+  hasScreenCapturePermission = await checkScreenCapturePermission();
+  
+  if (mainWindow) {
+    log.warn(`Sending permission check result: hasPermission=${hasScreenCapturePermission}, isWaylandSession=${isWaylandSession}`);
+    
+    // Send both permission status and session type
+    mainWindow.webContents.send('screenCapturePermission', {
+      hasPermission: hasScreenCapturePermission,
+      isWaylandSession: isWaylandSession
+    });
   }
 });
 

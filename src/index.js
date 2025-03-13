@@ -94,21 +94,58 @@ let recipientEmails = [];
 // Update variable reference to the new summary spinner
 const summaryLoadingSpinner = document.getElementById("summaryLoadingSpinner");
 
-// Listen for screen capture permission updates
-ipcRenderer.on("screenCapturePermission", (event, hasPermission) => {
+// Modify the existing screenCapturePermission listener to include session type
+ipcRenderer.on('screenCapturePermission', (event, data) => {
+  // Extract permission status and session type (if provided)
+  const hasPermission = typeof data === 'object' ? data.hasPermission : data;
+  const isWaylandSession = typeof data === 'object' ? data.isWaylandSession : null;
+  
+  console.log(`Permission update received: hasPermission=${hasPermission}, isWaylandSession=${isWaylandSession}`);
+  
   hasScreenCapturePermission = hasPermission;
   
   // Update UI based on permission status
   if (userIdToken) {
     if (hasPermission) {
-      permissionView.classList.add("hidden");
-      dashboardView.classList.remove("hidden");
+      permissionView.classList.add('hidden');
+      dashboardView.classList.remove('hidden');
     } else {
-      dashboardView.classList.add("hidden");
-      permissionView.classList.remove("hidden");
+      dashboardView.classList.add('hidden');
+      permissionView.classList.remove('hidden');
+      
+      // If on Linux, update installation instructions based on session type
+      if (process.platform === 'linux' && isWaylandSession !== null) {
+        updateLinuxInstructions(isWaylandSession);
+      }
     }
   }
 });
+
+// Simplified function to update Linux installation instructions
+function updateLinuxInstructions(isWaylandSession) {
+  console.log(`Updating Linux instructions, Wayland: ${isWaylandSession}`);
+  
+  const standardPermissionSection = document.getElementById('standardPermissionSection');
+  const linuxInstallSection = document.getElementById('linuxInstallSection');
+  
+  // Show Linux install instructions
+  standardPermissionSection.classList.add('hidden');
+  linuxInstallSection.classList.remove('hidden');
+  
+  // Hide all instruction sets first
+  const waylandInstructions = document.getElementById('waylandInstructions');
+  const x11Instructions = document.getElementById('x11Instructions');
+  
+  waylandInstructions.classList.add('hidden');
+  x11Instructions.classList.add('hidden');
+  
+  // Show appropriate instructions based on session type
+  if (isWaylandSession) {
+    waylandInstructions.classList.remove('hidden');
+  } else {
+    x11Instructions.classList.remove('hidden');
+  }
+}
 
 // Simplify the check notification permission function completely
 async function checkNotificationPermission() {
@@ -159,6 +196,10 @@ onAuthStateChanged(auth, (user) => {
       permissionView.classList.remove("hidden");
     }
     
+    // Show logout buttons when logged in
+    if (logoutLink) logoutLink.classList.remove("hidden");
+    if (logoutFromPermission) logoutFromPermission.classList.remove("hidden");
+    
     // First, get the initial token
     user.getIdToken().then(idToken => {
       userIdToken = idToken;
@@ -188,6 +229,10 @@ onAuthStateChanged(auth, (user) => {
     permissionView.classList.add("hidden");
     signInView.classList.remove("hidden");
     userIdToken = null;
+    
+    // Hide logout buttons when not logged in
+    if (logoutLink) logoutLink.classList.add("hidden");
+    if (logoutFromPermission) logoutFromPermission.classList.add("hidden");
     
     // Clear email state when logged out
     recipientEmails = [];

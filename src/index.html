@@ -188,7 +188,7 @@
           <a href="#" id="settingsBtn" class="link">
             Settings
           </a>
-          <a href="#" id="logoutLink" class="link">
+          <a href="#" id="logoutLink" class="link hidden">
             Logout
           </a>
         </div>
@@ -206,12 +206,44 @@
           <p class="text-sm text-gray-600 mb-4">
             Your privacy is protected. Screenshots are encrypted and stored securely.
           </p>
-          <button id="openSettingsBtn" class="btn-primary">
-            Open System Settings
-          </button>
+          
+          <!-- Standard permission button (for macOS/Windows) -->
+          <div id="standardPermissionSection">
+            <button id="openSettingsBtn" class="btn-primary">
+              Open System Settings
+            </button>
+          </div>
+          
+          <!-- Linux-specific installation instructions (hidden by default) -->
+          <div id="linuxInstallSection" class="hidden">
+            <h3 class="linux-section-heading">Screenshot Tool Required</h3>
+            <p class="instruction-text">
+              Done That requires a screenshot tool that is not currently installed on your system.
+            </p>
+            
+            <!-- Wayland instructions -->
+            <div id="waylandInstructions" class="hidden linux-install-instructions">
+              <p class="instruction-text font-medium">You are running Wayland. Please install:</p>
+              <div class="code-block">
+                <code>sudo apt install gnome-screenshot</code>
+              </div>
+            </div>
+            
+            <!-- X11 instructions -->
+            <div id="x11Instructions" class="hidden linux-install-instructions">
+              <p class="instruction-text font-medium">You are running X11. Please install one of:</p>
+              <div class="code-block">
+                <code>sudo apt install scrot</code>
+              </div>
+              <p class="instruction-text text-xs mt-2">Alternative:</p>
+              <div class="code-block">
+                <code>sudo apt install maim</code>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="mt-2 text-center">
-          <a href="#" id="logoutFromPermission" class="link">
+          <a href="#" id="logoutFromPermission" class="link hidden">
             Logout
           </a>
         </div>

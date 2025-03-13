@@ -1,6 +1,6 @@
 {
   "name": "donethat",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "Remembering your work for you",
   "main": "main.js",
   "scripts": {
