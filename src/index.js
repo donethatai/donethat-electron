@@ -800,7 +800,7 @@ if (addEmailBtn) {
   console.error("Add email button not found");
 }
 
-// Allow adding emails by pressing Enter
+// Email input handling
 if (emailInput) {
   emailInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
@@ -811,8 +811,6 @@ if (emailInput) {
       }
     }
   });
-} else {
-  console.error("Email input not found");
 }
 
 // Event delegation for removing emails
@@ -1154,17 +1152,25 @@ if (slackInput) {
   });
 }
 
-// Add this function to handle page navigation
-window.loadPage = (page) => {
-  const mainContent = document.getElementById('mainContent');
-  if (mainContent) {
-    fetch(`${page}.html`)
-      .then(response => response.text())
-      .then(html => {
-        mainContent.innerHTML = html;
-      })
-      .catch(error => {
-        console.error('Error loading page:', error);
-      });
-  }
-};
+// Slack input handling
+if (slackInput) {
+  slackInput.addEventListener('keypress', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const currentValue = slackInput.value.trim();
+      
+      // Only handle channel updates since input is disabled when not connected
+      if (currentValue !== slackChannel) {
+        try {
+          await slackUpdateChannelFunction({ channel: currentValue });
+          slackChannel = currentValue;
+          updateSlackInputState(true, undefined, currentValue);
+        } catch (error) {
+          console.error('Error updating Slack channel:', error);
+          alert('Error updating Slack channel: ' + error.message);
+          slackInput.value = slackChannel; // Reset to previous value
+        }
+      }
+    }
+  });
+}
