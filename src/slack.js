@@ -15,8 +15,10 @@ const slackUpdateChannelFunction = httpsCallable(functions, 'slackUpdateChannel'
 let slackConnected = false;
 let slackChannel = '';
 
-// Add loadUserSettings as a module-level variable
+// Update module variables to store the spinner functions
 let loadUserSettingsCallback = null;
+let showSpinner = null;
+let hideSpinner = null;
 
 // Helper function to update Slack UI elements
 function updateSlackUI(connected, team = '') {
@@ -44,10 +46,12 @@ function updateSlackUI(connected, team = '') {
   }
 }
 
-// Helper function for Slack connection
+// Helper function for Slack connection - no spinner involved
 async function handleSlackConnect() {
   try {
     console.log("handleSlackConnect");
+    // No spinner for the connection process
+    
     const result = await slackConnectFunction();
     const authWindow = window.open(result.data.authUrl);
     
@@ -161,8 +165,11 @@ function updateButtonState(isDisconnectButton = false) {
   `;
 }
 
-function initializeSlack(onSettingsUpdate) {
+// Update the initialization function to accept spinner functions
+function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinner) {
   loadUserSettingsCallback = onSettingsUpdate;
+  showSpinner = showBlockingSpinner;
+  hideSpinner = hideBlockingSpinner;
   
   const connectSlackBtn = document.getElementById('connectSlackBtn');
   const slackActionBtn = document.getElementById('slackActionBtn');
@@ -180,28 +187,45 @@ function initializeSlack(onSettingsUpdate) {
         if (currentChannel === slackChannel) {
           if (confirm('Are you sure you want to disconnect from Slack?')) {
             try {
+              // Show blocking spinner
+              showSpinner();
+              
               await slackDisconnectFunction();
               updateSlackUI(false);
               updateSlackInputState(false);
+              
+              if (loadUserSettingsCallback) loadUserSettingsCallback();
             } catch (error) {
               console.error('Error disconnecting from Slack:', error);
               alert('Error disconnecting from Slack: ' + error.message);
+            } finally {
+              // Hide blocking spinner
+              hideSpinner();
             }
           }
         } else {
           try {
+            // Show blocking spinner
+            showSpinner();
+            
             await slackUpdateChannelFunction({ channel: currentChannel });
             updateSlackInputState(true, undefined, currentChannel);
+            
+            if (loadUserSettingsCallback) loadUserSettingsCallback();
           } catch (error) {
             console.error('Error updating Slack channel:', error);
             if (error.message.includes('not found')) {
-                alert("Could not find channel. If you are using a private channel, make sure you have invited the bot to the channel.");
+              alert("Could not find channel. If you are using a private channel, make sure you have invited the bot to the channel.");
             }
             slackInput.value = slackChannel;
             updateButtonState(true);
+          } finally {
+            // Hide blocking spinner
+            hideSpinner();
           }
         }
       } else {
+        // No spinner for connection - just call handleSlackConnect
         await handleSlackConnect();
       }
     });
@@ -220,13 +244,21 @@ function initializeSlack(onSettingsUpdate) {
         
         if (slackConnected && currentValue !== slackChannel) {
           try {
+            // Use the Tailwind blocking spinner
+            showSpinner();
+            
             await slackUpdateChannelFunction({ channel: currentValue });
             updateSlackInputState(true, undefined, currentValue);
+            
+            if (loadUserSettingsCallback) loadUserSettingsCallback();
           } catch (error) {
             console.error('Error updating Slack channel:', error);
             alert('Error updating Slack channel: ' + error.message);
             slackInput.value = slackChannel;
             updateButtonState(true);
+          } finally {
+            // Use the Tailwind hide function
+            hideSpinner();
           }
         }
       }

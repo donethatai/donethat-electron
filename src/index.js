@@ -187,20 +187,50 @@ async function updateNotificationUI() {
   }
 }
 
-// Get the auth state listener to store the ID token when state changes
+// Update the auth state listener to handle default view logic
 onAuthStateChanged(auth, (user) => {
   if (user) {
     signInView.classList.add("hidden");
     signUpView.classList.add("hidden");
     resetView.classList.add("hidden");
-    settingsView.classList.add("hidden");
     
     // Show either dashboard or permission view based on screen capture permission
     if (hasScreenCapturePermission) {
-      permissionView.classList.add("hidden");
-      dashboardView.classList.remove("hidden");
+      // First check if we have any settings configured
+      getUserSettingsFunction().then(result => {
+        const hasEmails = result.data?.emailRecipients?.length > 0;
+        const hasSlack = result.data?.slack?.defaultChannel;
+        
+        if (!hasEmails && !hasSlack) {
+          // No configuration - show settings without back button
+          dashboardView.classList.add("hidden");
+          permissionView.classList.add("hidden");
+          settingsView.classList.remove("hidden");
+          
+          // Hide the back to dashboard button
+          if (backToDashboardBtn) {
+            backToDashboardBtn.classList.add("hidden");
+          }
+        } else {
+          // Has configuration - show dashboard
+          settingsView.classList.add("hidden");
+          permissionView.classList.add("hidden");
+          dashboardView.classList.remove("hidden");
+          
+          // Show the back to dashboard button in settings
+          if (backToDashboardBtn) {
+            backToDashboardBtn.classList.remove("hidden");
+          }
+        }
+        
+        // Load settings regardless of which view is shown
+        loadUserSettings();
+      }).catch(error => {
+        console.error("Error checking user settings:", error);
+      });
     } else {
       dashboardView.classList.add("hidden");
+      settingsView.classList.add("hidden");
       permissionView.classList.remove("hidden");
     }
     
@@ -212,7 +242,6 @@ onAuthStateChanged(auth, (user) => {
     user.getIdToken().then(idToken => {
       userIdToken = idToken;
       ipcRenderer.send("login", idToken);
-      loadUserSettings();
       
       // Set up a token refresh listener
       const refreshInterval = setInterval(async () => {
@@ -384,12 +413,12 @@ function resetSummaryState() {
     '<p class="empty-state-text">Generate a summary to see your activities.</p>';
 }
 
-// Updated loadUserSettings to also check notification permission
+// Updated loadUserSettings to include back button visibility
 async function loadUserSettings() {
   if (!auth.currentUser) return;
   
   try {
-    loadingSpinner.classList.remove("hidden");
+    showBlockingSpinner();
     
     // Reset state
     recipientEmails = [];
@@ -397,6 +426,7 @@ async function loadUserSettings() {
     
     const result = await getUserSettingsFunction();
     
+    // Handle email recipients
     if (result.data && 
         result.data.emailRecipients && 
         Array.isArray(result.data.emailRecipients) && 
@@ -410,9 +440,6 @@ async function loadUserSettings() {
       
       // Render the email tags
       renderEmailTags();
-    } else {
-      // No emails, show empty state
-      emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
     }
     
     // Handle Slack settings using both imported functions
@@ -446,11 +473,22 @@ async function loadUserSettings() {
     // Update notification UI based on permission
     await updateNotificationUI();
     
+    // Handle back button visibility based on configuration
+    if (backToDashboardBtn) {
+      const hasEmails = result.data?.emailRecipients?.length > 0;
+      const hasSlack = result.data?.slack?.defaultChannel;
+      
+      if (!hasEmails && !hasSlack) {
+        backToDashboardBtn.classList.add("hidden");
+      } else {
+        backToDashboardBtn.classList.remove("hidden");
+      }
+    }
+    
   } catch (error) {
     console.error("Error loading settings:", error);
-    emailTagsContainer.innerHTML = '<p class="empty-state-text">Error loading recipients. Please try again.</p>';
   } finally {
-    loadingSpinner.classList.add("hidden");
+    hideBlockingSpinner();
   }
 }
 
@@ -459,12 +497,7 @@ function renderEmailTags() {
   // Clear container first
   emailTagsContainer.innerHTML = "";
   
-  if (recipientEmails.length === 0) {
-    emailTagsContainer.innerHTML = '<p class="empty-state-text">No recipients added. Add emails to receive your summaries.</p>';
-    return;
-  }
-  
-  // Create a tag for each email
+  // Remove the empty state message condition and just render tags
   recipientEmails.forEach(email => {
     const tag = document.createElement("div");
     tag.className = "email-tag";
@@ -485,7 +518,7 @@ async function saveUserSettings(type, value) {
   
   // Use the appropriate spinner based on the setting type
   if (type === 'emails') {
-    loadingSpinner.classList.remove("hidden");
+    showBlockingSpinner();
   } else if (type === 'notificationTime') {
     const timeLoadingSpinner = document.getElementById("timeLoadingSpinner");
     if (timeLoadingSpinner) {
@@ -515,7 +548,7 @@ async function saveUserSettings(type, value) {
   } finally {
     // Hide the appropriate spinner
     if (type === 'emails') {
-      loadingSpinner.classList.add("hidden");
+      hideBlockingSpinner();
     } else if (type === 'notificationTime') {
       const timeLoadingSpinner = document.getElementById("timeLoadingSpinner");
       if (timeLoadingSpinner) {
@@ -541,7 +574,7 @@ async function addEmailTag(email) {
     return;
   }
   
-  loadingSpinner.classList.remove("hidden");
+  showBlockingSpinner();
   
   try {
     // Add to our local array
@@ -555,6 +588,9 @@ async function addEmailTag(email) {
     
     // Save to server
     await saveUserSettings('emails', recipientEmails);
+    
+    // Call loadUserSettings to update UI based on new state
+    await loadUserSettings();
   } catch (error) {
     // If error, remove the email we just added
     recipientEmails = recipientEmails.filter(e => e !== email);
@@ -563,7 +599,7 @@ async function addEmailTag(email) {
     console.error("Error saving settings:", error);
     alert(`Error saving: ${error.message}`);
   } finally {
-    loadingSpinner.classList.add("hidden");
+    hideBlockingSpinner();
   }
 }
 
@@ -571,7 +607,7 @@ async function addEmailTag(email) {
 async function removeEmailTag(email) {
   if (!email || !recipientEmails.includes(email)) return;
   
-  loadingSpinner.classList.remove("hidden");
+  showBlockingSpinner();
   
   try {
     // Create a backup of the current list
@@ -585,6 +621,9 @@ async function removeEmailTag(email) {
     
     // Save to server
     await saveUserSettings('emails', recipientEmails);
+    
+    // Call loadUserSettings to update UI based on new state
+    await loadUserSettings();
   } catch (error) {
     // If error, restore original list
     recipientEmails = originalList;
@@ -593,7 +632,7 @@ async function removeEmailTag(email) {
     console.error("Error saving settings:", error);
     alert(`Error saving: ${error.message}`);
   } finally {
-    loadingSpinner.classList.add("hidden");
+    hideBlockingSpinner();
   }
 }
 
@@ -761,18 +800,8 @@ if (settingsBtn) {
     // Reset summary state when leaving dashboard
     resetSummaryState();
     
-    // Update the time input to the current value
-    const notificationTimeInput = document.getElementById("notificationTimeInput");
-    if (notificationTimeInput) {
-      notificationTimeInput.value = summaryNotificationTime;
-    }
-    
-    // Ensure we have fresh references to the containers
-    const notificationTimeContainer = document.getElementById("notificationTimeContainer");
-    const notificationPermissionContainer = document.getElementById("notificationPermissionContainer");
-    
-    // Check notification permissions when settings view is shown
-    await updateNotificationUI();
+    // Load settings which will handle back button visibility
+    await loadUserSettings();
   });
 } else {
   console.error("Settings button not found");
@@ -923,5 +952,31 @@ if (restartForUpdateBtn) {
 
 // Initialize Slack functionality after DOM content is loaded
 document.addEventListener('DOMContentLoaded', () => {
-  initializeSlack(loadUserSettings);
+  // Pass the spinner functions as additional parameters
+  initializeSlack(loadUserSettings, showBlockingSpinner, hideBlockingSpinner);
 });
+
+// Function to create an overlay that blocks interactions
+function showBlockingSpinner() {
+  const loadingSpinner = document.getElementById("loadingSpinner");
+  if (loadingSpinner) {
+    // Add classes to ensure it blocks interaction
+    loadingSpinner.classList.remove("hidden");
+    loadingSpinner.classList.add("fixed", "inset-0", "z-50", "bg-white", "bg-opacity-70");
+    
+    // Prevent scrolling while spinner is active
+    document.body.style.overflow = "hidden";
+  }
+}
+
+// Function to hide the blocking spinner
+function hideBlockingSpinner() {
+  const loadingSpinner = document.getElementById("loadingSpinner");
+  if (loadingSpinner) {
+    loadingSpinner.classList.add("hidden");
+    loadingSpinner.classList.remove("fixed", "inset-0", "z-50", "bg-white", "bg-opacity-70");
+    
+    // Re-enable scrolling
+    document.body.style.overflow = "";
+  }
+}

@@ -21,6 +21,27 @@
     <title>Done That</title>
     <!-- Local Tailwind CSS -->
     <link href="../build/output.css" rel="stylesheet" />
+    <!-- Add this CSS to ensure the spinner overlay blocks interactions -->
+    <style>
+      .spinner-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(255, 255, 255, 0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10; /* Ensure it's above other elements */
+        pointer-events: all; /* This is crucial - it ensures clicks don't pass through */
+      }
+      
+      /* Make sure the parent container has relative positioning */
+      .relative {
+        position: relative;
+      }
+    </style>
   </head>
   <body class="bg-white h-full w-full overflow-y-auto">
     <!-- Sign In View -->
@@ -186,7 +207,7 @@
         <!-- Navigation buttons - consistent mt-8 spacing -->
         <div class="mt-2 flex justify-between items-center">
           <a href="#" id="settingsBtn" class="link">
-            Settings
+            Setup
           </a>
           <a href="#" id="logoutLink" class="link hidden">
             Logout
@@ -249,8 +270,8 @@
     <!-- Settings View -->
     <div id="settingsView" class="view-container hidden">
       <div class="form-container">
-        <!-- Centered header -->
-        <h1 class="section-header">Settings</h1>
+        <!-- Change header text -->
+        <h1 class="section-header">Setup</h1>
         
         <!-- Settings content -->
         <div class="form-group">
@@ -348,7 +369,7 @@
           
         <div class="mt-2 text-center">
           <a href="#" id="backToDashboardBtn" class="link">
-            Back to Dashboard
+            Dashboard
           </a>
         </div>
       </div>
