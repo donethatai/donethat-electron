@@ -1153,3 +1153,18 @@ if (slackInput) {
     }
   });
 }
+
+// Add this function to handle page navigation
+window.loadPage = (page) => {
+  const mainContent = document.getElementById('mainContent');
+  if (mainContent) {
+    fetch(`${page}.html`)
+      .then(response => response.text())
+      .then(html => {
+        mainContent.innerHTML = html;
+      })
+      .catch(error => {
+        console.error('Error loading page:', error);
+      });
+  }
+};

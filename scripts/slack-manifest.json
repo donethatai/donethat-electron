@@ -1,0 +1,32 @@
+{
+    "display_information": {
+        "name": "Done That",
+        "description": "Making your work visible, on your terms",
+        "background_color": "#4B5563",
+        "long_description": "Capture and share your work progress automatically, while maintaining complete control of what gets shared.\r\n\r\nWe keep track of your work so you don't have to. Just one minute of review at the end of your day to celebrate your achievements.\r\n\r\nWe built Done That with privacy as our top priority. You maintain complete control over your data."
+    },
+    "features": {
+        "bot_user": {
+            "display_name": "Done That",
+            "always_online": false
+        }
+    },
+    "oauth_config": {
+        "redirect_urls": [
+            "https://europe-west1-donethat.cloudfunctions.net/slackOAuth"
+        ],
+        "scopes": {
+            "bot": [
+                "channels:read",
+                "chat:write",
+                "chat:write.public",
+                "groups:read"
+            ]
+        }
+    },
+    "settings": {
+        "org_deploy_enabled": false,
+        "socket_mode_enabled": false,
+        "token_rotation_enabled": false
+    }
+}
