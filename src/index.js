@@ -10,12 +10,9 @@ const { initializeAuth } = require('./auth.js');
 const { initializeDashboard, resetSummaryState } = require('./dashboard.js');
 const { initializeAutoUpdate } = require('./autoupdate.js');
 const { initializePermissions } = require('./permissions.js');
-const { trackPageView, trackUserAction } = require('./analytics');
 const { 
   hasScreenCapturePermission,
   hasValidAccess,
-  hasEmails,
-  hasSlack,
   updateSubscriptionState,
   updateEmailSettings,
   updateSlackSettings
@@ -44,7 +41,7 @@ const settingsView = document.getElementById("settingsView");
 const permissionView = document.getElementById("permissionView");
 const updateView = document.getElementById("updateView");
 
-// Update the navigateToView function to track page views
+// Update the navigateToView function
 function navigateToView(viewName) {
   console.log('Navigating to view:', viewName);
   
@@ -86,8 +83,6 @@ function navigateToView(viewName) {
 
   if (viewToShow) {
     viewToShow.classList.remove('hidden');
-    // Track page view
-    trackPageView(viewName);
   } else {
     console.error('View not found:', viewName);
   }
