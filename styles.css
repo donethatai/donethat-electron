@@ -338,21 +338,21 @@
 
 /* Subscription-specific styles */
 .subscription-info-panel {
-  @apply border border-gray-300 rounded-lg p-3;
+  @apply border border-gray-300 rounded-lg p-3 mt-2;
   background-color: var(--color-neutral-50);
 }
 
 .subscription-status-container {
-  @apply flex flex-col items-center;
+  @apply flex flex-col;
 }
 
 .subscription-status {
-  @apply text-base font-medium mb-1;
+  @apply text-sm font-medium mb-1;
   color: var(--color-neutral-900);
 }
 
 .subscription-detail {
-  @apply text-xs mb-2;
+  @apply text-xs mb-1;
   color: var(--color-neutral-600);
 }
 
@@ -365,12 +365,12 @@
 }
 
 .subscription-cancel-btn {
-  @apply py-1.5 px-3 rounded text-xs cursor-pointer transition duration-200 mt-2;
-  background-color: var(--color-neutral-200);
-  color: var(--color-neutral-900);
+  @apply mt-2 text-sm;
+  color: var(--color-neutral-700);
 }
+
 .subscription-cancel-btn:hover {
-  background-color: var(--color-neutral-300);
+  color: var(--color-neutral-900);
 }
 
 /* Add these new CSS rules to fix subscription price styling in bullet points */

@@ -114,6 +114,18 @@ async function loadUserSettingsCallback() {
   updateEmailSettings(result.data?.emailRecipients || []);
   updateSlackSettings(result.data?.slack?.defaultChannel);
 
+  // Always update subscription UI with current data
+  subscriptionUpdateUI({
+    active: hasActiveSubscription || hasActiveCompany,
+    source: hasActiveCompany ? 'company' : 'individual',
+    companyName: result.data?.company?.name,
+    trialActive: result.data?.subscription?.status === 'trialing',
+    trialEndsAt: result.data?.subscription?.trialEndsAt,
+    trialDaysRemaining: result.data?.subscription?.trialDaysRemaining,
+    paidActive: result.data?.subscription?.status === 'active',
+    currentPeriodEnd: result.data?.subscription?.currentPeriodEnd
+  });
+
   // Navigate based on state
   if (!hasEmails && !hasSlack) {
     navigateToView('settings');

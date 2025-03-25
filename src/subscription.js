@@ -50,8 +50,8 @@ function subscriptionInitialize(onSettingsUpdate, showBlockingSpinner, hideBlock
  * Update UI elements based on subscription status
  */
 function subscriptionUpdateUI(data) {
-  // If we need to show the subscription view
-  if (data.shouldPromptForSubscription) {
+  // If we need to show the subscription view or there's no active subscription
+  if (data.shouldPromptForSubscription || !data.active) {
     createCheckoutSession().catch(error => {
       console.error('Error initializing subscription:', error);
     });
@@ -59,36 +59,37 @@ function subscriptionUpdateUI(data) {
     // Find or create subscription info container in settings
     let subscriptionInfoContainer = document.getElementById('subscriptionInfoContainer');
 
-  if (!subscriptionInfoContainer) {
-    // Create the container if it doesn't exist
-    const dailyReminderContainer = document.querySelector('.form-group');
+    if (!subscriptionInfoContainer) {
+      // Create the container if it doesn't exist
+      const settingsView = document.getElementById('settingsView');
+      const dailyReminderContainer = settingsView?.querySelector('.form-group');
 
-    if (dailyReminderContainer) {
-      subscriptionInfoContainer = document.createElement('div');
-      subscriptionInfoContainer.id = 'subscriptionInfoContainer';
-      subscriptionInfoContainer.className = 'mt-4';
+      if (dailyReminderContainer) {
+        // Create subscription section
+        subscriptionInfoContainer = document.createElement('div');
+        subscriptionInfoContainer.id = 'subscriptionInfoContainer';
+        subscriptionInfoContainer.className = 'mt-4';
 
-      const subscriptionLabel = document.createElement('label');
-      subscriptionLabel.className = 'form-label mb-1';
-      subscriptionLabel.textContent = 'Subscription';
+        // Create label
+        const subscriptionLabel = document.createElement('label');
+        subscriptionLabel.className = 'form-label';
+        subscriptionLabel.textContent = 'Subscription';
+        subscriptionInfoContainer.appendChild(subscriptionLabel);
 
-      subscriptionInfoContainer.appendChild(subscriptionLabel);
+        // Create info panel
+        const infoPanel = document.createElement('div');
+        infoPanel.id = 'subscriptionInfoPanel';
+        infoPanel.className = 'subscription-info-panel';
+        subscriptionInfoContainer.appendChild(infoPanel);
 
-      // Create the info panel
-      const infoPanel = document.createElement('div');
-      infoPanel.id = 'subscriptionInfoPanel';
-      infoPanel.className = 'subscription-info-panel';
-      subscriptionInfoContainer.appendChild(infoPanel);
-
-      // Add the container after daily reminder
-      dailyReminderContainer.appendChild(subscriptionInfoContainer);
+        // Add the container after daily reminder
+        dailyReminderContainer.appendChild(subscriptionInfoContainer);
+      }
     }
-  }
 
-  // Update subscription info content
-  const infoPanel = document.getElementById('subscriptionInfoPanel');
-  if (infoPanel) {
-    if (data.active) {
+    // Update subscription info content
+    const infoPanel = document.getElementById('subscriptionInfoPanel');
+    if (infoPanel) {
       let statusContent = '';
 
       // For company subscription
@@ -137,7 +138,6 @@ function subscriptionUpdateUI(data) {
         cancelBtn.addEventListener('click', subscriptionHandleCancel);
       }
     }
-  }
   }
 }
 
