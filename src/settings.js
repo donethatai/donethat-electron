@@ -5,7 +5,6 @@ const { getFunctions, httpsCallable } = require("firebase/functions");
 const firebaseConfig = require("../firebase-config.js");
 const { updateSlackUI, updateSlackInputState } = require('./slack');
 const { updateNotificationUI } = require('./permissions');
-const { resetSummaryState } = require('./dashboard.js');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -303,31 +302,7 @@ function renderEmailTags() {
   });
 }
 
-// Settings button
-if (settingsBtn) {
-    settingsBtn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      navigateToView('settings');
-  
-      // Reset summary state when leaving dashboard
-      resetSummaryState();
-  
-      // Load settings which will handle back button visibility
-      await loadUserSettings();
-    });
-  } else {
-    console.error("Settings button not found");
-  }
-  
-  // Back to dashboard button
-  if (backToDashboardBtn) {
-    backToDashboardBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      navigateToView('dashboard');
-    });
-  } else {
-    console.error("Back to dashboard button not found");
-  }
+
   
   // Email management
   if (addEmailBtn) {

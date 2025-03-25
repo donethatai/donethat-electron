@@ -374,6 +374,12 @@ function updateTrayIcon(isRecording) {
   }
 }
 
+// Function to navigate to a specific view
+function navigateToView(viewName) {
+  showWindowBelowTray();
+  mainWindow.webContents.send('navigate', viewName);
+}
+
 // Function to build the context menu with pause options
 function buildContextMenu() {
   const isLoggedIn = Boolean(idToken)
@@ -384,7 +390,7 @@ function buildContextMenu() {
   // Add "Open App" as the first option for all platforms
   template.push({
     label: 'Open App',
-    click: () => toggleWindow()
+    click: () => navigateToView('dashboard')
   }, { type: 'separator' })
 
   // Add pause options
@@ -419,13 +425,22 @@ function buildContextMenu() {
       click: () => pauseUntilNextWeek(),
       enabled: isLoggedIn && !isPaused && screenshotInterval
     },
-    { type: 'separator' },
     {
       label: 'Resume',
       click: () => resumeRecording(),
       enabled: isLoggedIn && isPaused
     }
   )
+
+  // Add Setup option
+  template.push(
+    { type: 'separator' },
+    {
+      label: 'Setup',
+      click: () => navigateToView('settings'),
+      enabled: isLoggedIn
+    }
+  );
 
   // Always show logout option but disable if not logged in
   template.push(
@@ -443,7 +458,6 @@ function buildContextMenu() {
 
   // Add quit option at the end
   template.push(
-    { type: 'separator' },
     {
       label: 'Quit',
       click: () => app.quit()
@@ -577,17 +591,6 @@ function createWindow() {
         mainWindow.hide()
       }
     })
-  }
-}
-
-// Function to toggle window visibility (used from menu)
-function toggleWindow() {
-  if (mainWindow) {
-    if (mainWindow.isVisible()) {
-      mainWindow.hide()
-    } else {
-      showWindowBelowTray()
-    }
   }
 }
 
@@ -781,7 +784,7 @@ function showSummaryNotification() {
     if (mainWindow) {
       showWindowBelowTray();
     } else {
-      toggleWindow();
+      navigateToView('dashboard');
     }
   });
 

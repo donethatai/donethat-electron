@@ -7,7 +7,7 @@ const { initializeSlack} = require('./slack');
 const { subscriptionInitialize, subscriptionUpdateUI } = require('./subscription.js');
 const { initializeSettings, loadUserSettings } = require('./settings.js');
 const { initializeAuth } = require('./auth.js');
-const { initializeDashboard } = require('./dashboard.js');
+const { initializeDashboard, resetSummaryState } = require('./dashboard.js');
 const { initializeAutoUpdate } = require('./autoupdate.js');
 const { initializePermissions } = require('./permissions.js');
 const { 
@@ -42,7 +42,6 @@ const dashboardView = document.getElementById("dashboardView");
 const settingsView = document.getElementById("settingsView");
 const permissionView = document.getElementById("permissionView");
 const updateView = document.getElementById("updateView");
-const backToDashboardBtn = document.getElementById("backToDashboardBtn");
 
 // Update the navigateToView function to handle all views
 function navigateToView(viewName) {
@@ -59,6 +58,7 @@ function navigateToView(viewName) {
       viewToShow = dashboardView;
       break;
     case 'settings':
+      resetSummaryState();
       viewToShow = settingsView;
       break;
     case 'subscription':
@@ -87,15 +87,6 @@ function navigateToView(viewName) {
     viewToShow.classList.remove('hidden');
   } else {
     console.error('View not found:', viewName);
-  }
-
-  // Handle back button visibility
-  if (backToDashboardBtn) {
-    if (viewName === 'settings' && hasValidAccess() && (hasEmails() || hasSlack())) {
-      backToDashboardBtn.classList.remove('hidden');
-    } else {
-      backToDashboardBtn.classList.add('hidden');
-    }
   }
 }
 
@@ -176,3 +167,9 @@ function hideBlockingSpinner() {
     document.body.style.overflow = "";
   }
 }
+
+// Add IPC listener for navigation
+const { ipcRenderer } = require('electron');
+ipcRenderer.on('navigate', (event, viewName) => {
+  navigateToView(viewName);
+});

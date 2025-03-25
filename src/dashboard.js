@@ -10,7 +10,6 @@ const saveFinalSummaryFunction = httpsCallable(functions, "saveFinalSummary");
 // Reference to permission-related elements 
 const generateSummaryBtn = document.getElementById("generateSummaryBtn");
 const submitSummaryBtn = document.getElementById("submitSummaryBtn");
-const settingsBtn = document.getElementById("settingsBtn");
 const summaryContainer = document.getElementById("summaryContainer");
 let currentSummaryId = null;
 const summaryLoadingSpinner = document.getElementById("summaryLoadingSpinner");
@@ -199,30 +198,4 @@ if (submitSummaryBtn) {
     console.error("Generate summary button not found");
   }
 
-  // Settings button
-if (settingsBtn) {
-    settingsBtn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      navigateToView('settings');
-  
-      // Reset summary state when leaving dashboard
-      resetSummaryState();
-  
-      // Load settings which will handle back button visibility
-      await loadUserSettingsCallback();
-    });
-  } else {
-    console.error("Settings button not found");
-  }
-  
-  // Back to dashboard button
-  if (backToDashboardBtn) {
-    backToDashboardBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      navigateToView('dashboard');
-    });
-  } else {
-    console.error("Back to dashboard button not found");
-  }
-  
-  module.exports = { initializeDashboard, resetSummaryState };
+module.exports = { initializeDashboard, resetSummaryState };
