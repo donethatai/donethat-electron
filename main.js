@@ -424,7 +424,25 @@ function buildContextMenu() {
       label: 'Resume',
       click: () => resumeRecording(),
       enabled: isLoggedIn && isPaused
-    },
+    }
+  )
+
+  // Always show logout option but disable if not logged in
+  template.push(
+    { type: 'separator' },
+    {
+      label: 'Logout',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('logout');
+        }
+      },
+      enabled: isLoggedIn
+    }
+  );
+
+  // Add quit option at the end
+  template.push(
     { type: 'separator' },
     {
       label: 'Quit',

@@ -42,9 +42,7 @@ const dashboardView = document.getElementById("dashboardView");
 const settingsView = document.getElementById("settingsView");
 const permissionView = document.getElementById("permissionView");
 const updateView = document.getElementById("updateView");
-const logoutLink = document.getElementById("logoutLink");
 const backToDashboardBtn = document.getElementById("backToDashboardBtn");
-const logoutFromPermission = document.getElementById("logoutFromPermission");
 
 // Update the navigateToView function to handle all views
 function navigateToView(viewName) {
@@ -97,22 +95,6 @@ function navigateToView(viewName) {
       backToDashboardBtn.classList.remove('hidden');
     } else {
       backToDashboardBtn.classList.add('hidden');
-    }
-  }
-
-  // Handle logout button visibility
-  if (logoutLink) {
-    if (viewName === 'signin') {
-      logoutLink.classList.add('hidden');
-    } else {
-      logoutLink.classList.remove('hidden');
-    }
-  }
-  if (logoutFromPermission) {
-    if (viewName === 'signin') {
-      logoutFromPermission.classList.add('hidden');
-    } else {
-      logoutFromPermission.classList.remove('hidden');
     }
   }
 }

@@ -12,6 +12,7 @@ const { ipcRenderer } = require("electron");
 // Import auth instance from firebase.js
 const { auth } = require('./firebase.js');
 const { updateAuthState } = require('./app-state.js');
+const { resetSummaryState } = require('./dashboard.js');
 
 const signInForm = document.getElementById("signInForm");
 const signUpForm = document.getElementById("signUpForm");
@@ -38,7 +39,12 @@ function initializeAuth(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinn
     showSpinner = showBlockingSpinner;
     hideSpinner = hideBlockingSpinner;
     navigateToView = viewNavigator;
-  }
+}
+
+// Listen for logout event from tray menu at module level
+ipcRenderer.on('logout', async () => {
+    await performFullLogout();
+  });
 
 // Update the auth state listener
 onAuthStateChanged(auth, async (user) => {
@@ -150,7 +156,7 @@ signInForm.addEventListener("submit", (e) => {
   async function performFullLogout() {
     try {
       // Clear Firebase auth state
-      await auth.signOut();
+      await signOut(auth);
   
       // Clear any Firebase specific storage
       const firebaseLocalStorageKeys = Object.keys(window.localStorage)
@@ -158,34 +164,20 @@ signInForm.addEventListener("submit", (e) => {
       firebaseLocalStorageKeys.forEach(key => window.localStorage.removeItem(key));
   
       // Reset application state
-      currentSummaryId = null;
-      userIdToken = null;
+      updateAuthState(false, null);
   
       // Reset the UI state
       resetSummaryState();
   
       // Notify main process
       ipcRenderer.send('logout');
+
+      navigateToView('signin');
   
     } catch (error) {
       console.error('Error during logout:', error);
       alert(`Error signing out: ${error.message}`);
     }
-  }
-  
-  // Update both logout handlers to use the new function
-  if (logoutLink) {
-    logoutLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      performFullLogout();
-    });
-  }
-  
-  if (logoutFromPermission) {
-    logoutFromPermission.addEventListener('click', (e) => {
-      e.preventDefault();
-      performFullLogout();
-    });
   }
 
   export { initializeAuth, userIdToken };
