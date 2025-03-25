@@ -19,6 +19,7 @@ let slackChannel = '';
 let loadUserSettingsCallback = null;
 let showSpinner = null;
 let hideSpinner = null;
+let viewNavigator = null;
 
 // Helper function to update Slack UI elements
 function updateSlackUI(connected, team = '') {
@@ -162,10 +163,11 @@ function updateButtonState(isDisconnectButton = false) {
 }
 
 // Update the initialization function to accept spinner functions
-function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinner) {
+function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinner, viewNavigator) {
   loadUserSettingsCallback = onSettingsUpdate;
   showSpinner = showBlockingSpinner;
   hideSpinner = hideBlockingSpinner;
+  viewNavigator = viewNavigator;
   
   const connectSlackBtn = document.getElementById('connectSlackBtn');
   const slackActionBtn = document.getElementById('slackActionBtn');
@@ -265,5 +267,7 @@ function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpin
 module.exports = {
   initializeSlack,
   updateSlackInputState,
-  updateSlackUI
+  updateSlackUI,
+  slackConnected,
+  slackChannel
 }; 

@@ -7,171 +7,34 @@ const firebaseConfig = require("../firebase-config.js");
 const firebaseApp = initializeApp(firebaseConfig);
 const functions = getFunctions(firebaseApp, "europe-west1");
 
-// Create callable function references with updated names
-const subscriptionPlansGetFunction = httpsCallable(functions, 'subscriptionPlans');
-const subscriptionIndividualCreateFunction = httpsCallable(functions, 'subscriptionIndividualCreate');
+// Create callable function references
+const subscriptionIndividualCreateFunction = httpsCallable(functions, 'subscriptionIndividualPayment');
 const subscriptionIndividualCancelFunction = httpsCallable(functions, 'subscriptionIndividualCancel');
-const subscriptionSetupIntentCreate = httpsCallable(functions, 'subscriptionSetupIntent');
 
 // Module variables to store functions from main app
 let loadUserSettingsCallback = null;
 let showSpinner = null;
 let hideSpinner = null;
 let navigateToView = null;
-
-// Stripe elements
-let stripe = null;
-let elements = null;
-let paymentElement = null;
-
-// Data 
-let availablePlans = [];
-let selectedPlan = null;
-
-async function subscriptionSetupElements() {
-  const auth = getAuth();
-
-  if (!auth.currentUser) {
-    setTimeout(subscriptionSetupElements, 1000);
-    return;
-  }
-
-  try {
-    // Wait for Stripe to be available
-    let attempts = 0;
-    while (!window.Stripe && attempts < 10) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      attempts++;
-    }
-
-    if (!window.Stripe) {
-      throw new Error('Stripe failed to load after multiple attempts');
-    }
-
-    const result = await subscriptionSetupIntentCreate({
-      isCompany: selectedPlan?.type === 'Team',
-      companyId: document.getElementById('companyId')?.value || null
-    });
-
-    if (!result.data?.clientSecret || !result.data?.publishableKey) {
-      throw new Error('Missing client secret or publishable key');
-    }
-
-    stripe = window.Stripe(result.data.publishableKey);
-
-    elements = stripe.elements({
-      clientSecret: result.data.clientSecret,
-      appearance: {
-        theme: 'stripe',
-        variables: {
-          colorPrimary: '#FFB623',
-          fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-          spacingUnit: '4px',
-          borderRadius: '8px',
-          fontSizeBase: '0.75rem'
-        }
-      }
-    });
-
-    paymentElement = elements.create('payment', {
-      layout: {
-        type: 'tabs',
-        defaultCollapsed: false
-      },
-    });
-
-    const paymentElementContainer = document.getElementById('payment-element');
-    if (paymentElementContainer) {
-      paymentElement.mount('#payment-element');
-
-      // Start with button disabled
-      const subscribeButton = document.getElementById('subscribeButton');
-      if (subscribeButton) {
-        subscribeButton.disabled = true;
-        subscribeButton.classList.add('disabled-btn');
-      }
-
-      // Listen for changes in the payment element
-      paymentElement.on('change', (event) => {
-        const subscribeButton = document.getElementById('subscribeButton');
-        const errorElement = document.getElementById('card-errors');
-
-        if (errorElement) {
-          errorElement.textContent = event.error ? event.error.message : '';
-        }
-
-        // Update button state based on form completeness
-        if (subscribeButton) {
-          subscribeButton.disabled = !event.complete;
-          if (event.complete) {
-            subscribeButton.classList.remove('disabled-btn');
-          } else {
-            subscribeButton.classList.add('disabled-btn');
-          }
-        }
-      });
-    } else {
-      throw new Error('Payment element container not found');
-    }
-
-  } catch (error) {
-    const errorElement = document.getElementById('card-errors');
-    if (errorElement) {
-      errorElement.textContent = error.message || 'Could not load payment methods. Please try again later.';
-    }
-  }
-}
+let checkoutUrl = null;
 
 /**
- * Initialize the Stripe integration
+ * Initialize the subscription module
  */
 function subscriptionInitialize(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinner, viewNavigator) {
+  
   loadUserSettingsCallback = onSettingsUpdate;
   showSpinner = showBlockingSpinner;
   hideSpinner = hideBlockingSpinner;
   navigateToView = viewNavigator;
-
-  // Check if document is already loaded
-  if (document.readyState === 'complete') {
-    initializeWhenReady();
-  } else {
-    // Wait for DOM to be fully loaded before initializing
-    document.addEventListener('DOMContentLoaded', () => {
-      initializeWhenReady();
-    });
-  }
-
-  // Get plans if user is already authenticated
-  const auth = getAuth();
-  if (auth.currentUser) {
-    subscriptionGetPlans().catch(error => {
-      console.error('Error fetching initial plans:', error);
-    });
-  } else {
-    // Add auth state listener
-    auth.onAuthStateChanged((user) => {
-      if (user) {
-        subscriptionGetPlans().catch(error => {
-          console.error('Error fetching plans after auth:', error);
-        });
-      }
-    });
-  }
-}
-
-function initializeWhenReady() {
-  // Set up form submit handler
-  const paymentForm = document.getElementById('paymentForm');
   
-  if (paymentForm) {
-    // Remove any existing listeners first
-    paymentForm.removeEventListener('submit', subscriptionHandleSubscribe);
-    paymentForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      subscriptionHandleSubscribe(e);
-    });
-  }
+  // Set up button click handler
+  const subscribeButton = document.getElementById('subscribeButton');
+  
+
+  subscribeButton.addEventListener('click', () => {
+    subscriptionHandleSubscribe();
+  });
 
   // Set up team link to open in external browser
   document.addEventListener('click', (e) => {
@@ -187,43 +50,14 @@ function initializeWhenReady() {
  * Update UI elements based on subscription status
  */
 function subscriptionUpdateUI(data) {
-  if (!data) {
-    return;
-  }
-
   // If we need to show the subscription view
   if (data.shouldPromptForSubscription) {
-    navigateToView('subscription');
-
-    // Set up form submit handler when subscription view is shown
-    const paymentForm = document.getElementById('paymentForm');
-    
-    if (paymentForm) {
-      // Remove any existing listeners first
-      paymentForm.removeEventListener('submit', subscriptionHandleSubscribe);
-      paymentForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        subscriptionHandleSubscribe(e);
-      });
-    }
-
-    // If we haven't loaded plans yet, do it now
-    if (!selectedPlan) {
-      subscriptionGetPlans();
-    }
-  }
-
-  // Update subscription info in the settings view
-  updateSubscriptionInfoInSettings(data);
-}
-
-/**
- * Update subscription information in settings view
- */
-function updateSubscriptionInfoInSettings(data) {
-  // Find or create subscription info container in settings
-  let subscriptionInfoContainer = document.getElementById('subscriptionInfoContainer');
+    createCheckoutSession().catch(error => {
+      console.error('Error initializing subscription:', error);
+    });
+  } else {
+    // Find or create subscription info container in settings
+    let subscriptionInfoContainer = document.getElementById('subscriptionInfoContainer');
 
   if (!subscriptionInfoContainer) {
     // Create the container if it doesn't exist
@@ -302,170 +136,27 @@ function updateSubscriptionInfoInSettings(data) {
       if (cancelBtn) {
         cancelBtn.addEventListener('click', subscriptionHandleCancel);
       }
-    } else {
-      // Not active - show subscribe button
-      infoPanel.innerHTML = `
-        <div class="subscription-status-container">
-          <p class="subscription-status">No Active Subscription</p>
-          <button id="subscriptionStartTrialBtn" class="subscription-secondary-btn">
-            Start 7-Day Free Trial
-          </button>
-        </div>
-      `;
-
-      // Add event listener for trial button
-      const startTrialBtn = document.getElementById('subscriptionStartTrialBtn');
-      if (startTrialBtn) {
-        startTrialBtn.addEventListener('click', () => {
-          navigateToView('subscription');
-        });
-      }
     }
+  }
   }
 }
 
-/**
- * Handle subscription form submission
- */
-async function subscriptionHandleSubscribe(e) {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  const subscribeButton = document.getElementById('subscribeButton');
-  const errorMessage = document.getElementById('card-errors');
-
-  if (!subscribeButton) {
-    return;
-  }
-
-  if (!selectedPlan) {
-    errorMessage.textContent = 'No subscription plan available';
-    return;
-  }
-
-  if (!stripe || !elements) {
-    errorMessage.textContent = 'Payment system not initialized';
-    return;
-  }
-
-  // Disable the button and show processing state
-  subscribeButton.disabled = true;
-  subscribeButton.classList.add('disabled-btn');
-  subscribeButton.textContent = 'Processing...';
-
-  showSpinner();
-
-  try {
-    // First validate the payment element
-    const { error: validationError } = await elements.submit();
-    if (validationError) {
-      throw new Error(validationError.message);
-    }
-
-    console.log('Stripe confirmSetup');
-    // Then confirm the setup without redirect
-    const { error, setupIntent } = await stripe.confirmSetup({
-      elements,
-      confirmParams: {
-        return_url: window.location.origin,
-      }
-    });
-
-    console.log('Stripe confirmSetup done');
-
-    if (error) {
-      console.error('Stripe setup error:', error);
-      throw new Error(error.message);
-    }
-
-    if (!setupIntent || !setupIntent.payment_method) {
-      throw new Error('Failed to set up payment method');
-    }
-
-    // For individual plans
-    const auth = getAuth();
-    console.log('Stripe subscriptionIndividualCreate');
-    const result = await subscriptionIndividualCreateFunction({
-      email: auth.currentUser.email,
-      paymentMethodId: setupIntent.payment_method
-    });
-
-    if (result.data.error) {
-      throw new Error(result.data.error);
-    }
-
-    // Handle subscription success
-    if (loadUserSettingsCallback) {
-      await loadUserSettingsCallback();
-    }
-
-    // Navigate to dashboard
-    navigateToView('dashboard');
-
-  } catch (error) {
-    if (errorMessage) {
-      errorMessage.textContent = error.message || 'An error occurred while processing your payment.';
-    }
-    // Re-enable the button on error
-    subscribeButton.disabled = false;
-    subscribeButton.classList.remove('disabled-btn');
-    subscribeButton.textContent = 'Start Free Trial';
-  } finally {
-    hideSpinner();
-  }
-}
-
-/**
- * Handle subscription cancellation
- */
-async function subscriptionHandleCancel() {
-  if (confirm('Are you sure you want to cancel your subscription? You will still have access until the end of your current billing period.')) {
-    try {
-      showSpinner();
-
-      // Use the new function name
-      const result = await subscriptionIndividualCancelFunction();
-
-      if (result.data.success) {
-        alert('Your subscription has been canceled. You will still have access until the end of your current billing period.');
-        if (loadUserSettingsCallback) {
-          await loadUserSettingsCallback();
-        }
-      } else {
-        alert('There was a problem canceling your subscription. Please try again later.');
-      }
-    } catch (error) {
-      console.error('Error canceling subscription:', error);
-      alert('There was a problem canceling your subscription: ' + error.message);
-    } finally {
-      hideSpinner();
-    }
-  }
-}
-
-/**
- * Fetch available subscription plans
- */
-async function subscriptionGetPlans() {
+async function createCheckoutSession() {
   try {
     // Get current user and ensure they're authenticated
     const auth = getAuth();
     if (!auth.currentUser) {
+      console.log('No authenticated user, cannot create subscription intent');
       return { plans: [] };
     }
 
-    const result = await subscriptionPlansGetFunction();
+    const result = await subscriptionIndividualCreateFunction();
+    checkoutUrl = result.data.checkoutUrl;
+    plan = result.data.plan || {};
 
-    availablePlans = result.data.plans || [];
-
-    // Find the first Individual plan
-    selectedPlan = availablePlans.find(plan => plan.type === 'Individual');
-
-    if (selectedPlan) {
+    if (plan) {
       // Show the selected plan and update price displays
-      displaySelectedPlan(selectedPlan);
+      displayPlan(plan);
     }
 
     return result.data;
@@ -478,7 +169,8 @@ async function subscriptionGetPlans() {
 /**
  * Display the selected plan in the UI
  */
-function displaySelectedPlan(plan) {
+function displayPlan(plan) {
+  
   // Get trial days from plan
   const trialDays = plan.trial?.days || 0;
 
@@ -535,29 +227,84 @@ function displaySelectedPlan(plan) {
     }
   }
 
-  // Use the existing payment form
-  const paymentForm = document.getElementById('paymentForm');
-  if (paymentForm) {
-    paymentForm.classList.remove('hidden');
-
-    // Disable autofill
-    paymentForm.setAttribute('autocomplete', 'off');
-    paymentForm.setAttribute('novalidate', true);
-
-    // Also disable autofill for the payment element container
-    const paymentElement = document.getElementById('payment-element');
-    if (paymentElement) {
-      paymentElement.setAttribute('autocomplete', 'off');
-      paymentElement.setAttribute('data-autofill', 'false');
-    }
-
-    subscriptionSetupElements();
+  // Update button text based on trial status
+  const subscribeButton = document.getElementById('subscribeButton');
+  if (subscribeButton) {
+    subscribeButton.disabled = false;
+    subscribeButton.classList.remove('disabled-btn');
   }
 }
 
 /**
- * Helper function to format period text
+ * Handle subscription form submission
  */
+async function subscriptionHandleSubscribe() {
+
+  const errorMessage = document.getElementById('card-errors');
+  
+  try {    
+    const authWindow = window.open(checkoutUrl);
+
+    // Function to cleanup listeners
+    const cleanup = () => {
+      window.removeEventListener('focus', checkWindowClosed);
+    };
+
+    // Function to check if auth window was closed
+    const checkWindowClosed = () => {
+      if (loadUserSettingsCallback) loadUserSettingsCallback();
+
+      if (authWindow.closed) {
+        cleanup();
+      }
+    };
+
+    // Add focus listener
+    window.addEventListener('focus', checkWindowClosed);
+    
+    // Safety cleanup after 5 minutes
+    setTimeout(() => {
+      cleanup();
+      if (!authWindow.closed) {
+        authWindow.close();
+        if (loadUserSettingsCallback) loadUserSettingsCallback();
+      }
+    }, 5 * 60 * 1000);
+
+  } catch (error) {
+    console.error('Subscription error:', error);
+    errorMessage.textContent = error.message || 'An error occurred while setting up payment. Please try again later.';
+  }
+}
+
+/**
+ * Handle subscription cancellation
+ */
+async function subscriptionHandleCancel() {
+  if (confirm('Are you sure you want to cancel your subscription? You will still have access until the end of your current billing period.')) {
+    try {
+      showSpinner();
+
+      const result = await subscriptionIndividualCancelFunction();
+
+      if (result.data.success) {
+        alert('Your subscription has been canceled. You will still have access until the end of your current billing period.');
+        if (loadUserSettingsCallback) {
+          await loadUserSettingsCallback();
+        }
+      } else {
+        alert('There was a problem canceling your subscription. Please try again later.');
+      }
+    } catch (error) {
+      console.error('Error canceling subscription:', error);
+      alert('There was a problem canceling your subscription: ' + error.message);
+    } finally {
+      hideSpinner();
+    }
+  }
+}
+
+
 function getFormattedPeriod(price) {
   if (!price || !price.interval) return '';
 
@@ -580,7 +327,5 @@ function getFormattedPeriod(price) {
 
 module.exports = {
   subscriptionInitialize,
-  subscriptionHandleCancel,
-  subscriptionGetPlans,
   subscriptionUpdateUI
 }; 

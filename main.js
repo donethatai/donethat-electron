@@ -11,7 +11,7 @@ const {
 } = require('./src-main/screenshot-capture')
 
 // To show dev tools next to main window
-let DEBUG = false
+let DEBUG = true
 // Add your Firebase function URL here
 const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/captureScreenshot'
 

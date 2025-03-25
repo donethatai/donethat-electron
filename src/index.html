@@ -7,29 +7,23 @@
     <!-- CSP Meta Tags -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' https://js.stripe.com;
-      style-src 'self' 'unsafe-inline' https://*.stripe.com https://*.stripecdn.com;
-      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://*.stripe.com https://api.stripe.com https://app.donethat.ai;
-      img-src 'self' data: blob: https://*.stripe.com https://*.stripecdn.com;
-      frame-src 'self' https://*.stripe.com https://b.stripecdn.com https://*.stripecdn.com https://*.stripe.network https://*.firebaseapp.com;
-      font-src 'self' https://*.stripe.com https://*.stripecdn.com;
-      media-src 'self' https://*.stripe.com https://*.stripecdn.com;
-      object-src 'none';
-      base-uri 'self';
-      form-action 'self'
+      script-src 'self' 'unsafe-eval';
+      style-src 'self' 'unsafe-inline';
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai;
+      frame-src 'self' https://checkout.stripe.com;
+      form-action 'self' https://checkout.stripe.com;
     ">
     <meta http-equiv="X-Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' https://js.stripe.com;
-      style-src 'self';
-      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://api.stripe.com https://app.donethat.ai;
-      frame-src https://js.stripe.com;
+      script-src 'self' 'unsafe-eval';
+      style-src 'self' 'unsafe-inline';
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai;
+      frame-src https://checkout.stripe.com;
+      form-action 'self' https://checkout.stripe.com;
     ">
     <title>Done That</title>
     <!-- Local Tailwind CSS -->
     <link href="../build/output.css" rel="stylesheet" />
-    <!-- Add this in the head section, before your bundle.js -->
-    <script src="https://js.stripe.com/v3/" defer></script>
   </head>
   <body class="bg-white h-full w-full overflow-y-auto">
     <!-- Sign In View -->
@@ -395,19 +389,11 @@
               </span>
             </div>
           </div>
-        </div>
-        
-        <form id="paymentForm">
-          <hr class="my-4 border-gray-200">
-          <div id="payment-element" class="mb-4">
-            <!-- Stripe Payment Element will be mounted here -->
-          </div>
           <div id="card-errors" class="text-red-500 text-xs mt-2" role="alert"></div>
-          
-          <button id="subscribeButton" type="submit" class="btn-primary w-full disabled-btn" disabled>
+          <button id="subscribeButton" type="submit" class="btn-primary w-full">
             Start Free Trial
           </button>
-        </form>
+        </div>
         
         <div id="subscriptionLoading" class="spinner-overlay hidden">
           <div class="spinner"></div>
