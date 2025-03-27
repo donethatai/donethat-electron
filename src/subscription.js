@@ -8,7 +8,8 @@ const firebaseApp = initializeApp(firebaseConfig);
 const functions = getFunctions(firebaseApp, "europe-west1");
 
 // Create callable function references
-const subscriptionIndividualCreateFunction = httpsCallable(functions, 'subscriptionIndividualPayment');
+const getPlansFunction = httpsCallable(functions, 'subscriptionPlans');
+const collectPaymentFunction = httpsCallable(functions, 'subscriptionCollectPayment');
 
 // Module variables to store functions from main app
 let loadUserSettingsCallback = null;
@@ -16,6 +17,7 @@ let showSpinner = null;
 let hideSpinner = null;
 let navigateToView = null;
 let checkoutUrl = null;
+let selectedPlan = null;
 
 /**
  * Initialize the subscription module
@@ -54,14 +56,39 @@ function subscriptionInitialize(onSettingsUpdate, showBlockingSpinner, hideBlock
 }
 
 /**
+ * Load and display plan details
+ */
+async function loadAndDisplayPlan() {
+  showSpinner();
+  try {
+    // Get available plans
+    const plansResult = await getPlansFunction({ type: "Individual" });
+    const plans = plansResult.data;
+    
+    if (!plans || plans.length === 0) {
+      console.error('No plans available');
+      return;
+    }
+
+    // Select the first plan (assuming we only have one plan for now)
+    selectedPlan = plans[0];
+
+    // Display the plan details
+    displayPlan(selectedPlan);
+  } catch (error) {
+    console.error('Error loading plan details:', error);
+  } finally {
+    hideSpinner();
+  }
+}
+
+/**
  * Update UI elements based on subscription status
  */
-function subscriptionUpdateUI(data) {
+async function subscriptionUpdateUI(data) {
   // If we need to show the subscription view or there's no active subscription
   if (data.shouldPromptForSubscription || !data.active) {
-    createCheckoutSession().catch(error => {
-      console.error('Error initializing subscription:', error);
-    });
+    await loadAndDisplayPlan();
   } else {
     // Update subscription text
     const subscriptionInput = document.getElementById('subscriptionInput');
@@ -75,9 +102,7 @@ function subscriptionUpdateUI(data) {
           statusText = `Part of ${data.teamName || 'a team'} subscription`;
         } else {
           // If team is not active, show subscription view
-          createCheckoutSession().catch(error => {
-            console.error('Error initializing subscription:', error);
-          });
+          await loadAndDisplayPlan();
           return;
         }
       }
@@ -96,31 +121,6 @@ function subscriptionUpdateUI(data) {
 
       subscriptionInput.value = statusText;
     }
-  }
-}
-
-async function createCheckoutSession() {
-  try {
-    // Get current user and ensure they're authenticated
-    const auth = getAuth();
-    if (!auth.currentUser) {
-      console.log('No authenticated user, cannot create subscription intent');
-      return { plans: [] };
-    }
-
-    const result = await subscriptionIndividualCreateFunction();
-    checkoutUrl = result.data.checkoutUrl;
-    plan = result.data.plan || {};
-
-    if (plan) {
-      // Show the selected plan and update price displays
-      displayPlan(plan);
-    }
-
-    return result.data;
-  } catch (error) {
-    console.error('Error fetching plans:', error);
-    throw error;
   }
 }
 
@@ -197,15 +197,46 @@ function displayPlan(plan) {
  * Handle subscription form submission
  */
 async function subscriptionHandleSubscribe() {
-
   const errorMessage = document.getElementById('card-errors');
+  const subscribeButton = document.getElementById('subscribeButton');
   
-  try {    
+  try {
+    // Disable button and show loading state
+    subscribeButton.disabled = true;
+    subscribeButton.classList.add('disabled-btn');
+    subscribeButton.textContent = 'Loading...';
+    
+    // Show loading spinner
+    showSpinner();
+
+    // Get current user and ensure they're authenticated
+    const auth = getAuth();
+    if (!auth.currentUser) {
+      throw new Error('No authenticated user, cannot create subscription intent');
+    }
+
+    if (!selectedPlan) {
+      throw new Error('No plan selected');
+    }
+
+    // Create checkout session with the selected plan
+    const checkoutResult = await collectPaymentFunction({
+      type: "Individual",
+      priceId: selectedPlan.id
+    });
+
+    checkoutUrl = checkoutResult.data.checkoutUrl;
+
+    // Open checkout window
     const authWindow = window.open(checkoutUrl);
 
     // Function to cleanup listeners
     const cleanup = () => {
       window.removeEventListener('focus', checkWindowClosed);
+      // Reset button state
+      subscribeButton.disabled = false;
+      subscribeButton.classList.remove('disabled-btn');
+      subscribeButton.textContent = 'Start Free Trial';
     };
 
     // Function to check if auth window was closed
@@ -232,9 +263,16 @@ async function subscriptionHandleSubscribe() {
   } catch (error) {
     console.error('Subscription error:', error);
     errorMessage.textContent = error.message || 'An error occurred while setting up payment. Please try again later.';
+    
+    // Reset button state on error
+    subscribeButton.disabled = false;
+    subscribeButton.classList.remove('disabled-btn');
+    subscribeButton.textContent = 'Start Free Trial';
+  } finally {
+    // Hide loading spinner
+    hideSpinner();
   }
 }
-
 
 function getFormattedPeriod(price) {
   if (!price || !price.interval) return '';
