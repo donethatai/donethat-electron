@@ -10,6 +10,7 @@ const functions = getFunctions(firebaseApp, "europe-west1");
 // Create callable function references
 const getPlansFunction = httpsCallable(functions, 'subscriptionPlans');
 const collectPaymentFunction = httpsCallable(functions, 'subscriptionCollectPayment');
+const billingPortalFunction = httpsCallable(functions, 'subscriptionBillingPortal');
 
 // Module variables to store functions from main app
 let loadUserSettingsCallback = null;
@@ -18,6 +19,26 @@ let hideSpinner = null;
 let navigateToView = null;
 let checkoutUrl = null;
 let selectedPlan = null;
+
+/**
+ * Get the Stripe billing portal URL
+ */
+async function getBillingPortalUrl() {
+  try {
+    const result = await billingPortalFunction({
+      returnUrl: 'https://donethat.ai'
+    });
+    
+    if (!result.data.url) {
+      throw new Error('No portal URL received from server');
+    }
+    
+    return result.data.url;
+  } catch (error) {
+    console.error('Error getting billing portal URL:', error);
+    throw error;
+  }
+}
 
 /**
  * Initialize the subscription module
@@ -39,9 +60,46 @@ function subscriptionInitialize(onSettingsUpdate, showBlockingSpinner, hideBlock
 
   // Add click handler for subscription action button
   if (subscriptionActionBtn) {
-    subscriptionActionBtn.addEventListener('click', () => {
-      const { shell } = require('electron');
-      shell.openExternal('https://app.donethat.ai');
+    subscriptionActionBtn.addEventListener('click', async () => {
+      try {
+        showSpinner();
+        const portalUrl = await getBillingPortalUrl();
+        
+        // Open portal window
+        const portalWindow = window.open(portalUrl);
+
+        // Function to cleanup listeners
+        const cleanup = () => {
+          window.removeEventListener('focus', checkWindowClosed);
+          hideSpinner();
+        };
+
+        // Function to check if portal window was closed
+        const checkWindowClosed = () => {
+          if (loadUserSettingsCallback) loadUserSettingsCallback();
+
+          if (portalWindow.closed) {
+            cleanup();
+          }
+        };
+
+        // Add focus listener
+        window.addEventListener('focus', checkWindowClosed);
+        
+        // Safety cleanup after 5 minutes
+        setTimeout(() => {
+          cleanup();
+          if (!portalWindow.closed) {
+            portalWindow.close();
+            if (loadUserSettingsCallback) loadUserSettingsCallback();
+          }
+        }, 5 * 60 * 1000);
+
+      } catch (error) {
+        console.error('Error in subscription action button handler:', error);
+        hideSpinner();
+        alert(`Failed to open billing portal: ${error.message}`);
+      }
     });
   }
 

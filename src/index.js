@@ -25,7 +25,7 @@ const {
   isAuthenticated
 } = require('./app-state.js');
 
-const coreViews = ['settings', 'dashbaord'];
+const coreViews = ['settings', 'dashboard'];
 
 // Set persistence to browser local storage
 setPersistence(auth, browserLocalPersistence)
