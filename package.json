@@ -53,7 +53,7 @@
   },
   "build": {
     "appId": "com.donethat.app",
-    "productName": "Done That",
+    "productName": "DoneThat",
     "afterSign": "scripts/notarize.js",
     "icon": "resources/icon_inverse.png",
     "artifactName": "${productName} ${arch}.${ext}",

@@ -48,7 +48,7 @@ if (DEBUG) {
       if (app.isReady()) {
         try {
           new Notification({
-            title: `Done That ${message.level.toUpperCase()}`,
+            title: `DoneThat ${message.level.toUpperCase()}`,
             body: message.data.join(' ').substring(0, 100) + (message.data.join(' ').length > 100 ? '...' : ''),
             silent: false
           }).show();
@@ -205,7 +205,7 @@ app.whenReady().then(async () => {
   }
 
   tray = new Tray(trayIcon)
-  tray.setToolTip('Done That')
+  tray.setToolTip('DoneThat')
 
   // Call setupAutoStart here to ensure it runs after app is ready
   setupAutoStart();
@@ -339,15 +339,15 @@ function updateTrayIcon(isRecording) {
   if (isRecording) {
     // Use recording icon when recording
     iconPath = iconRecordingPath
-    tray.setToolTip('Done That - Recording')
+    tray.setToolTip('DoneThat - Recording')
   } else if (isPaused) {
     // Use paused icon when paused
     iconPath = iconPausedPath
-    tray.setToolTip('Done That - Paused')
+    tray.setToolTip('DoneThat - Paused')
   } else {
     // Use error icon when not recording and not paused (e.g., not logged in)
     iconPath = iconErrorPath
-    tray.setToolTip('Done That - Not Recording')
+    tray.setToolTip('DoneThat - Not Recording')
   }
 
   // Load and set the appropriate icon
@@ -698,7 +698,6 @@ app.on('browser-window-focus', async () => {
 
 // Add listener for when summary is submitted
 ipcMain.on('summarySubmitted', (event) => {
-  console.log("Summary submitted notification received");
   summarySubmittedTimestamp = Date.now();
 })
 
@@ -760,20 +759,18 @@ function scheduleNextSummaryNotification() {
 function showSummaryNotification() {
   // Skip notification if recording is paused or not active
   if (isPaused || !screenshotInterval) {
-    console.log("Skipping notification - recording is paused or not active");
     scheduleNextSummaryNotification(); // Schedule for next time
     return;
   }
 
   // Check if summary was submitted recently
   if (shouldSkipNotification()) {
-    console.log("Skipping notification - summary already submitted today");
     scheduleNextSummaryNotification(); // Schedule for next time
     return;
   }
 
   const notification = new Notification({
-    title: 'Done That',
+    title: 'DoneThat',
     body: 'Time to submit your daily summary!',
     silent: false
   });
@@ -880,7 +877,6 @@ ipcMain.on('requestScreenCapturePermission', async () => {
     shell.openExternal('ms-settings:privacy')
   } else {
     // Linux or other platforms
-    console.log('No direct way to open screen capture settings on this platform')
   }
 
   // After opening settings, we should check permission again when app regains focus

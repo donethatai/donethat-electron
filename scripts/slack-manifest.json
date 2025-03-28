@@ -1,13 +1,13 @@
 {
     "display_information": {
-        "name": "Done That",
+        "name": "DoneThat",
         "description": "Making your work visible, on your terms",
         "background_color": "#4B5563",
-        "long_description": "Capture and share your work progress automatically, while maintaining complete control of what gets shared.\r\n\r\nWe keep track of your work so you don't have to. Just one minute of review at the end of your day to celebrate your achievements.\r\n\r\nWe built Done That with privacy as our top priority. You maintain complete control over your data."
+        "long_description": "Capture and share your work progress automatically, while maintaining complete control of what gets shared.\r\n\r\nWe keep track of your work so you don't have to. Just one minute of review at the end of your day to celebrate your achievements.\r\n\r\nWe built DoneThat with privacy as our top priority. You maintain complete control over your data."
     },
     "features": {
         "bot_user": {
-            "display_name": "Done That",
+            "display_name": "DoneThat",
             "always_online": false
         }
     },

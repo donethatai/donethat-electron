@@ -1,4 +1,4 @@
-# ✓ Done That
+# ✓ DoneThat
 
 Remembering your work for you.
 

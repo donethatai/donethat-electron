@@ -157,8 +157,8 @@ function displayPlan(plan) {
   const trialDescription = document.querySelector('#subscriptionView .text-sm.text-gray-600.text-center.mb-4');
   if (trialDescription) {
     trialDescription.textContent = trialDays
-      ? `Try Done That for ${trialDays} days, no strings attached.`
-      : 'Get started with Done That today.';
+      ? `Try DoneThat for ${trialDays} days, no strings attached.`
+      : 'Get started with DoneThat today.';
   }
 
   // Update all price elements
