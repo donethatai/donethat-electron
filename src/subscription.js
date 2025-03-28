@@ -152,20 +152,10 @@ async function subscriptionUpdateUI(data) {
     const subscriptionInput = document.getElementById('subscriptionInput');
     if (subscriptionInput) {
       let statusText = '';
+      const subscriptionActionBtn = document.getElementById('subscriptionActionBtn');
       
-      // For team subscription
-      if (data.source === 'team') {
-        // Check if the team is active
-        if (data.status === 'ACTIVE') {
-          statusText = `Part of ${data.teamName || 'a team'} subscription`;
-        } else {
-          // If team is not active, show subscription view
-          await loadAndDisplayPlan();
-          return;
-        }
-      }
-      // For individual subscription
-      else {
+      // First check if individual subscription is active or trialing
+      if ((data.trialActive || data.paidActive) && data.source !== 'team') {
         if (data.trialActive && data.trialEndsAt) {
           const trialEndDate = new Date(data.trialEndsAt);
           const formattedDate = trialEndDate.toLocaleDateString();
@@ -174,6 +164,29 @@ async function subscriptionUpdateUI(data) {
           const renewalDate = new Date(data.currentPeriodEnd);
           const formattedDate = renewalDate.toLocaleDateString();
           statusText = `Renews on ${formattedDate}`;
+        }
+
+        // Ensure subscription action button is enabled for individual subscriptions
+        if (subscriptionActionBtn) {
+          subscriptionActionBtn.disabled = false;
+          subscriptionActionBtn.classList.remove('disabled-btn');
+        }
+      }
+      // Only if individual subscription is not active, check for team subscription
+      else if (data.source === 'team') {
+        // Check if the team is active
+        if (data.status === 'ACTIVE') {
+          statusText = `Part of ${data.teamName || 'a team'}`;
+          
+          // Disable only the subscription action button if team subscription exists
+          if (subscriptionActionBtn) {
+            subscriptionActionBtn.disabled = true;
+            subscriptionActionBtn.classList.add('disabled-btn');
+          }
+        } else {
+          // If team is not active, show subscription view
+          await loadAndDisplayPlan();
+          return;
         }
       }
 
