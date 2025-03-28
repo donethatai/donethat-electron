@@ -1,15 +1,18 @@
 const { getFunctions, httpsCallable } = require("firebase/functions");
 const { firebaseApp } = require('./firebase.js');
+const { ipcRenderer } = require('electron');
 
 const functions = getFunctions(firebaseApp, "europe-west1");
 
 // Create callable function references
 const generateRawSummaryFunction = httpsCallable(functions, "generateRawSummary");
 const saveFinalSummaryFunction = httpsCallable(functions, "saveFinalSummary");
+const discardSummaryFunction = httpsCallable(functions, "summaryDiscard");
 
 // Reference to permission-related elements 
 const generateSummaryBtn = document.getElementById("generateSummaryBtn");
 const submitSummaryBtn = document.getElementById("submitSummaryBtn");
+const discardSummaryBtn = document.getElementById("discardSummaryBtn");
 const summaryContainer = document.getElementById("summaryContainer");
 let currentSummaryId = null;
 const summaryLoadingSpinner = document.getElementById("summaryLoadingSpinner");
@@ -23,12 +26,14 @@ let hideSpinner;
 function showSummaryGeneratedState() {
     document.getElementById('generateSummaryBtn').classList.add('hidden');
     document.getElementById('submitSummaryBtn').classList.remove('hidden');
+    document.getElementById('discardSummaryBtn').classList.remove('hidden');
   }
   
   // Reset to initial state
   function resetSummaryState() {
     document.getElementById('generateSummaryBtn').classList.remove('hidden');
     document.getElementById('submitSummaryBtn').classList.add('hidden');
+    document.getElementById('discardSummaryBtn').classList.add('hidden');
     currentSummaryId = null;
     selectedBulletPoints = [];
   
@@ -84,7 +89,7 @@ if (submitSummaryBtn) {
         selectedBulletPoints = [];
   
         // Update button text and disable it
-        submitSummaryBtn.textContent = "Well done! Paused recording.";
+        submitSummaryBtn.textContent = "Well done!";
         submitSummaryBtn.disabled = true;
         submitSummaryBtn.classList.add('disabled-btn');
         submitSummaryBtn.classList.remove('hidden');
@@ -197,5 +202,34 @@ if (submitSummaryBtn) {
   } else {
     console.error("Generate summary button not found");
   }
+
+// Add event listener for discard button
+if (discardSummaryBtn) {
+  discardSummaryBtn.addEventListener('click', () => {
+    if (!currentSummaryId) {
+      console.error("No summary ID to discard");
+      return;
+    }
+
+    summaryLoadingSpinner.classList.remove('hidden');
+
+
+    discardSummaryFunction({
+      summaryId: currentSummaryId
+    }).then(() => {
+      summaryLoadingSpinner.classList.add('hidden');
+      // Notify main process that summary was submitted
+      ipcRenderer.send("summarySubmitted");
+
+      // Pause recording until tomorrow
+      ipcRenderer.send("pauseUntilTomorrow");
+      resetSummaryState();
+    }).catch((error) => {
+      summaryLoadingSpinner.classList.add('hidden');
+      console.error("Error discarding summary:", error);
+      alert(`Error discarding summary: ${error.message}`);
+    });
+  });
+}
 
 module.exports = { initializeDashboard, resetSummaryState };

@@ -443,7 +443,6 @@ function buildContextMenu() {
 
   // Always show logout option but disable if not logged in
   template.push(
-    { type: 'separator' },
     {
       label: 'Logout',
       click: () => {

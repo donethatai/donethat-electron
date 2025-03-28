@@ -178,13 +178,24 @@
           Generate Summary
         </button>
         
-        <!-- Save button (under summary container) -->
-        <button
-          id="submitSummaryBtn"
-          class="btn-primary hidden"
-        >
-          Submit
-        </button>
+        <!-- Button container for side-by-side layout -->
+        <div class="flex justify-between mt-4 space-x-4">
+          <!-- Save button -->
+          <button
+            id="submitSummaryBtn"
+            class="btn-primary flex-1 hidden"
+          >
+            Submit
+          </button>
+          
+          <!-- Discard button with grey font/border on white -->
+          <button
+            id="discardSummaryBtn"
+            class="btn-secondary flex-1 hidden"
+          >
+            Discard
+          </button>
+        </div>
       </div>
     </div>
     

@@ -58,11 +58,14 @@
 
 /* Secondary button (for consistency) */
 .btn-secondary {
-  @apply w-full text-white p-1.5 rounded text-sm cursor-pointer transition duration-200 shadow-md;
-  background-color: var(--color-neutral-600);
+  @apply w-full p-1.5 rounded text-sm cursor-pointer transition duration-200 shadow-sm;
+  background-color: var(--color-white);
+  color: var(--color-neutral-600);
+  border: 1px solid var(--color-neutral-500);
 }
 .btn-secondary:hover {
-  background-color: var(--color-neutral-700);
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-700);
 }
 
 /* Link style */
