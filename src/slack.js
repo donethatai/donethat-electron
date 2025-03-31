@@ -1,6 +1,7 @@
 const { initializeApp } = require("firebase/app");
 const { getFunctions, httpsCallable } = require("firebase/functions");
 const firebaseConfig = require("../firebase-config.js");
+const { logAnalyticsEvent } = require('./analytics.js');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -50,9 +51,13 @@ function updateSlackUI(connected, team = '') {
 // Helper function for Slack connection - no spinner involved
 async function handleSlackConnect() {
   try {
-    
     const result = await slackConnectFunction();
     const authWindow = window.open(result.data.authUrl);
+    
+    // Log that Slack connection was initiated
+    logAnalyticsEvent('slack_connect_started', {
+      status: 'success'
+    });
     
     // Function to cleanup listeners
     const cleanup = () => {
@@ -83,6 +88,13 @@ async function handleSlackConnect() {
   } catch (error) {
     console.error('Error starting Slack connection:', error);
     alert('Error connecting to Slack: ' + error.message);
+    
+    // Log error in Slack connection
+    logAnalyticsEvent('slack_connect_started', {
+      status: 'error',
+      error_code: error.code,
+      error_message: error.message
+    });
   }
 }
 
@@ -192,10 +204,22 @@ function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpin
               updateSlackUI(false);
               updateSlackInputState(false);
               
+              // Log successful Slack disconnection
+              logAnalyticsEvent('slack_disconnected', {
+                status: 'success'
+              });
+              
               if (loadUserSettingsCallback) loadUserSettingsCallback();
             } catch (error) {
               console.error('Error disconnecting from Slack:', error);
               alert('Error disconnecting from Slack: ' + error.message);
+              
+              // Log error in Slack disconnection
+              logAnalyticsEvent('slack_disconnected', {
+                status: 'error',
+                error_code: error.code,
+                error_message: error.message
+              });
             } finally {
               // Hide blocking spinner
               hideSpinner();
@@ -209,6 +233,12 @@ function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpin
             await slackUpdateChannelFunction({ channel: currentChannel });
             updateSlackInputState(true, undefined, currentChannel);
             
+            // Log successful channel update
+            logAnalyticsEvent('slack_channel_updated', {
+              status: 'success',
+              channel: currentChannel
+            });
+            
             if (loadUserSettingsCallback) loadUserSettingsCallback();
           } catch (error) {
             console.error('Error updating Slack channel:', error);
@@ -217,6 +247,14 @@ function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpin
             }
             slackInput.value = slackChannel;
             updateButtonState(true);
+            
+            // Log error in channel update
+            logAnalyticsEvent('slack_channel_updated', {
+              status: 'error',
+              error_code: error.code,
+              error_message: error.message,
+              channel: currentChannel
+            });
           } finally {
             // Hide blocking spinner
             hideSpinner();

@@ -1,6 +1,7 @@
 const { getFunctions, httpsCallable } = require("firebase/functions");
 const { firebaseApp } = require('./firebase.js');
 const { ipcRenderer } = require('electron');
+const { logAnalyticsEvent } = require('./analytics.js');
 
 const functions = getFunctions(firebaseApp, "europe-west1");
 
@@ -100,6 +101,13 @@ if (submitSummaryBtn) {
         // Pause recording until tomorrow
         ipcRenderer.send("pauseUntilTomorrow");
   
+        // Log successful summary submission
+        logAnalyticsEvent('summary_submitted', {
+          status: 'success',
+          bullet_points_count: selectedBullets.length,
+          has_comment: !!commentText
+        });
+  
         // Reset summary state AFTER button update and ensure button stays visible
         setTimeout(() => {
           resetSummaryState();
@@ -111,6 +119,13 @@ if (submitSummaryBtn) {
         summaryLoadingSpinner.classList.add('hidden');
         console.error("Error submitting summary:", error);
         alert(`Error submitting summary: ${error.message}`);
+        
+        // Log error in summary submission
+        logAnalyticsEvent('summary_submitted', {
+          status: 'error',
+          error_code: error.code,
+          error_message: error.message
+        });
       })
     });
   }
@@ -132,6 +147,10 @@ if (submitSummaryBtn) {
   
           if (bulletPoints.length === 0) {
             summaryContainer.innerHTML = '<p class="empty-state-text">No activities found for today.</p>';
+            logAnalyticsEvent('summary_generated', {
+              status: 'empty',
+              bullet_points_count: 0
+            });
             return;
           }
   
@@ -192,11 +211,25 @@ if (submitSummaryBtn) {
           });
   
           showSummaryGeneratedState();
+          
+          // Log successful summary generation
+          logAnalyticsEvent('summary_generated', {
+            status: 'success',
+            bullet_points_count: bulletPoints.length,
+            has_period: !!period
+          });
         })
         .catch((error) => {
           summaryLoadingSpinner.classList.add('hidden');
           console.error("Error generating summary:", error);
           summaryContainer.innerHTML = `<p class="empty-state-text">Error: ${error.message}</p>`;
+          
+          // Log error in summary generation
+          logAnalyticsEvent('summary_generated', {
+            status: 'error',
+            error_code: error.code,
+            error_message: error.message
+          });
         });
     });
   } else {
@@ -224,10 +257,22 @@ if (discardSummaryBtn) {
       // Pause recording until tomorrow
       ipcRenderer.send("pauseUntilTomorrow");
       resetSummaryState();
+      
+      // Log successful summary discard
+      logAnalyticsEvent('summary_discarded', {
+        status: 'success'
+      });
     }).catch((error) => {
       summaryLoadingSpinner.classList.add('hidden');
       console.error("Error discarding summary:", error);
       alert(`Error discarding summary: ${error.message}`);
+      
+      // Log error in summary discard
+      logAnalyticsEvent('summary_discarded', {
+        status: 'error',
+        error_code: error.code,
+        error_message: error.message
+      });
     });
   });
 }

@@ -2,6 +2,7 @@ const { initializeApp } = require("firebase/app");
 const { getFunctions, httpsCallable } = require("firebase/functions");
 const { getAuth } = require("firebase/auth");
 const firebaseConfig = require("../firebase-config.js");
+const { logAnalyticsEvent } = require('./analytics.js');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -65,6 +66,11 @@ function subscriptionInitialize(onSettingsUpdate, showBlockingSpinner, hideBlock
         showSpinner();
         const portalUrl = await getBillingPortalUrl();
         
+        // Log that billing portal was opened
+        logAnalyticsEvent('billing_portal_opened', {
+          status: 'success'
+        });
+        
         // Open portal window
         const portalWindow = window.open(portalUrl);
 
@@ -99,6 +105,13 @@ function subscriptionInitialize(onSettingsUpdate, showBlockingSpinner, hideBlock
         console.error('Error in subscription action button handler:', error);
         hideSpinner();
         alert(`Failed to open billing portal: ${error.message}`);
+        
+        // Log error in billing portal access
+        logAnalyticsEvent('billing_portal_opened', {
+          status: 'error',
+          error_code: error.code,
+          error_message: error.message
+        });
       }
     });
   }
@@ -299,6 +312,13 @@ async function subscriptionHandleSubscribe() {
 
     checkoutUrl = checkoutResult.data.checkoutUrl;
 
+    // Log that checkout was initiated
+    logAnalyticsEvent('subscription_checkout_started', {
+      status: 'success',
+      plan_id: selectedPlan.id,
+      plan_type: 'Individual'
+    });
+
     // Open checkout window
     const authWindow = window.open(checkoutUrl);
 
@@ -335,6 +355,15 @@ async function subscriptionHandleSubscribe() {
   } catch (error) {
     console.error('Subscription error:', error);
     errorMessage.textContent = error.message || 'An error occurred while setting up payment. Please try again later.';
+    
+    // Log error in subscription checkout
+    logAnalyticsEvent('subscription_checkout_started', {
+      status: 'error',
+      error_code: error.code,
+      error_message: error.message,
+      plan_id: selectedPlan?.id,
+      plan_type: 'Individual'
+    });
     
     // Reset button state on error
     subscribeButton.disabled = false;

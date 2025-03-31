@@ -5,6 +5,8 @@ const { getFunctions, httpsCallable } = require("firebase/functions");
 const firebaseConfig = require("../firebase-config.js");
 const { updateSlackUI, updateSlackInputState } = require('./slack');
 const { updateNotificationUI } = require('./permissions');
+const { logAnalyticsEvent } = require('./analytics.js');
+const { ipcRenderer } = require("electron");
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -133,18 +135,30 @@ async function saveUserSettings(type, value) {
 
     if (type === 'emails') {
       settingsData.emailRecipients = value;
+      logAnalyticsEvent('settings_updated', {
+        type: 'emails',
+        recipient_count: value.length
+      });
     } else if (type === 'notificationTime') {
       settingsData.summaryNotificationTime = value;
       summaryNotificationTime = value;
+      logAnalyticsEvent('settings_updated', {
+        type: 'notification_time',
+        time: value
+      });
 
       // Send the updated time to the main process
-      const { ipcRenderer } = require('electron');
       ipcRenderer.send("updateSummaryNotificationTime", value);
     }
 
     await updateUserSettingsFunction(settingsData);
 
   } catch (error) {
+    logAnalyticsEvent('settings_update_error', {
+      type: type,
+      error_code: error.code,
+      error_message: error.message
+    });
     console.error("Error saving settings:", error);
     alert(`Error saving settings: ${error.message}`);
     throw error;
@@ -214,7 +228,6 @@ async function updateSettingsUI(result) {
   }
   
   // Send the notification time to the main process
-  const { ipcRenderer } = require('electron');
   ipcRenderer.send("updateSummaryNotificationTime", summaryNotificationTime);
   
   // Update notification UI based on permission

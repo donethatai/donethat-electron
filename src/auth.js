@@ -9,9 +9,9 @@ const {
 
 const { ipcRenderer } = require("electron");
 
-
-// Import auth instance from firebase.js
+// Import auth instance from firebase.js and analytics functions directly
 const { auth } = require('./firebase.js');
+const { logAnalyticsEvent, setAnalyticsUserProperties } = require('./analytics.js');
 const { updateAuthState } = require('./app-state.js');
 const { resetSummaryState } = require('./dashboard.js');
 
@@ -26,7 +26,6 @@ const showResetPassword = document.getElementById("showResetPassword");
 const backToSignInFromReset = document.getElementById("backToSignInFromReset");
 
 const logoutLink = document.getElementById("logoutLink");
-
 
 let loadUserSettingsCallback;
 let showSpinner;
@@ -56,9 +55,9 @@ onAuthStateChanged(auth, async (user) => {
       if (confirm("Your email is not verified. Would you like us to send another verification email?")) {
         try {
           await sendEmailVerification(user);
+          logAnalyticsEvent('verification_email_sent');
           alert("Verification email sent. Please check your inbox.");
         } catch (error) {
-          console.error("Error sending verification email:", error);
           alert("Error sending verification email: " + error.message);
         }
       }
@@ -70,6 +69,18 @@ onAuthStateChanged(auth, async (user) => {
     const token = await user.getIdToken();
     updateAuthState(true, token);
     ipcRenderer.send("login", token);
+
+    // Set user properties for analytics
+    setAnalyticsUserProperties({
+      user_id: user.uid,
+      email_verified: user.emailVerified
+    });
+
+    // Log sign in event
+    logAnalyticsEvent('user_signed_in', {
+      method: user.providerData[0]?.providerId || 'email',
+      email_verified: user.emailVerified
+    });
 
     // Set up a token refresh listener
     const refreshInterval = setInterval(async () => {
@@ -93,6 +104,9 @@ onAuthStateChanged(auth, async (user) => {
     // User is signed out
     updateAuthState(false, null);
     navigateToView('signin');
+    
+    // Log sign out event
+    logAnalyticsEvent('user_signed_out');
   }
 });
 
@@ -108,6 +122,10 @@ signInForm.addEventListener("submit", (e) => {
         // The onAuthStateChanged listener will handle it
       })
       .catch((error) => {
+        logAnalyticsEvent('sign_in_error', {
+          error_code: error.code,
+          error_message: error.message
+        });
         alert("Sign in error: " + error.message);
         console.error("Sign in error:", error);
       });
@@ -124,16 +142,25 @@ signInForm.addEventListener("submit", (e) => {
         // Send email verification
         sendEmailVerification(userCredential.user)
           .then(() => {
+            logAnalyticsEvent('verification_email_sent');
             alert("Verification email sent. Please check your inbox to verify your account before signing in.");
             signOut(auth); // Sign out until email is verified
             navigateToView('signin');
           })
           .catch((error) => {
+            logAnalyticsEvent('verification_email_error', {
+              error_code: error.code,
+              error_message: error.message
+            });
             console.error("Error sending verification email:", error);
             alert("Error sending verification email: " + error.message);
           });
       })
       .catch((error) => {
+        logAnalyticsEvent('sign_up_error', {
+          error_code: error.code,
+          error_message: error.message
+        });
         alert("Sign up error: " + error.message);
         console.error("Sign up error:", error);
       });
@@ -146,11 +173,16 @@ signInForm.addEventListener("submit", (e) => {
   
     sendPasswordResetEmail(auth, email)
       .then(() => {
+        logAnalyticsEvent('password_reset_email_sent');
         alert("Password reset email sent. Check your inbox.");
         resetView.classList.add("hidden");
         signInView.classList.remove("hidden");
       })
       .catch((error) => {
+        logAnalyticsEvent('password_reset_error', {
+          error_code: error.code,
+          error_message: error.message
+        });
         alert("Password reset error: " + error.message);
         console.error("Password reset error:", error);
       });

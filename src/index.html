@@ -7,17 +7,19 @@
     <!-- CSP Meta Tags -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' 'unsafe-eval';
+      script-src 'self' 'unsafe-eval' https://*.googletagmanager.com;
       style-src 'self' 'unsafe-inline';
-      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai;
+      img-src 'self' https://*.googletagmanager.com https://*.google-analytics.com data:;
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com;
       frame-src 'self' https://checkout.stripe.com;
       form-action 'self' https://checkout.stripe.com;
     ">
     <meta http-equiv="X-Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' 'unsafe-eval';
+      script-src 'self' 'unsafe-eval' https://*.googletagmanager.com;
       style-src 'self' 'unsafe-inline';
-      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai;
+      img-src 'self' https://*.googletagmanager.com https://*.google-analytics.com data:;
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com;
       frame-src https://checkout.stripe.com;
       form-action 'self' https://checkout.stripe.com;
     ">

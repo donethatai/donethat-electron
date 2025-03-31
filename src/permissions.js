@@ -1,5 +1,6 @@
 const { ipcRenderer } = require("electron");
 const { isAuthenticated, updateScreenCapturePermission } = require('./app-state.js');
+const { logAnalyticsEvent } = require('./analytics.js');
 
 const openSettingsBtn = document.getElementById("openSettingsBtn");
 
@@ -18,6 +19,13 @@ ipcRenderer.on('screenCapturePermission', (event, data) => {
   
     updateScreenCapturePermission(hasPermission);
   
+    // Log screen capture permission status
+    logAnalyticsEvent('screen_capture_permission', {
+      status: hasPermission ? 'granted' : 'denied',
+      platform: process.platform,
+      is_wayland: isWaylandSession
+    });
+  
     // Update UI based on permission status
     if (!hasPermission && process.platform === 'linux' && isWaylandSession !== null) {
           updateLinuxInstructions(isWaylandSession);     
@@ -29,8 +37,23 @@ ipcRenderer.on('screenCapturePermission', (event, data) => {
 // Simplify the check notification permission function completely
 async function checkNotificationPermission() {
     try {
-      return await ipcRenderer.invoke("checkNotificationPermission");
+      const hasPermission = await ipcRenderer.invoke("checkNotificationPermission");
+      
+      // Log notification permission status
+      logAnalyticsEvent('notification_permission', {
+        status: hasPermission ? 'granted' : 'denied',
+        platform: process.platform
+      });
+      
+      return hasPermission;
     } catch (error) {
+      // Log error in notification permission check
+      logAnalyticsEvent('notification_permission', {
+        status: 'error',
+        error_code: error.code,
+        error_message: error.message,
+        platform: process.platform
+      });
       return false;
     }
   }
@@ -63,6 +86,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const enableNotificationsBtn = document.getElementById("enableNotificationsBtn");
     if (enableNotificationsBtn) {
       enableNotificationsBtn.addEventListener("click", () => {
+        // Log that user attempted to enable notifications on unsupported platform
+        logAnalyticsEvent('notification_enable_attempted', {
+          status: 'unsupported',
+          platform: process.platform
+        });
         alert("Notifications are not supported on this system.");
       });
     }
@@ -96,6 +124,11 @@ function updateLinuxInstructions(isWaylandSession) {
     // Handle permission buttons
     if (openSettingsBtn) {
         openSettingsBtn.addEventListener("click", () => {
+          // Log that user requested screen capture permission
+          logAnalyticsEvent('screen_capture_requested', {
+            status: 'requested',
+            platform: process.platform
+          });
           ipcRenderer.send("requestScreenCapturePermission");
         });
       }

@@ -156,6 +156,12 @@ function scheduleUpdateChecks() {
 // Call setup function
 setupAutoUpdater()
 
+
+// Add IPC handler for getting app version
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
 ///// AUTOSTART /////
 
 // Fix autostart implementation with platform-specific logic
@@ -481,6 +487,17 @@ function pauseRecording(duration) {
   isPaused = true
   updateTrayIcon(false)
 
+  // Send analytics event to renderer
+  if (mainWindow) {
+    mainWindow.webContents.send('analytics-event', {
+      eventName: 'recording_state_changed',
+      eventParams: {
+        status: 'paused',
+        duration_minutes: Math.round(duration / (60 * 1000))
+      }
+    });
+  }
+
   // Set timeout to resume recording after duration
   pauseTimeout = setTimeout(() => {
     resumeRecording()
@@ -525,6 +542,16 @@ function resumeRecording() {
     // Restart screenshot interval
     if (!screenshotInterval) {
       screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000)
+    }
+
+    // Send analytics event to renderer
+    if (mainWindow) {
+      mainWindow.webContents.send('analytics-event', {
+        eventName: 'recording_state_changed',
+        eventParams: {
+          status: 'resumed'
+        }
+      });
     }
   } else {
     updateTrayIcon(false)
@@ -774,7 +801,27 @@ function showSummaryNotification() {
     silent: false
   });
 
+  // Send analytics event for notification shown
+  if (mainWindow) {
+    mainWindow.webContents.send('analytics-event', {
+      eventName: 'summary_notification',
+      eventParams: {
+        status: 'shown'
+      }
+    });
+  }
+
   notification.on('click', () => {
+    // Send analytics event for notification clicked
+    if (mainWindow) {
+      mainWindow.webContents.send('analytics-event', {
+        eventName: 'summary_notification',
+        eventParams: {
+          status: 'clicked'
+        }
+      });
+    }
+
     // Open the app when notification is clicked
     if (mainWindow) {
       showWindowBelowTray();
@@ -784,6 +831,16 @@ function showSummaryNotification() {
   });
 
   notification.on('close', () => {
+    // Send analytics event for notification dismissed
+    if (mainWindow) {
+      mainWindow.webContents.send('analytics-event', {
+        eventName: 'summary_notification',
+        eventParams: {
+          status: 'dismissed'
+        }
+      });
+    }
+
     // If notification was dismissed, reschedule for tomorrow
     scheduleNextSummaryNotification();
   });
