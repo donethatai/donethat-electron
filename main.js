@@ -25,13 +25,16 @@ if (!app.isPackaged) {
 let iconRecordingPath = path.join(__dirname, 'resources', 'icon_recording.png')
 let iconPausedPath = path.join(__dirname, 'resources', 'icon_paused.png')
 let iconErrorPath = path.join(__dirname, 'resources', 'icon_error.png')
-
+// Use let for store since we'll initialize it after imports
+let store = null;
 let tray = null
 let mainWindow = null
 let idToken = null
 let screenshotInterval = null
-let pauseTimeout = null
-let isPaused = false
+let pauseState = {
+  endTime: null,     // If non-null and in future, app is paused
+  timeoutId: null    // Reference to the auto-resume timer
+};
 let summaryNotificationTime = null
 let summaryNotificationTimeout = null
 let summarySubmittedTimestamp = null
@@ -201,6 +204,21 @@ function setupAutoStart() {
 ///// MAIN /////
 
 app.whenReady().then(async () => {
+  // Import electron-store using dynamic import (ES Module)
+  try {
+    const Store = await import('electron-store');
+    store = new Store.default({
+      name: 'donethat-config'
+    });
+
+    // Load pause state only after store is initialized
+    const pauseStateRestored = loadPauseState();
+    if (pauseStateRestored) {
+    }
+  } catch (error) {
+    log.error('Failed to initialize electron-store:', error);
+  }
+
   // Create tray with initial error icon
   let trayIcon = nativeImage.createFromPath(iconErrorPath)
 
@@ -215,12 +233,12 @@ app.whenReady().then(async () => {
 
   // Call setupAutoStart here to ensure it runs after app is ready
   setupAutoStart();
-
+  
   // Check screen capture permission
   hasScreenCapturePermission = await checkScreenCapturePermission()
 
-  // Initial state - update icon after tray is created
-  updateTrayIcon(false)
+  // Initial state - update icon after tray is created and when we know the permission state
+  updateTrayIcon(!isPaused() && hasScreenCapturePermission && idToken)
 
   // Handle left-click to show a fresh context menu
   tray.on('click', () => {
@@ -282,12 +300,17 @@ app.on('before-quit', () => {
     clearInterval(screenshotInterval);
   }
 
-  if (pauseTimeout) {
-    clearTimeout(pauseTimeout);
+  if (pauseState.timeoutId) {
+    clearTimeout(pauseState.timeoutId);
   }
 
   if (summaryNotificationTimeout) {
     clearTimeout(summaryNotificationTimeout);
+  }
+  
+  // Save pause state before quitting if we're paused
+  if (isPaused()) {
+    savePauseState()
   }
 })
 
@@ -302,17 +325,19 @@ ipcMain.on('initialAuthCheck', (event, isAuthenticated) => {
   }
 })
 
-// Updated listener for login event - simplified to not store token
+// Updated listener for login event to check if tray exists before updating
 ipcMain.on('login', (event, token) => {
   idToken = token
 
   // Start recording if we weren't already and not paused and have permissions
-  if (!screenshotInterval && !isPaused && hasScreenCapturePermission) {
+  if (!screenshotInterval && !isPaused() && hasScreenCapturePermission) {
     startRecording()
   }
 
-  // Update icon to show active state (only if we have permission)
-  updateTrayIcon(!isPaused && hasScreenCapturePermission)
+  // Update icon to show active state (only if we have permission and tray exists)
+  if (tray) {
+    updateTrayIcon(!isPaused() && hasScreenCapturePermission)
+  }
 
   // Send permission status to renderer
   if (mainWindow) {
@@ -323,6 +348,7 @@ ipcMain.on('login', (event, token) => {
   }
 })
 
+// Update the logout handler to check if tray exists
 ipcMain.on('logout', (event) => {
   idToken = null
 
@@ -340,13 +366,19 @@ ipcMain.on('logout', (event) => {
 
 // Function to update the tray icon based on recording state
 function updateTrayIcon(isRecording) {
+  // Safety check - ensure tray exists before trying to update it
+  if (!tray) {
+    log.warn('Attempted to update tray icon before tray was created')
+    return
+  }
+
   let iconPath;
 
   if (isRecording) {
     // Use recording icon when recording
     iconPath = iconRecordingPath
     tray.setToolTip('DoneThat - Recording')
-  } else if (isPaused) {
+  } else if (isPaused()) {
     // Use paused icon when paused
     iconPath = iconPausedPath
     tray.setToolTip('DoneThat - Paused')
@@ -388,6 +420,7 @@ function navigateToView(viewName) {
 // Function to build the context menu with pause options
 function buildContextMenu() {
   const isLoggedIn = Boolean(idToken)
+  const currentlyPaused = isPaused()
 
   // Start with basic template
   const template = []
@@ -403,37 +436,37 @@ function buildContextMenu() {
     {
       label: 'Pause for 5 minutes',
       click: () => pauseRecording(5 * 60 * 1000),
-      enabled: isLoggedIn && !isPaused && screenshotInterval
+      enabled: isLoggedIn && !currentlyPaused && screenshotInterval
     },
     {
       label: 'Pause for 15 minutes',
       click: () => pauseRecording(15 * 60 * 1000),
-      enabled: isLoggedIn && !isPaused && screenshotInterval
+      enabled: isLoggedIn && !currentlyPaused && screenshotInterval
     },
     {
       label: 'Pause for 30 minutes',
       click: () => pauseRecording(30 * 60 * 1000),
-      enabled: isLoggedIn && !isPaused && screenshotInterval
+      enabled: isLoggedIn && !currentlyPaused && screenshotInterval
     },
     {
       label: 'Pause for 1 hour',
       click: () => pauseRecording(60 * 60 * 1000),
-      enabled: isLoggedIn && !isPaused && screenshotInterval
+      enabled: isLoggedIn && !currentlyPaused && screenshotInterval
     },
     {
       label: 'Pause for today',
       click: () => pauseUntilTomorrow(),
-      enabled: isLoggedIn && !isPaused && screenshotInterval
+      enabled: isLoggedIn && !currentlyPaused && screenshotInterval
     },
     {
       label: 'Pause for this week',
       click: () => pauseUntilNextWeek(),
-      enabled: isLoggedIn && !isPaused && screenshotInterval
+      enabled: isLoggedIn && !currentlyPaused && screenshotInterval
     },
     {
       label: 'Resume',
       click: () => resumeRecording(),
-      enabled: isLoggedIn && isPaused
+      enabled: isLoggedIn && currentlyPaused
     }
   )
 
@@ -471,6 +504,11 @@ function buildContextMenu() {
   return Menu.buildFromTemplate(template)
 }
 
+// Helper function to check if currently paused
+function isPaused() {
+  return pauseState.endTime !== null && pauseState.endTime > new Date();
+}
+
 // Function to pause recording for a specified duration
 function pauseRecording(duration) {
   // Clear existing interval and timeout
@@ -479,12 +517,23 @@ function pauseRecording(duration) {
     screenshotInterval = null
   }
 
-  if (pauseTimeout) {
-    clearTimeout(pauseTimeout)
+  if (pauseState.timeoutId) {
+    clearTimeout(pauseState.timeoutId)
+    pauseState.timeoutId = null
   }
 
+  // Calculate end time
+  const endTime = new Date(Date.now() + duration)
+  
   // Set pause state
-  isPaused = true
+  pauseState = {
+    endTime: endTime,
+    timeoutId: setTimeout(() => resumeRecording(), duration)
+  };
+  
+  // Save the pause state
+  savePauseState()
+  
   updateTrayIcon(false)
 
   // Send analytics event to renderer
@@ -497,11 +546,6 @@ function pauseRecording(duration) {
       }
     });
   }
-
-  // Set timeout to resume recording after duration
-  pauseTimeout = setTimeout(() => {
-    resumeRecording()
-  }, duration)
 }
 
 // Function to pause until tomorrow (next day at midnight)
@@ -528,12 +572,20 @@ function pauseUntilNextWeek() {
 
 // Function to resume recording
 function resumeRecording() {
-  if (pauseTimeout) {
-    clearTimeout(pauseTimeout)
-    pauseTimeout = null
+  if (pauseState.timeoutId) {
+    clearTimeout(pauseState.timeoutId)
   }
 
-  isPaused = false
+  // Reset pause state
+  pauseState = {
+    endTime: null,
+    timeoutId: null
+  };
+  
+  // Clear the saved pause state
+  if (store) {
+    store.delete('pauseState')
+  }
 
   // Only restart recording if logged in
   if (idToken) {
@@ -560,7 +612,6 @@ function resumeRecording() {
 
 // Add new IPC handler for pausing until tomorrow from renderer
 ipcMain.on('pauseUntilTomorrow', () => {
-  log.info('Pausing recording until tomorrow due to summary submission');
   pauseUntilTomorrow();
 });
 
@@ -713,8 +764,8 @@ app.on('browser-window-focus', async () => {
       isWaylandSession: isWaylandSession
     });
 
-    // Update icon and recording state if needed
-    if (hasScreenCapturePermission && idToken && !isPaused) {
+    // Update icon and recording state if needed (only if tray exists)
+    if (hasScreenCapturePermission && idToken && !isPaused() && tray) {
       updateTrayIcon(true);
       startRecording();
     }
@@ -784,7 +835,7 @@ function scheduleNextSummaryNotification() {
 // Function to show the summary notification
 function showSummaryNotification() {
   // Skip notification if recording is paused or not active
-  if (isPaused || !screenshotInterval) {
+  if (isPaused() || !screenshotInterval) {
     scheduleNextSummaryNotification(); // Schedule for next time
     return;
   }
@@ -980,10 +1031,64 @@ ipcMain.on('requestScreenCapturePermission', async () => {
       });
 
       // Update icon and start recording if logged in
-      if (idToken && !isPaused) {
+      if (idToken && !isPaused()) {
         updateTrayIcon(true)
         startRecording()
       }
     }
   })
 })
+
+// Function to save pause state using electron-store
+function savePauseState() {
+  try {
+    // Skip if store is not initialized
+    if (!store) {
+      log.warn('Store not initialized');
+      return;
+    }
+
+    const stateToSave = {
+      endTime: pauseState.endTime ? pauseState.endTime.getTime() : null
+    }
+    store.set('pauseState', stateToSave)
+  } catch (error) {
+    log.error('Failed to save pause state:', error)
+  }
+}
+
+// Function to load pause state using electron-store
+function loadPauseState() {
+  try {
+    // Skip if store is not initialized
+    if (!store) {
+      log.warn('Store not initialized');
+      return false;
+    }
+
+    const savedState = store.get('pauseState')
+    
+    if (savedState && savedState.endTime) {
+      const endTime = new Date(savedState.endTime)
+      const now = new Date()
+      
+      // If pause end time is in the future, restore the pause
+      if (endTime > now) {
+        const remainingDuration = endTime.getTime() - now.getTime()
+        
+        pauseState = {
+          endTime: endTime,
+          timeoutId: setTimeout(() => resumeRecording(), remainingDuration)
+        };
+        
+        return true
+      } else {
+        // Pause period has already expired
+        store.delete('pauseState')
+      }
+    }
+  } catch (error) {
+    log.error('Failed to load pause state:', error)
+  }
+  return false
+}
