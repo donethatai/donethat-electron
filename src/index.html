@@ -255,6 +255,19 @@
         
         <!-- Settings content -->
         <div class="form-group">
+          <!-- Name field -->
+          <div>
+            <label for="nameInput" class="form-label mb-1">
+              Your Name
+            </label>
+            <input
+              type="text"
+              id="nameInput"
+              class="form-input text-xs py-1.5"
+              placeholder="Enter your name"
+            />
+          </div>
+
           <div>
             <label for="emailInput" class="form-label mb-1">
               Recipient Emails
@@ -331,7 +344,6 @@
                 id="notificationTimeInput"
                 class="form-input cursor-pointer"
                 value="17:00"
-                readonly
               />
               <!-- Loading spinner overlay for time setting -->
               <div id="timeLoadingSpinner" class="spinner-overlay hidden">
@@ -374,8 +386,20 @@
         </div>
         
         <!-- Version number -->
-        <div class="mt-6 text-center">
-          <span id="appVersion" class="text-xs text-gray-400"></span>
+        <div class="mt-4 text-center">
+          <span id="appVersion" class="text-xs text-gray-500 cursor-pointer hover:text-gray-700"></span>
+        </div>
+
+        <!-- Analytics checkbox -->
+        <div id="screenshotsContainer" class="mt-2 flex items-center justify-center hidden">
+          <input
+            type="checkbox"
+            id="screenshotsCheckbox"
+            class="form-checkbox h-4 w-4 text-blue-600"
+          />
+          <label for="screenshotsCheckbox" class="ml-2 text-xs text-gray-600">
+            Save screenshots to improve services
+          </label>
         </div>
       </div>
     </div>

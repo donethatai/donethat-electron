@@ -15,6 +15,8 @@ const state = {
   // Settings state
   hasEmails: false,
   hasSlack: false,
+  name: '',
+  storeScreenshots: false,
   emailRecipients: [],
   slackChannel: null,
   summaryNotificationTime: "17:00", // Default time (5:00 PM)
@@ -48,6 +50,18 @@ function hasSlack() {
   return state.hasSlack;
 }
 
+function hasName() {
+  return  state.name.length > 0;
+}
+
+function getName() {
+  return state.name;
+}
+
+function isStoreScreenshots() {
+  return state.storeScreenshots;
+}
+
 function getEmailRecipients() {
   return [...state.emailRecipients];
 }
@@ -77,10 +91,17 @@ function updateScreenCapturePermission(hasPermission) {
 function updateSubscriptionState(subscriptionStatus, teamStatus) {
   state.subscriptionStatus = subscriptionStatus;
   state.teamStatus = teamStatus;
-  
   state.hasValidAccess = teamStatus === 'active' || 
                         subscriptionStatus === 'trialing' || 
                         subscriptionStatus === 'active';
+}
+
+function updateName(name) {
+  state.name = name;
+}
+
+function updateStoreScreenshots(enabled) {
+  state.storeScreenshots = enabled;
 }
 
 function updateEmailSettings(recipients) {
@@ -123,6 +144,9 @@ module.exports = {
   hasValidAccess,
   hasEmails,
   hasSlack,
+  hasName,
+  getName,
+  isStoreScreenshots,
   getEmailRecipients,
   getSlackChannel,
   getSummaryNotificationTime,
@@ -130,6 +154,8 @@ module.exports = {
   updateAuthState,
   updateScreenCapturePermission,
   updateSubscriptionState,
+  updateName,
+  updateStoreScreenshots,
   updateEmailSettings,
   updateSlackSettings,
   updateNotificationTime,

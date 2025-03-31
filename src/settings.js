@@ -50,22 +50,33 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
     });
   }
   
-  // Display app version
+  // Set up version click handler
+  setupVersionClickHandler();
+}
+
+// Set up version click handler
+function setupVersionClickHandler() {
   const versionElement = document.querySelector('#appVersion');
+  
   if (versionElement) {
     try {
-      // Get the version from Electron app
-      const { app } = require('@electron/remote');
-      versionElement.textContent = `v${app.getVersion()}`;
+      // Try to get version from package.json first
+      const packageInfo = require('../package.json');
+      versionElement.textContent = `v${packageInfo.version}`;
+      
+      // Add click handler for version number
+      versionElement.style.cursor = 'pointer'; // Make it look clickable
+      versionElement.addEventListener('click', (e) => {
+        const screenshotsContainer = document.getElementById('screenshotsContainer');
+        const screenshotsCheckbox = document.getElementById('screenshotsCheckbox');
+        if (screenshotsContainer && screenshotsCheckbox && !screenshotsCheckbox.checked) {
+          // Only toggle if checkbox is unchecked
+          screenshotsContainer.classList.toggle('hidden');
+        }
+      });
     } catch (error) {
-      // Fallback: try to get version directly from package.json
-      try {
-        const packageInfo = require('../package.json');
-        versionElement.textContent = `v${packageInfo.version}`;
-      } catch (packageError) {
-        // If both methods fail, show nothing
-        versionElement.textContent = '';
-      }
+      // If we can't get the version, just show a placeholder
+      versionElement.textContent = 'v?.?.?';
     }
   }
 }
@@ -121,7 +132,7 @@ async function saveUserSettings(type, value) {
   if (!getAuth().currentUser) return;
 
   // Use the appropriate spinner based on the setting type
-  if (type === 'emails') {
+  if (type === 'emails' || type === 'name') {
     showSpinner();
   } else if (type === 'notificationTime') {
     const timeLoadingSpinner = document.getElementById("timeLoadingSpinner");
@@ -139,6 +150,17 @@ async function saveUserSettings(type, value) {
         type: 'emails',
         recipient_count: value.length
       });
+    } else if (type === 'name') {
+      settingsData.name = value; // value is already null if empty
+      logAnalyticsEvent('settings_updated', {
+        type: 'name'
+      });
+    } else if (type === 'screenshots') {
+      settingsData.storeScreenshots = value;
+      logAnalyticsEvent('settings_updated', {
+        type: 'screenshots',
+        enabled: value
+      });
     } else if (type === 'notificationTime') {
       settingsData.summaryNotificationTime = value;
       summaryNotificationTime = value;
@@ -146,9 +168,6 @@ async function saveUserSettings(type, value) {
         type: 'notification_time',
         time: value
       });
-
-      // Send the updated time to the main process
-      ipcRenderer.send("updateSummaryNotificationTime", value);
     }
 
     await updateUserSettingsFunction(settingsData);
@@ -164,7 +183,7 @@ async function saveUserSettings(type, value) {
     throw error;
   } finally {
     // Hide the appropriate spinner
-    if (type === 'emails') {
+    if (type === 'emails' || type === 'name') {
       hideSpinner();
     } else if (type === 'notificationTime') {
       const timeLoadingSpinner = document.getElementById("timeLoadingSpinner");
@@ -181,6 +200,27 @@ async function updateSettingsUI(result) {
   const emailTagsContainer = document.getElementById('emailTagsContainer');
   if (emailTagsContainer) {
     emailTagsContainer.innerHTML = "";
+  }
+
+  // Handle name
+  if (result.data && result.data.name) {
+    const nameInput = document.getElementById('nameInput');
+    if (nameInput) {
+      nameInput.value = result.data.name;
+    }
+  }
+
+  // Handle screenshots setting
+  if (result.data && typeof result.data.storeScreenshots === 'boolean') {
+    const screenshotsCheckbox = document.getElementById('screenshotsCheckbox');
+    const screenshotsContainer = document.getElementById('screenshotsContainer');
+    if (screenshotsCheckbox) {
+      screenshotsCheckbox.checked = result.data.storeScreenshots;
+      // Show container if screenshots are enabled
+      if (screenshotsContainer) {
+        screenshotsContainer.classList.toggle('hidden', !result.data.storeScreenshots);
+      }
+    }
   }
 
   // Handle email recipients
@@ -335,107 +375,103 @@ function renderEmailTags() {
         &times;
       </button>
     `;
-
     emailTagsContainer.appendChild(tag);
+  });
+
+  // Add click handlers for remove buttons
+  const removeButtons = emailTagsContainer.querySelectorAll('.remove-email-btn');
+  removeButtons.forEach(button => {
+    button.addEventListener('click', async (e) => {
+      const email = e.target.getAttribute('data-email');
+      if (email) {
+        await removeEmailTag(email);
+      }
+    });
   });
 }
 
+// Add event listeners for name and screenshots
+const nameInput = document.getElementById('nameInput');
+if (nameInput) {
+  nameInput.addEventListener('change', async (e) => {
+    const newName = e.target.value.trim();
+    try {
+      await saveUserSettings('name', newName || null);
+    } catch (error) {
+      // If error occurs, revert to previous value
+      e.target.value = getName();
+    }
+  });
+}
 
-  
-  // Email management
-  if (addEmailBtn) {
-    addEmailBtn.addEventListener('click', () => {
+const screenshotsCheckbox = document.getElementById('screenshotsCheckbox');
+if (screenshotsCheckbox) {
+  screenshotsCheckbox.addEventListener('change', async (e) => {
+    try {
+      await saveUserSettings('screenshots', e.target.checked);
+      // Show/hide container based on checkbox state
+      const screenshotsContainer = document.getElementById('screenshotsContainer');
+      if (screenshotsContainer) {
+        screenshotsContainer.classList.toggle('hidden', !e.target.checked);
+      }
+    } catch (error) {
+      // If error occurs, revert to previous value
+      e.target.checked = isStoreScreenshots();
+    }
+  });
+}
+
+// Add event listener for email input
+const emailInput = document.getElementById('emailInput');
+if (emailInput) {
+  emailInput.addEventListener('keypress', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
       const email = emailInput.value.trim();
       if (email) {
-        addEmailTag(email);
+        await addEmailTag(email);
       }
-    });
-  } else {
-    console.error("Add email button not found");
-  }
-  
-  // Email input handling
-  if (emailInput) {
-    emailInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const email = emailInput.value.trim();
-        if (email) {
-          addEmailTag(email);
-        }
-      }
-    });
-  }
-  
-  // Event delegation for removing emails
-  if (emailTagsContainer) {
-    emailTagsContainer.addEventListener('click', (e) => {
-      if (e.target.classList.contains('remove-email')) {
-        const email = e.target.dataset.email;
-        removeEmailTag(email);
-      }
-    });
-  } else {
-    console.error("Email tags container not found");
-  }
-  
-  // Add event listener for notification time changes
-  const notificationTimeInput = document.getElementById("notificationTimeInput");
-  if (notificationTimeInput) {
-    // Make the input readonly to prevent typing and force using the picker
-    notificationTimeInput.setAttribute("readonly", "readonly");
-  
-    // When clicked, force the time picker to open
-    notificationTimeInput.addEventListener('click', (e) => {
-      e.preventDefault();
-  
-      // Remove readonly temporarily to allow the picker to work
-      e.target.removeAttribute("readonly");
-  
-      // Focus the input
-      e.target.focus();
-  
-      // Try to show the time picker using various methods
-      // Modern browsers support showPicker()
-      if (typeof e.target.showPicker === 'function') {
-        try {
-          e.target.showPicker();
-        } catch (err) {
-        }
-      }
-  
-      // Add readonly back after a short delay
-      setTimeout(() => {
-        e.target.setAttribute("readonly", "readonly");
-      }, 100);
-    });
-  
-    // Also add a click handler to the parent container to catch clicks
-    // on the time picker icon that some browsers show
-    const timeInputContainer = notificationTimeInput.parentElement;
-    if (timeInputContainer) {
-      timeInputContainer.addEventListener('click', (e) => {
-        // Don't trigger if we clicked directly on the input (it has its own handler)
-        if (e.target !== notificationTimeInput) {
-          // Simulate a click on the input
-          notificationTimeInput.click();
-        }
-      });
     }
-  
-    notificationTimeInput.addEventListener('change', async (e) => {
+  });
+}
+
+// Add event listener for notification time input
+const notificationTimeInput = document.getElementById('notificationTimeInput');
+if (notificationTimeInput) {
+  notificationTimeInput.addEventListener('blur', async (e) => {
+    const newTime = e.target.value;
+    try {
+      await saveUserSettings('notificationTime', newTime);
+      // Update local state
+      summaryNotificationTime = newTime;
+      // Send the updated time to the main process
+      ipcRenderer.send("updateSummaryNotificationTime", newTime);
+    } catch (error) {
+      // If error occurs, revert to previous value
+      e.target.value = summaryNotificationTime;
+    }
+  });
+
+  notificationTimeInput.addEventListener('keypress', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
       const newTime = e.target.value;
-  
       try {
         await saveUserSettings('notificationTime', newTime);
+        // Update local state
+        summaryNotificationTime = newTime;
+        // Send the updated time to the main process
+        ipcRenderer.send("updateSummaryNotificationTime", newTime);
       } catch (error) {
         // If error occurs, revert to previous value
         e.target.value = summaryNotificationTime;
       }
-    });
-  }
+    }
+  });
+}
 
 module.exports = {
   initializeSettings,
-  loadUserSettings
+  loadUserSettings,
+  saveUserSettings
 };

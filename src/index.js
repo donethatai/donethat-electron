@@ -18,10 +18,13 @@ const {
   updateSubscriptionState,
   updateEmailSettings,
   updateSlackSettings,
+  updateName,
+  updateStoreScreenshots,
   updateCurrentView,
   getCurrentView,
   hasEmails,
   hasSlack,
+  hasName,
   isAuthenticated
 } = require('./app-state.js');
 
@@ -73,7 +76,7 @@ function navigateToView(viewName) {
       viewName = 'signin';
     } else if (!hasScreenCapturePermission()) {
       viewName = 'permission';
-    } else if (!hasEmails() && !hasSlack()) {
+    } else if (!hasName() || (!hasEmails() && !hasSlack())) {
       viewName = 'settings';
     } else if (!hasValidAccess()) {
       viewName = 'subscription';
@@ -145,6 +148,8 @@ async function loadUserSettingsCallback() {
   updateSubscriptionState(result.data?.subscription?.status, hasActiveTeam);
   updateEmailSettings(result.data?.emailRecipients || []);
   updateSlackSettings(result.data?.slack?.defaultChannel);
+  updateName(result.data?.name || '');
+  updateStoreScreenshots(result.data?.storeScreenshots || false);
 
   // Update subscription UI with current data
   subscriptionUpdateUI({
