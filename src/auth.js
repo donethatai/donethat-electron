@@ -255,6 +255,14 @@ signInForm.addEventListener("submit", (e) => {
   // Helper function for complete logout cleanup
   async function performFullLogout() {
     try {
+      // Log logout event before actually logging out to include user ID
+      if (auth.currentUser) {
+        logAnalyticsEvent('user_logout', {
+          user_id: auth.currentUser.uid,
+          method: 'explicit_logout'
+        });
+      }
+    
       // Clear Firebase auth state
       await signOut(auth);
   

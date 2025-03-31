@@ -154,7 +154,6 @@ if (submitSummaryBtn) {
           if (Math.abs(newStart - period.start) < oneHourInMs && 
               Math.abs(newEnd - period.end) < oneHourInMs) {
             const existingWarning = document.querySelector('summary-warning-message');
-            console.log(existingWarning);
             if (existingWarning==null) {
               // Show warning message
               const warningMessage = document.createElement('p');

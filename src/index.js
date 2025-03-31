@@ -12,6 +12,7 @@ const { initializeAuth } = require('./auth.js');
 const { initializeDashboard, resetSummaryState } = require('./dashboard.js');
 const { initializeAutoUpdate } = require('./autoupdate.js');
 const { initializePermissions } = require('./permissions.js');
+const { initializeAnalytics, trackPageView } = require('./analytics.js');
 const { 
   hasScreenCapturePermission,
   hasValidAccess,
@@ -27,6 +28,9 @@ const {
   hasName,
   isAuthenticated
 } = require('./app-state.js');
+
+// Remove test analytics global exposure as we no longer have that function
+// window.testAnalytics = testAnalytics;
 
 const coreViews = ['settings', 'dashboard'];
 
@@ -126,6 +130,9 @@ function navigateToView(viewName) {
     viewToShow.classList.remove('hidden');
     // Update the current view state
     updateCurrentView(viewName);
+    
+    // Track page view in analytics with all necessary details
+    trackPageView(viewName);
   } else {
     console.error('View not found:', viewName);
   }
@@ -177,6 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeSettings(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeAutoUpdate(navigateToView);
   initializePermissions(navigateToView);
+  initializeAnalytics();
 });
 
 // Function to create an overlay that blocks interactions
