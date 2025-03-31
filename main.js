@@ -447,7 +447,24 @@ function buildContextMenu() {
   template.push({
     label: 'Open App',
     click: () => navigateToView('signup-next')
-  }, { type: 'separator' })
+  }, 
+  // Add Open Settings option (renamed from Setup)
+  {
+    label: 'Open Settings',
+    click: () => navigateToView('settings'),
+    enabled: isLoggedIn
+  },
+  { type: 'separator' },
+  // Add "Open Web Portal" option
+  {
+    label: 'Open Web Portal',
+    click: () => {
+      const { shell } = require('electron');
+      shell.openExternal('https://app.donethat.ai');
+    }
+  },
+  { type: 'separator' },
+)
 
   // Add pause options
   template.push(
@@ -488,14 +505,9 @@ function buildContextMenu() {
     }
   )
 
-  // Add Setup option
+  // Add separator before logout
   template.push(
-    { type: 'separator' },
-    {
-      label: 'Setup',
-      click: () => navigateToView('settings'),
-      enabled: isLoggedIn
-    }
+    { type: 'separator' }
   );
 
   // Always show logout option but disable if not logged in
