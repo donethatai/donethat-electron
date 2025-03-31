@@ -10,6 +10,24 @@ const {
   getWaylandStatus
 } = require('./src-main/screenshot-capture')
 
+// Prevent multiple instances of the app
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  log.info('App already running - quitting this instance');
+  app.quit();
+  // Early exit
+  return;
+}
+
+// Set up second-instance handler
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+  // Someone tried to run a second instance, show the context menu
+  if (tray) {
+    const contextMenu = buildContextMenu();
+    tray.popUpContextMenu(contextMenu);
+  }
+});
+
 // To show dev tools next to main window
 let DEBUG = false
 // Add your Firebase function URL here
@@ -96,7 +114,7 @@ if (app.isPackaged) {
 // Initialize Firebase with the new config
 const firebaseApp = initializeApp(firebaseConfig)
 
-///// AUTOUPDATER /////
+////// AUTOUPDATER /////
 
 // Configure autoUpdater
 function setupAutoUpdater() {
@@ -165,7 +183,7 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
 
-///// AUTOSTART /////
+////// AUTOSTART /////
 
 // Fix autostart implementation with platform-specific logic
 function setupAutoStart() {
@@ -201,7 +219,7 @@ function setupAutoStart() {
   }
 }
 
-///// MAIN /////
+////// MAIN /////
 
 app.whenReady().then(async () => {
   // Import electron-store using dynamic import (ES Module)
@@ -315,7 +333,7 @@ app.on('before-quit', () => {
 })
 
 
-///// AUTH /////
+////// AUTH /////
 
 // Add new IPC handler for initial auth check
 ipcMain.on('initialAuthCheck', (event, isAuthenticated) => {
@@ -362,7 +380,7 @@ ipcMain.on('logout', (event) => {
   updateTrayIcon(false)
 })
 
-///// TRAY /////
+////// TRAY /////
 
 // Function to update the tray icon based on recording state
 function updateTrayIcon(isRecording) {
@@ -615,7 +633,7 @@ ipcMain.on('pauseUntilTomorrow', () => {
   pauseUntilTomorrow();
 });
 
-///// WINDOWS /////
+////// WINDOWS /////
 
 // Separate window creation from showing
 function createWindow() {
@@ -778,7 +796,7 @@ ipcMain.on('summarySubmitted', (event) => {
   summarySubmittedTimestamp = Date.now();
 })
 
-///// NOTIFICATIONS /////
+////// NOTIFICATIONS /////
 
 // Simplify this handler to just check if notifications are supported at all
 ipcMain.handle('checkNotificationPermission', async () => {
@@ -928,7 +946,7 @@ function shouldSkipNotification() {
   return submittedDate >= twoHoursBeforeNotification;
 }
 
-//// SCREENSHOTS ////
+////// SCREENSHOTS ////
 
 function startRecording() {
   if (!screenshotInterval) {
