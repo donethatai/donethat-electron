@@ -108,6 +108,9 @@
         }
       ]
     },
+    "nsis": {
+      "runAfterFinish": true
+    },
     "linux": {
       "target": [
         "AppImage"
