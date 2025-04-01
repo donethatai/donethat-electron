@@ -147,12 +147,10 @@ if (submitSummaryBtn) {
   
           // Check if this is the same period as the last summary
           const oneHourInMs = 60 * 60 * 1000; // 1 hour in milliseconds
-          const newStart = new Date(period.start).getTime();
-          const newEnd = new Date(period.end).getTime();
+          const newEnd = Date.now();
   
           // Check if the new period overlaps with the last period within 1 hour
-          if (Math.abs(newStart - period.start) < oneHourInMs && 
-              Math.abs(newEnd - period.end) < oneHourInMs) {
+          if (Math.abs(newEnd - period.end) > oneHourInMs) {
             const existingWarning = document.querySelector('summary-warning-message');
             if (existingWarning==null) {
               // Show warning message
