@@ -166,6 +166,7 @@ async function loadUserSettingsCallback() {
     status: hasActiveTeam ? 'active' : result.data?.subscription?.status || null,
     trialActive: result.data?.subscription?.status === 'trialing',
     trialDaysRemaining: result.data?.subscription?.trialDaysRemaining,
+    trialEndsAt: result.data?.subscription?.trialEndsAt,
     paidActive: result.data?.subscription?.status === 'active',
     currentPeriodEnd: result.data?.subscription?.currentPeriodEnd
   });
