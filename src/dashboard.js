@@ -94,6 +94,10 @@ if (submitSummaryBtn) {
         submitSummaryBtn.disabled = true;
         submitSummaryBtn.classList.add('disabled-btn');
         submitSummaryBtn.classList.remove('hidden');
+        
+        // Also disable the discard button
+        discardSummaryBtn.disabled = true;
+        discardSummaryBtn.classList.add('disabled-btn');
   
         // Notify main process that summary was submitted
         ipcRenderer.send("summarySubmitted");
@@ -114,6 +118,10 @@ if (submitSummaryBtn) {
           submitSummaryBtn.textContent = "Submit";
           submitSummaryBtn.classList.remove('disabled-btn');
           submitSummaryBtn.disabled = false;
+          
+          // Also reset the discard button state
+          discardSummaryBtn.disabled = false;
+          discardSummaryBtn.classList.remove('disabled-btn');
         }, 10000);
       }).catch((error) => {
         summaryLoadingSpinner.classList.add('hidden');
@@ -150,7 +158,7 @@ if (submitSummaryBtn) {
           const newEnd = Date.now();
   
           // Check if the new period overlaps with the last period within 1 hour
-          if (Math.abs(newEnd - period.end) > oneHourInMs) {
+          if (period && Math.abs(newEnd - period.end) > oneHourInMs) {
             const existingWarning = document.querySelector('summary-warning-message');
             if (existingWarning==null) {
               // Show warning message
@@ -172,7 +180,7 @@ if (submitSummaryBtn) {
           }
   
           if (bulletPoints.length === 0) {
-            summaryContainer.innerHTML = '<p class="empty-state-text">No activities found for today.</p>';
+            summaryContainer.innerHTML = '<p class="empty-state-text">No activities found for today. Check if DoneThat is paused and try again in a few minutes.</p>';
             logAnalyticsEvent('summary_generated', {
               status: 'empty',
               bullet_points_count: 0
