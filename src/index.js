@@ -177,8 +177,8 @@ async function loadUserSettingsCallback() {
 // Update the document ready handler
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize all modules
-  initializeAuth(loadUserSettings, showBlockingSpinner, hideBlockingSpinner, navigateToView);
-  initializeDashboard(loadUserSettings, showBlockingSpinner, hideBlockingSpinner, navigateToView);
+  initializeAuth(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
+  initializeDashboard(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeSlack(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner);
   subscriptionInitialize(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeSettings(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
