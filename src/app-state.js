@@ -15,6 +15,7 @@ const state = {
   // Settings state
   hasEmails: false,
   hasSlack: false,
+  hasSlackToken: false,
   name: '',
   storeScreenshots: false,
   emailRecipients: [],
@@ -48,6 +49,10 @@ function hasEmails() {
 
 function hasSlack() {
   return state.hasSlack;
+}
+
+function hasSlackToken() {
+  return state.hasSlackToken;
 }
 
 function hasName() {
@@ -109,8 +114,9 @@ function updateEmailSettings(recipients) {
   state.hasEmails = recipients.length > 0;
 }
 
-function updateSlackSettings(channel) {
+function updateSlackSettings(channel, hasToken = false) {
   state.slackChannel = channel;
+  state.hasSlackToken = hasToken;
   state.hasSlack = !!channel;
 }
 
@@ -144,6 +150,7 @@ module.exports = {
   hasValidAccess,
   hasEmails,
   hasSlack,
+  hasSlackToken,
   hasName,
   getName,
   isStoreScreenshots,

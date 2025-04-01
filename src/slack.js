@@ -230,21 +230,35 @@ function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpin
             // Show blocking spinner
             showSpinner();
             
-            await slackUpdateChannelFunction({ channel: currentChannel });
-            updateSlackInputState(true, undefined, currentChannel);
-            
-            // Log successful channel update
-            logAnalyticsEvent('slack_channel_updated', {
-              status: 'success',
-              channel: currentChannel
-            });
-            
-            if (loadUserSettingsCallback) loadUserSettingsCallback();
+            const response = await slackUpdateChannelFunction({ channel: currentChannel });
+            const tmp = slackInput.value;
+            // Check if the response indicates failure
+            if (response.data && response.data.success === false) {
+              console.warn('Channel update failed:', response.data.error);
+              alert(response.data.error || "Could not find channel. If you are using a private channel, make sure you have invited the bot to the channel.");
+              slackInput.value = tmp;
+              updateSlackInputState(true);
+              
+              // Log info event for channel update failure
+              logAnalyticsEvent('slack_channel_updated', {
+                status: 'info',
+                message: response.data.error,
+                channel: currentChannel
+              });
+            } else {
+              updateSlackInputState(true, undefined, currentChannel);
+              
+              // Log successful channel update
+              logAnalyticsEvent('slack_channel_updated', {
+                status: 'success',
+                channel: currentChannel
+              });
+              
+              if (loadUserSettingsCallback) loadUserSettingsCallback();
+            }
           } catch (error) {
             console.error('Error updating Slack channel:', error);
-            if (error.message.includes('not found')) {
-              alert("Could not find channel. If you are using a private channel, make sure you have invited the bot to the channel.");
-            }
+            alert('Error updating Slack channel: ' + error.message);
             slackInput.value = slackChannel;
             updateButtonState(true);
             
@@ -283,10 +297,25 @@ function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpin
             // Use the Tailwind blocking spinner
             showSpinner();
             
-            await slackUpdateChannelFunction({ channel: currentValue });
-            updateSlackInputState(true, undefined, currentValue);
+            const response = await slackUpdateChannelFunction({ channel: currentValue });
             
-            if (loadUserSettingsCallback) loadUserSettingsCallback();
+            // Check if the response indicates failure
+            if (response.data && response.data.success === false) {
+              console.warn('Channel update failed:', response.data.error);
+              alert(response.data.error || "Could not find channel. If you are using a private channel, make sure you have invited the bot to the channel.");
+              slackInput.value = slackChannel;
+              updateButtonState(true);
+              
+              // Log info event for channel update failure
+              logAnalyticsEvent('slack_channel_updated', {
+                status: 'info',
+                message: response.data.error,
+                channel: currentValue
+              });
+            } else {
+              updateSlackInputState(true, undefined, currentValue);
+              if (loadUserSettingsCallback) loadUserSettingsCallback();
+            }
           } catch (error) {
             console.error('Error updating Slack channel:', error);
             alert('Error updating Slack channel: ' + error.message);

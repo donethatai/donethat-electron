@@ -25,6 +25,7 @@ const {
   getCurrentView,
   hasEmails,
   hasSlack,
+  hasSlackToken,
   hasName,
   isAuthenticated
 } = require('./app-state.js');
@@ -79,9 +80,9 @@ function navigateToView(viewName) {
       viewName = 'permission';
     } else if (!hasValidAccess()) {
       viewName = 'subscription';
-    } else if (!hasName() || (!hasEmails() && !hasSlack())) {
+    } else if (!hasName() || (!hasEmails() && !hasSlack()) || (hasSlackToken() && !hasSlack())) {
       viewName = 'settings';
-    }  else {
+    } else {
       viewName = 'dashboard';
     }
   }
@@ -151,7 +152,10 @@ async function loadUserSettingsCallback() {
   // Update all relevant state
   updateSubscriptionState(result.data?.subscription?.status, hasActiveTeam);
   updateEmailSettings(result.data?.emailRecipients || []);
-  updateSlackSettings(result.data?.slack?.defaultChannel);
+  updateSlackSettings(
+    result.data?.slack?.defaultChannel,
+    !!result.data?.slack?.accessToken
+  );
   updateName(result.data?.name || '');
   updateStoreScreenshots(result.data?.storeScreenshots || false);
 
