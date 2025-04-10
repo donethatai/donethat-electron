@@ -4,7 +4,6 @@ const { getAuth } = require("firebase/auth");
 const { getFunctions, httpsCallable } = require("firebase/functions");
 const firebaseConfig = require("../firebase-config.js");
 const { updateSlackUI, updateSlackInputState } = require('./slack');
-const { updateNotificationUI } = require('./permissions');
 const { logAnalyticsEvent } = require('./analytics.js');
 const { ipcRenderer } = require("electron");
 
@@ -26,7 +25,6 @@ let settingsUnsubscribe = null;
 
 // Settings state
 let recipientEmails = [];
-let summaryNotificationTime = "17:00"; // Default time (5:00 PM)
 let userTimezone = "UTC"; // Default timezone
 let workdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
 
@@ -172,13 +170,6 @@ async function saveUserSettings(type, value) {
         type: 'screenshots',
         enabled: value
       });
-    } else if (type === 'notificationTime') {
-      settingsData.summaryNotificationTime = value;
-      summaryNotificationTime = value;
-      logAnalyticsEvent('settings_updated', {
-        type: 'notification_time',
-        time: value
-      });
     } else if (type === 'workdays') {
       settingsData.workdays = value;
       workdays = value; // Update local state immediately
@@ -271,18 +262,6 @@ async function updateSettingsUI(result) {
     updateSlackInputState(false);
   }
   
-  // Load notification time if available
-  if (result.data && result.data.summaryNotificationTime) {
-    summaryNotificationTime = result.data.summaryNotificationTime;
-    const notificationTimeInput = document.getElementById("notificationTimeInput");
-    if (notificationTimeInput) {
-      notificationTimeInput.value = summaryNotificationTime;
-    }
-  }
-  
-  // Send the notification time to the main process
-  ipcRenderer.send("updateSummaryNotificationTime", summaryNotificationTime);
-  
   // Handle timezone setting
   let fetchedTimezone = "UTC"; // Default to UTC if not set
   if (result.data && result.data.timezone) {
@@ -306,9 +285,6 @@ async function updateSettingsUI(result) {
   } catch (error) {
     console.error("Could not determine system timezone:", error);
   }
-
-  // Update notification UI based on permission
-  await updateNotificationUI();
 
   // Handle workdays
   const defaultWorkdays = [1, 2, 3, 4, 5]; // Mon-Fri
@@ -493,47 +469,6 @@ if (emailInput) {
       const email = emailInput.value.trim();
       if (email) {
         await addEmailTag(email);
-      }
-    }
-  });
-}
-
-// Add event listener for notification time input
-const notificationTimeInput = document.getElementById('notificationTimeInput');
-if (notificationTimeInput) {
-  notificationTimeInput.addEventListener('blur', async (e) => {
-    const newTime = e.target.value;
-    try {
-      showSpinner();
-      await saveUserSettings('notificationTime', newTime);
-      // Update local state
-      summaryNotificationTime = newTime;
-      // Send the updated time to the main process
-      ipcRenderer.send("updateSummaryNotificationTime", newTime);
-    } catch (error) {
-      // If error occurs, revert to previous value
-      e.target.value = summaryNotificationTime;
-    } finally {
-      hideSpinner();
-    }
-  });
-
-  notificationTimeInput.addEventListener('keypress', async (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const newTime = e.target.value;
-      try {
-        showSpinner();
-        await saveUserSettings('notificationTime', newTime);
-        // Update local state
-        summaryNotificationTime = newTime;
-        // Send the updated time to the main process
-        ipcRenderer.send("updateSummaryNotificationTime", newTime);
-      } catch (error) {
-        // If error occurs, revert to previous value
-        e.target.value = summaryNotificationTime;
-      } finally {
-        hideSpinner();
       }
     }
   });

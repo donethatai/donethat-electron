@@ -23,10 +23,8 @@ const {
   updateStoreScreenshots,
   updateCurrentView,
   getCurrentView,
-  hasEmails,
   hasSlack,
   hasSlackToken,
-  hasName,
   isAuthenticated
 } = require('./app-state.js');
 

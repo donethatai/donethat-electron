@@ -20,7 +20,6 @@ const state = {
   storeScreenshots: false,
   emailRecipients: [],
   slackChannel: null,
-  summaryNotificationTime: "17:00", // Default time (5:00 PM)
 
   // Navigation state
   currentView: null
@@ -71,10 +70,6 @@ function getSlackChannel() {
   return state.slackChannel;
 }
 
-function getSummaryNotificationTime() {
-  return state.summaryNotificationTime;
-}
-
 function getCurrentView() {
   return state.currentView;
 }
@@ -116,10 +111,6 @@ function updateSlackSettings(channel, hasToken = false) {
   state.hasSlack = !!channel;
 }
 
-function updateNotificationTime(time) {
-  state.summaryNotificationTime = time;
-}
-
 function updateCurrentView(view) {
   state.currentView = view;
 }
@@ -151,7 +142,6 @@ module.exports = {
   isStoreScreenshots,
   getEmailRecipients,
   getSlackChannel,
-  getSummaryNotificationTime,
   getCurrentView,
   updateAuthState,
   updateScreenCapturePermission,
@@ -160,7 +150,6 @@ module.exports = {
   updateStoreScreenshots,
   updateEmailSettings,
   updateSlackSettings,
-  updateNotificationTime,
   updateCurrentView,
   resetState
 }; 

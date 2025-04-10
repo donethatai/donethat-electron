@@ -78,9 +78,6 @@ let pauseState = {
   endTime: null,     // If non-null and in future, app is paused
   timeoutId: null    // Reference to the auto-resume timer
 };
-let summaryNotificationTime = null
-let summaryNotificationTimeout = null
-let summarySubmittedTimestamp = null
 let hasScreenCapturePermission = false
 let isWaylandSession = null;
 let userWorkdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
@@ -184,17 +181,14 @@ ipcMain.on('install-update', () => {
 
 // Function to handle scheduled update checks
 function scheduleUpdateChecks() {
-  log.info('Setting up update check schedule...');
 
   // First check after 1 minute to let the app fully initialize
   setTimeout(() => {
-    log.info('Running first scheduled update check...');
     autoUpdater.checkForUpdates()
       .catch(err => log.error('Error in first update check:', err));
 
     // Then check every hour
     setInterval(() => {
-      log.info('Running hourly update check...');
       autoUpdater.checkForUpdates()
         .catch(err => log.error('Error in hourly update check:', err));
     }, 60 * 60 * 1000);
@@ -265,9 +259,7 @@ app.whenReady().then(async () => {
     const savedWorkdays = store.get('userWorkdays');
     if (Array.isArray(savedWorkdays) && savedWorkdays.every(d => typeof d === 'number' && d >= 0 && d <= 6)) {
         userWorkdays = [...new Set(savedWorkdays)].sort((a, b) => a - b); // Ensure unique & sorted
-        log.info('Loaded userWorkdays from store:', userWorkdays);
     } else {
-        log.info('No valid userWorkdays found in store, using default:', userWorkdays);
         // Default is already set, but save it initially if not present
         if (!savedWorkdays) {
             store.set('userWorkdays', userWorkdays);
@@ -301,11 +293,9 @@ app.whenReady().then(async () => {
 
   // --- Add powerMonitor listener here ---
   powerMonitor.on('resume', () => {
-    log.info('System resumed from sleep/hibernation.');
     // Clear the potentially delayed timeout from before sleep
     if (dailyWorkdayCheckTimeout) {
         clearTimeout(dailyWorkdayCheckTimeout);
-        log.info('Cleared previous daily check timeout.');
     }
     // Immediately check the state and schedule the *next* check
     checkWorkdayAndAdjustRecording();
@@ -375,10 +365,6 @@ app.on('before-quit', () => {
   if (pauseState.timeoutId) {
     clearTimeout(pauseState.timeoutId);
   }
-
-  if (summaryNotificationTimeout) {
-    clearTimeout(summaryNotificationTimeout);
-  }
   
   // Save pause state before quitting if we're paused
   if (isPaused()) {
@@ -437,7 +423,6 @@ ipcMain.on('updateWorkdays', (event, days) => {
     try {
         if (store) {
             store.set('userWorkdays', userWorkdays);
-            log.info('Saved updated userWorkdays to store:', userWorkdays);
         } else {
             log.warn('Store not initialized, cannot save userWorkdays.');
         }
@@ -995,156 +980,6 @@ app.on('browser-window-focus', async () => {
 ipcMain.on('summarySubmitted', (event) => {
   summarySubmittedTimestamp = Date.now();
 })
-
-////// NOTIFICATIONS /////
-
-// Simplify this handler to just check if notifications are supported at all
-ipcMain.handle('checkNotificationPermission', async () => {
-  // Just check if notifications are supported by the system
-  return Notification.isSupported();
-})
-
-// Add new listener for receiving summary notification settings
-ipcMain.on('updateSummaryNotificationTime', (event, time) => {
-  summaryNotificationTime = time;
-
-  // Clear any existing notification timeout
-  if (summaryNotificationTimeout) {
-    clearTimeout(summaryNotificationTimeout);
-    summaryNotificationTimeout = null;
-  }
-
-  // Schedule the next notification if we have a valid time
-  if (summaryNotificationTime) {
-    scheduleNextSummaryNotification();
-  }
-})
-
-// Function to schedule the next summary notification
-function scheduleNextSummaryNotification() {
-  if (!summaryNotificationTime || !idToken) return;
-
-  // Clear any existing timeout
-  if (summaryNotificationTimeout) {
-    clearTimeout(summaryNotificationTimeout);
-  }
-
-  const now = new Date();
-  const [hours, minutes] = summaryNotificationTime.split(':').map(Number);
-
-  // Set target time for today
-  const targetTime = new Date(now);
-  targetTime.setHours(hours, minutes, 0, 0);
-
-  // If the target time has already passed today, schedule for tomorrow
-  if (now > targetTime) {
-    targetTime.setDate(targetTime.getDate() + 1);
-  }
-
-  // Calculate ms until the notification should be shown
-  const msUntilNotification = targetTime - now;
-
-  // Set the timeout
-  summaryNotificationTimeout = setTimeout(() => {
-    showSummaryNotification();
-  }, msUntilNotification);
-}
-
-// Function to show the summary notification
-function showSummaryNotification() {
-  // Skip notification if recording is paused or not active
-  if (isPaused() || !screenshotInterval) {
-    scheduleNextSummaryNotification(); // Schedule for next time
-    return;
-  }
-
-  // Check if summary was submitted recently
-  if (shouldSkipNotification()) {
-    scheduleNextSummaryNotification(); // Schedule for next time
-    return;
-  }
-
-  const notification = new Notification({
-    title: 'DoneThat',
-    body: 'Time to submit your daily summary!',
-    silent: false
-  });
-
-  // Send analytics event for notification shown
-  if (mainWindow) {
-    mainWindow.webContents.send('analytics-event', {
-      eventName: 'summary_notification',
-      eventParams: {
-        status: 'shown'
-      }
-    });
-  }
-
-  notification.on('click', () => {
-    // Send analytics event for notification clicked
-    if (mainWindow) {
-      mainWindow.webContents.send('analytics-event', {
-        eventName: 'summary_notification',
-        eventParams: {
-          status: 'clicked'
-        }
-      });
-    }
-
-    // Open the app when notification is clicked
-    if (mainWindow) {
-      showWindowBelowTray();
-    } else {
-      navigateToView('signup-next');
-    }
-  });
-
-  notification.on('close', () => {
-    // Send analytics event for notification dismissed
-    if (mainWindow) {
-      mainWindow.webContents.send('analytics-event', {
-        eventName: 'summary_notification',
-        eventParams: {
-          status: 'dismissed'
-        }
-      });
-    }
-
-    // If notification was dismissed, reschedule for tomorrow
-    scheduleNextSummaryNotification();
-  });
-
-  notification.show();
-
-  // Schedule the next notification
-  scheduleNextSummaryNotification();
-}
-
-// Function to check if we should skip showing notification
-function shouldSkipNotification() {
-  if (!summarySubmittedTimestamp) return false;
-
-  const now = new Date();
-  const submittedDate = new Date(summarySubmittedTimestamp);
-
-  // If submission was on a different day, don't skip
-  if (submittedDate.getDate() !== now.getDate() ||
-    submittedDate.getMonth() !== now.getMonth() ||
-    submittedDate.getFullYear() !== now.getFullYear()) {
-    return false;
-  }
-
-  // Get notification time for today
-  const [hours, minutes] = summaryNotificationTime.split(':').map(Number);
-  const notificationTimeToday = new Date(now);
-  notificationTimeToday.setHours(hours, minutes, 0, 0);
-
-  // Two hour window before notification time
-  const twoHoursBeforeNotification = new Date(notificationTimeToday);
-  twoHoursBeforeNotification.setHours(notificationTimeToday.getHours() - 2);
-  // If submitted within 2 hours before notification time or any time after
-  return submittedDate >= twoHoursBeforeNotification;
-}
 
 ////// SCREENSHOTS ////
 
