@@ -1,4 +1,4 @@
-const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification } = require('electron')
+const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor } = require('electron')
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
 const log = require('electron-log')
@@ -83,6 +83,8 @@ let summaryNotificationTimeout = null
 let summarySubmittedTimestamp = null
 let hasScreenCapturePermission = false
 let isWaylandSession = null;
+let userWorkdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
+let dailyWorkdayCheckTimeout = null;
 
 if (DEBUG) {
   // Add custom notification transport for warnings and errors
@@ -258,8 +260,22 @@ app.whenReady().then(async () => {
     const pauseStateRestored = loadPauseState();
     if (pauseStateRestored) {
     }
+
+    // Load userWorkdays from store, with validation and default fallback
+    const savedWorkdays = store.get('userWorkdays');
+    if (Array.isArray(savedWorkdays) && savedWorkdays.every(d => typeof d === 'number' && d >= 0 && d <= 6)) {
+        userWorkdays = [...new Set(savedWorkdays)].sort((a, b) => a - b); // Ensure unique & sorted
+        log.info('Loaded userWorkdays from store:', userWorkdays);
+    } else {
+        log.info('No valid userWorkdays found in store, using default:', userWorkdays);
+        // Default is already set, but save it initially if not present
+        if (!savedWorkdays) {
+            store.set('userWorkdays', userWorkdays);
+        }
+    }
+
   } catch (error) {
-    log.error('Failed to initialize electron-store:', error);
+    log.error('Failed to initialize electron-store or load settings:', error);
   }
 
   // Create tray with initial error icon
@@ -280,8 +296,21 @@ app.whenReady().then(async () => {
   // Check screen capture permission
   hasScreenCapturePermission = await checkScreenCapturePermission()
 
-  // Initial state - update icon after tray is created and when we know the permission state
-  updateTrayIcon(!isPaused() && hasScreenCapturePermission && idToken)
+  // Initial state check and schedule daily check
+  checkWorkdayAndAdjustRecording();
+
+  // --- Add powerMonitor listener here ---
+  powerMonitor.on('resume', () => {
+    log.info('System resumed from sleep/hibernation.');
+    // Clear the potentially delayed timeout from before sleep
+    if (dailyWorkdayCheckTimeout) {
+        clearTimeout(dailyWorkdayCheckTimeout);
+        log.info('Cleared previous daily check timeout.');
+    }
+    // Immediately check the state and schedule the *next* check
+    checkWorkdayAndAdjustRecording();
+  });
+  // --- End powerMonitor listener ---
 
   // Handle left-click to show a fresh context menu
   tray.on('click', () => {
@@ -355,6 +384,10 @@ app.on('before-quit', () => {
   if (isPaused()) {
     savePauseState()
   }
+
+  if (dailyWorkdayCheckTimeout) {
+    clearTimeout(dailyWorkdayCheckTimeout);
+  }
 })
 
 
@@ -371,11 +404,8 @@ ipcMain.on('initialAuthCheck', (event, isAuthenticated) => {
 // Updated listener for login event to check if tray exists before updating
 ipcMain.on('login', (event, token) => {
   idToken = token
-
-  // Start recording if we weren't already and not paused and have permissions
-  if (!screenshotInterval && !isPaused() && hasScreenCapturePermission) {
-    startRecording()
-  }
+  // Check if we should start recording based on current conditions (including workday)
+  checkWorkdayAndAdjustRecording(); // Use the check function
 
   // Update icon to show active state (only if we have permission and tray exists)
   if (tray) {
@@ -394,41 +424,68 @@ ipcMain.on('login', (event, token) => {
 // Update the logout handler to check if tray exists
 ipcMain.on('logout', (event) => {
   idToken = null
-
-  // Stop recording if we were recording
-  if (screenshotInterval) {
-    clearInterval(screenshotInterval)
-    screenshotInterval = null
-  }
-
-  // Update icon to show inactive state
-  updateTrayIcon(false)
+  // Stop recording regardless of workday status
+  stopRecording();
 })
+
+// Listen for workday updates from renderer
+ipcMain.on('updateWorkdays', (event, days) => {
+  if (Array.isArray(days) && days.every(d => typeof d === 'number' && d >= 0 && d <= 6)) {
+    userWorkdays = [...new Set(days)].sort((a, b) => a - b); // Update state, ensure unique & sorted
+    
+    // Save the updated workdays to the store
+    try {
+        if (store) {
+            store.set('userWorkdays', userWorkdays);
+            log.info('Saved updated userWorkdays to store:', userWorkdays);
+        } else {
+            log.warn('Store not initialized, cannot save userWorkdays.');
+        }
+    } catch (error) {
+        log.error('Failed to save userWorkdays:', error);
+    }
+    
+    checkWorkdayAndAdjustRecording(); // Use the same logic as the daily check
+  } else {
+    log.error('Received invalid workdays data:', days);
+  }
+});
 
 ////// TRAY /////
 
 // Function to update the tray icon based on recording state
-function updateTrayIcon(isRecording) {
+function updateTrayIcon(isActuallyRecording) {
   // Safety check - ensure tray exists before trying to update it
   if (!tray) {
-    log.warn('Attempted to update tray icon before tray was created')
     return
   }
 
   let iconPath;
+  let tooltip;
 
-  if (isRecording) {
-    // Use recording icon when recording
-    iconPath = iconRecordingPath
-    tray.setToolTip('DoneThat - Recording')
-  } else if (isPaused()) {
-    // Use paused icon when paused
-    iconPath = iconPausedPath
-    tray.setToolTip('DoneThat - Paused')
+  const loggedIn = Boolean(idToken);
+  const manuallyPaused = isPaused();
+  const todayIsWorkday = isWorkday(); // Check current day
+
+  if (isActuallyRecording) {
+    iconPath = iconRecordingPath;
+    tooltip = 'DoneThat - Recording';
+  } else if (manuallyPaused) {
+    iconPath = iconPausedPath;
+    tooltip = 'DoneThat - Paused';
+  } else if (!loggedIn) {
+    iconPath = iconErrorPath;
+    tooltip = 'DoneThat - Not Logged In';
+  } else if (!hasScreenCapturePermission) {
+      iconPath = iconErrorPath;
+      tooltip = 'DoneThat - Screen Permission Needed';
+  } else if (!todayIsWorkday) {
+    iconPath = iconPausedPath; // Use paused icon for non-workdays
+    tooltip = 'DoneThat - Not Recording (Non-Workday)';
   } else {
-    // Use error icon when not recording and not paused (e.g., not logged in)
-    iconPath = iconErrorPath
-    tray.setToolTip('DoneThat - Not Recording')
+    // Default fallback (e.g., other error state?)
+    iconPath = iconErrorPath;
+    tooltip = 'DoneThat - Not Recording';
   }
 
   // Load and set the appropriate icon
@@ -452,6 +509,8 @@ function updateTrayIcon(isRecording) {
     const contextMenu = buildContextMenu()
     tray.setContextMenu(contextMenu)
   }
+
+  tray.setToolTip(tooltip)
 }
 
 // Function to navigate to a specific view
@@ -515,12 +574,7 @@ function buildContextMenu() {
     },
     {
       label: 'Pause for today',
-      click: () => pauseUntilTomorrow(),
-      enabled: isLoggedIn && !currentlyPaused && screenshotInterval
-    },
-    {
-      label: 'Pause for this week',
-      click: () => pauseUntilNextWeek(),
+      click: () => pauseUntilNextWorkday(),
       enabled: isLoggedIn && !currentlyPaused && screenshotInterval
     },
     {
@@ -559,18 +613,22 @@ function buildContextMenu() {
   return Menu.buildFromTemplate(template)
 }
 
-// Helper function to check if currently paused
+// Helper function to check if currently paused (manual pause)
 function isPaused() {
   return pauseState.endTime !== null && pauseState.endTime > new Date();
 }
 
+// Helper function to check if today is a configured workday
+function isWorkday(date = new Date()) {
+  const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
+  // Ensure userWorkdays is an array before checking
+  return Array.isArray(userWorkdays) && userWorkdays.includes(dayOfWeek);
+}
+
 // Function to pause recording for a specified duration
 function pauseRecording(duration) {
-  // Clear existing interval and timeout
-  if (screenshotInterval) {
-    clearInterval(screenshotInterval)
-    screenshotInterval = null
-  }
+  // Stop recording first regardless of why
+  stopRecording(); // Use the new helper
 
   if (pauseState.timeoutId) {
     clearTimeout(pauseState.timeoutId)
@@ -603,76 +661,179 @@ function pauseRecording(duration) {
   }
 }
 
-// Function to pause until tomorrow (next day at 4am)
-function pauseUntilTomorrow() {
-  const now = new Date()
-  const tomorrow = new Date(now)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  // Change from midnight (0) to 4am (4)
-  tomorrow.setHours(4, 0, 0, 0)
+// Function to pause until the start (4 AM) of the next configured workday
+function pauseUntilNextWorkday() {
+  const now = new Date();
+  let nextWorkdayDate = new Date(now);
 
-  const duration = tomorrow - now
-  pauseRecording(duration)
+  // Start checking from tomorrow
+  nextWorkdayDate.setDate(nextWorkdayDate.getDate() + 1);
+
+  // Find the next date that is a workday
+  while (!isWorkday(nextWorkdayDate)) {
+    nextWorkdayDate.setDate(nextWorkdayDate.getDate() + 1);
+  }
+
+  // Set the time to 4:00 AM on that workday
+  nextWorkdayDate.setHours(4, 0, 0, 0);
+
+  const duration = nextWorkdayDate.getTime() - now.getTime();
+
+  // Ensure duration is positive (should always be, but safety check)
+  if (duration > 0) {
+    pauseRecording(duration);
+  } else {
+    log.error('Calculated pause duration until next workday was not positive.');
+    // Fallback: Pause for 1 hour just in case
+    pauseRecording(60 * 60 * 1000);
+  }
 }
 
-// Add new function to pause until next week (next Monday at 4am)
-function pauseUntilNextWeek() {
-  const now = new Date()
-  const nextMonday = new Date(now)
-  // Calculate days until next Monday (1 is Monday, 0 is Sunday)
-  const daysUntilMonday = (8 - now.getDay()) % 7;
-  // If today is Monday (day 1), add 7 days to get next Monday. Otherwise, add daysUntilMonday.
-  nextMonday.setDate(now.getDate() + (daysUntilMonday === 0 ? 7 : daysUntilMonday));
-  // Change from midnight (0) to 4am (4)
-  nextMonday.setHours(4, 0, 0, 0)
-
-  const duration = nextMonday - now
-  pauseRecording(duration)
-}
-
-// Function to resume recording
+// Function to resume recording (called manually or by timer)
 function resumeRecording() {
+  if (!idToken || !hasScreenCapturePermission) {
+    updateTrayIcon(false); // Update icon if not logged in or no permission
+    return; // Can't resume if not logged in or no permission
+  }
+
   if (pauseState.timeoutId) {
-    clearTimeout(pauseState.timeoutId)
+    clearTimeout(pauseState.timeoutId);
   }
 
   // Reset pause state
-  pauseState = {
-    endTime: null,
-    timeoutId: null
-  };
-  
-  // Clear the saved pause state
-  if (store) {
-    store.delete('pauseState')
+  const wasPaused = isPaused(); // Check if we were *manually* paused
+  pauseState = { endTime: null, timeoutId: null };
+  if (store) store.delete('pauseState');
+
+  // If already recording (e.g., workday check started it, or manual resume occurred)
+  // Update the icon regardless, but don't start another interval if one exists.
+  if (screenshotInterval) {
+      updateTrayIcon(true); // Ensure icon shows recording
+      // Log resume event if applicable
+      if (wasPaused && mainWindow) {
+         mainWindow.webContents.send('analytics-event', { eventName: 'recording_state_changed', eventParams: { status: 'resumed' }});
+      }
+      return;
   }
 
-  // Only restart recording if logged in
-  if (idToken) {
-    updateTrayIcon(true)
+  // Start screenshot interval if it's not already running
+  screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000);
+  updateTrayIcon(true); // Show recording state
 
-    // Restart screenshot interval
-    if (!screenshotInterval) {
-      screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000)
-    }
-
-    // Send analytics event to renderer
-    if (mainWindow) {
-      mainWindow.webContents.send('analytics-event', {
-        eventName: 'recording_state_changed',
-        eventParams: {
-          status: 'resumed'
-        }
-      });
-    }
-  } else {
-    updateTrayIcon(false)
+  // Send analytics event if we were manually paused
+  if (wasPaused && mainWindow) {
+    mainWindow.webContents.send('analytics-event', { 
+      eventName: 'recording_state_changed',
+      eventParams: { status: 'resumed' } 
+    });
   }
 }
 
-// Add new IPC handler for pausing until tomorrow from renderer
+// Function to save pause state using electron-store
+function savePauseState() {
+  try {
+    // Skip if store is not initialized
+    if (!store) {
+      log.warn('Store not initialized');
+      return;
+    }
+
+    const stateToSave = {
+      endTime: pauseState.endTime ? pauseState.endTime.getTime() : null
+    }
+    store.set('pauseState', stateToSave)
+  } catch (error) {
+    log.error('Failed to save pause state:', error)
+  }
+}
+
+// Function to load pause state using electron-store
+function loadPauseState() {
+  try {
+    // Skip if store is not initialized
+    if (!store) {
+      log.warn('Store not initialized');
+      return false;
+    }
+
+    const savedState = store.get('pauseState')
+    
+    if (savedState && savedState.endTime) {
+      const endTime = new Date(savedState.endTime)
+      const now = new Date()
+      
+      // If pause end time is in the future, restore the pause
+      if (endTime > now) {
+        const remainingDuration = endTime.getTime() - now.getTime()
+        
+        pauseState = {
+          endTime: endTime,
+          timeoutId: setTimeout(() => resumeRecording(), remainingDuration)
+        };
+        
+        return true
+      } else {
+        // Pause period has already expired
+        store.delete('pauseState')
+      }
+    }
+  } catch (error) {
+    log.error('Failed to load pause state:', error)
+  }
+  return false
+}
+
+// Schedules a check for the next day at 4:01 AM
+function scheduleDailyWorkdayCheck() {
+    if (dailyWorkdayCheckTimeout) {
+        clearTimeout(dailyWorkdayCheckTimeout);
+    }
+
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    // Check at 4:01 AM local time the next day
+    tomorrow.setHours(4, 1, 0, 0);
+
+    const msUntilCheck = tomorrow.getTime() - now.getTime();
+    // Ensure msUntilCheck is positive (e.g., if check runs slightly after 4:01 AM)
+    const positiveMsUntilCheck = Math.max(msUntilCheck, 60000); // Minimum 1 minute wait
+
+    dailyWorkdayCheckTimeout = setTimeout(() => {
+        checkWorkdayAndAdjustRecording();
+        // Note: checkWorkdayAndAdjustRecording now calls scheduleDailyWorkdayCheck again
+    }, positiveMsUntilCheck);
+}
+
+// Central function to evaluate and adjust recording state based on all factors
+function checkWorkdayAndAdjustRecording() {
+    const isCurrentlyRecording = !!screenshotInterval;
+    const canRecordEssentials = idToken && hasScreenCapturePermission && !isPaused();
+    const todayIsWorkday = isWorkday();
+
+    // Determine if recording *should* stop based on essential conditions
+    const shouldStop = isCurrentlyRecording && !canRecordEssentials;
+    // Determine if recording *should* start based on all conditions (including workday)
+    const shouldStart = !isCurrentlyRecording && canRecordEssentials && todayIsWorkday;
+
+    if (shouldStop) {
+        stopRecording(); // Stop if logged out, permission lost, or paused
+    } else if (shouldStart) {
+        startRecording(); // Start automatically only if it's a workday and conditions met
+    } else {
+        // No change in start/stop needed, but ensure icon reflects current reality.
+        // For example, if manually resumed on non-workday, icon should stay 'recording'.
+        // If it's a non-workday and not recording, icon should reflect that.
+        updateTrayIcon(isCurrentlyRecording);
+    }
+
+    // Schedule the next check (important for the loop)
+    scheduleDailyWorkdayCheck();
+}
+
+// From dashboard
 ipcMain.on('pauseUntilTomorrow', () => {
-  pauseUntilTomorrow();
+  pauseUntilNextWorkday();
 });
 
 ////// WINDOWS /////
@@ -824,11 +985,8 @@ app.on('browser-window-focus', async () => {
       isWaylandSession: isWaylandSession
     });
 
-    // Update icon and recording state if needed (only if tray exists)
-    if (hasScreenCapturePermission && idToken && !isPaused() && tray) {
-      updateTrayIcon(true);
-      startRecording();
-    }
+    // Re-evaluate recording state based on permission change
+    checkWorkdayAndAdjustRecording();
   }
 });
 
@@ -990,10 +1148,21 @@ function shouldSkipNotification() {
 
 ////// SCREENSHOTS ////
 
+// Checks all conditions (login, permission, pause, workday) and starts interval if appropriate
 function startRecording() {
-  if (!screenshotInterval) {
-    screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000)
-  }
+  // Start the interval (caller ensures it doesn't already exist)
+  screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000);
+  // Update icon to show recording state
+  updateTrayIcon(true);
+}
+
+// Stops the interval and updates the icon
+function stopRecording() {
+    if (screenshotInterval) {
+        clearInterval(screenshotInterval);
+        screenshotInterval = null;
+    }
+    updateTrayIcon(false); // Update icon to non-recording state
 }
 
 // Function to check screen capture permission
@@ -1078,74 +1247,23 @@ ipcMain.on('requestScreenCapturePermission', async () => {
   }
 
   // After opening settings, we should check permission again when app regains focus
-  app.on('browser-window-focus', async () => {
+  const focusListener = async () => {
+    // Remove listener immediately to prevent multiple triggers
+    app.removeListener('browser-window-focus', focusListener);
+
     const hasPermission = await checkScreenCapturePermission()
 
-    if (hasPermission && mainWindow) {
+    if (hasPermission !== oldPermission && mainWindow) { // Check if permission *changed*
       mainWindow.webContents.send('screenCapturePermission', {
         hasPermission: hasPermission,
         isWaylandSession: isWaylandSession
       });
 
-      // Update icon and start recording if logged in
-      if (idToken && !isPaused()) {
-        updateTrayIcon(true)
-        startRecording()
-      }
+      // Re-evaluate recording state based on permission change
+      checkWorkdayAndAdjustRecording();
     }
-  })
+  };
+  // Store old permission state *before* adding listener
+  const oldPermission = hasScreenCapturePermission;
+  app.on('browser-window-focus', focusListener);
 })
-
-// Function to save pause state using electron-store
-function savePauseState() {
-  try {
-    // Skip if store is not initialized
-    if (!store) {
-      log.warn('Store not initialized');
-      return;
-    }
-
-    const stateToSave = {
-      endTime: pauseState.endTime ? pauseState.endTime.getTime() : null
-    }
-    store.set('pauseState', stateToSave)
-  } catch (error) {
-    log.error('Failed to save pause state:', error)
-  }
-}
-
-// Function to load pause state using electron-store
-function loadPauseState() {
-  try {
-    // Skip if store is not initialized
-    if (!store) {
-      log.warn('Store not initialized');
-      return false;
-    }
-
-    const savedState = store.get('pauseState')
-    
-    if (savedState && savedState.endTime) {
-      const endTime = new Date(savedState.endTime)
-      const now = new Date()
-      
-      // If pause end time is in the future, restore the pause
-      if (endTime > now) {
-        const remainingDuration = endTime.getTime() - now.getTime()
-        
-        pauseState = {
-          endTime: endTime,
-          timeoutId: setTimeout(() => resumeRecording(), remainingDuration)
-        };
-        
-        return true
-      } else {
-        // Pause period has already expired
-        store.delete('pauseState')
-      }
-    }
-  } catch (error) {
-    log.error('Failed to load pause state:', error)
-  }
-  return false
-}

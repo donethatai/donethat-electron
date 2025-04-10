@@ -28,6 +28,7 @@ let settingsUnsubscribe = null;
 let recipientEmails = [];
 let summaryNotificationTime = "17:00"; // Default time (5:00 PM)
 let userTimezone = "UTC"; // Default timezone
+let workdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
 
 // Initialize settings management
 function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinner, viewNavigator) {
@@ -53,6 +54,8 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   
   // Set up version click handler
   setupVersionClickHandler();
+  // Setup workday click handler
+  setupWorkdayClickHandler();
 }
 
 // Helper function to update screenshots container visibility
@@ -176,9 +179,21 @@ async function saveUserSettings(type, value) {
         type: 'notification_time',
         time: value
       });
+    } else if (type === 'workdays') {
+      settingsData.workdays = value;
+      workdays = value; // Update local state immediately
+      logAnalyticsEvent('settings_updated', {
+        type: 'workdays',
+        days: value.join(',') // Log the selected days
+      });
     }
 
     await updateUserSettingsFunction(settingsData);
+
+    // If save was successful, *now* send the update to main process for workdays
+    if (type === 'workdays') {
+      ipcRenderer.send('updateWorkdays', value);
+    }
 
   } catch (error) {
     logAnalyticsEvent('settings_update_error', {
@@ -294,6 +309,29 @@ async function updateSettingsUI(result) {
 
   // Update notification UI based on permission
   await updateNotificationUI();
+
+  // Handle workdays
+  const defaultWorkdays = [1, 2, 3, 4, 5]; // Mon-Fri
+  let loadedWorkdays = defaultWorkdays;
+  if (result.data && Array.isArray(result.data.workdays)) {
+    // Validate days are numbers 0-6
+    const validWorkdays = result.data.workdays.filter(day =>
+      typeof day === 'number' && day >= 0 && day <= 6
+    );
+    // Use Set to remove duplicates
+    loadedWorkdays = [...new Set(validWorkdays)];
+  } else {
+    workdays = defaultWorkdays;
+  }
+
+  // Assign to module state AFTER processing
+  workdays = loadedWorkdays;
+
+  // Render the selectors
+  renderWorkdaySelectors();
+
+  // Send initial workdays to main process
+  ipcRenderer.send('updateWorkdays', workdays);
 }
 
 /**
@@ -499,6 +537,93 @@ if (notificationTimeInput) {
       }
     }
   });
+}
+
+// Helper function to get the first day of the week based on locale
+function getFirstDayOfWeek() {
+  try {
+    // Use Intl.Locale if available (modern browsers/Node versions)
+    if (typeof Intl !== 'undefined' && typeof Intl.Locale !== 'undefined') {
+      // Use navigator.language for renderer process locale
+      const locale = new Intl.Locale(navigator.language);
+      // weekInfo is experimental but widely supported
+      if (locale.weekInfo && typeof locale.weekInfo.firstDay === 'number') {
+        // Intl.Locale returns 1 for Monday, 7 for Sunday. Convert Sunday to 0.
+        return locale.weekInfo.firstDay % 7;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not determine locale's first day of week, defaulting to Monday:", e);
+  }
+  // Default to Monday (1) if Intl.Locale is unavailable or doesn't provide weekInfo
+  return 1;
+}
+
+// Function to render workday selectors
+function renderWorkdaySelectors() {
+  const container = document.getElementById('workdaysContainer');
+  if (!container) return;
+
+  container.innerHTML = ''; // Clear existing buttons
+
+  const firstDay = getFirstDayOfWeek(); // 0 for Sunday, 1 for Monday
+  const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // Sun-Sat
+
+  for (let i = 0; i < 7; i++) {
+    const dayIndex = (firstDay + i) % 7; // The actual day number (0-6)
+    const button = document.createElement('button');
+    button.className = 'workday-selector flex-1 py-1 text-xs rounded border'; // Base classes
+    button.textContent = dayLabels[dayIndex];
+    button.setAttribute('data-day', dayIndex.toString());
+
+    if (workdays.includes(dayIndex)) {
+      // Active state: Orange background, white text
+      button.classList.add('bg-primary', 'text-white', 'border-primary');
+      button.classList.remove('bg-gray-100', 'text-gray-600', 'border-gray-300');
+    } else {
+      // Inactive state: Light gray background, dark gray text
+      button.classList.add('bg-gray-100', 'text-gray-600', 'border-gray-300');
+      button.classList.remove('bg-primary', 'text-white', 'border-primary');
+    }
+    container.appendChild(button);
+  }
+}
+
+// Set up click handler for workday selectors using event delegation
+function setupWorkdayClickHandler() {
+  const container = document.getElementById('workdaysContainer');
+  if (container) {
+    container.addEventListener('click', async (e) => {
+      if (e.target && e.target.classList.contains('workday-selector')) {
+        const dayIndex = parseInt(e.target.getAttribute('data-day'), 10);
+        if (isNaN(dayIndex)) return;
+
+        const originalWorkdays = [...workdays]; // Backup
+
+        // Toggle the day
+        let newWorkdays;
+        if (workdays.includes(dayIndex)) {
+          newWorkdays = workdays.filter(d => d !== dayIndex);
+        } else {
+          newWorkdays = [...workdays, dayIndex].sort((a, b) => a - b);
+        }
+
+        // Optimistically update UI
+        workdays = newWorkdays;
+        renderWorkdaySelectors();
+
+        try {
+          await saveUserSettings('workdays', newWorkdays);
+          // If save successful, UI is already updated.
+        } catch (error) {
+          // Revert UI on error
+          workdays = originalWorkdays;
+          renderWorkdaySelectors();
+          // Error already alerted in saveUserSettings
+        }
+      }
+    });
+  }
 }
 
 module.exports = {

@@ -436,3 +436,11 @@
 .StripeElement {
   width: 100%;
 }
+
+/* Add custom utilities using CSS variables */
+.bg-primary {
+  background-color: var(--color-primary);
+}
+.border-primary {
+  border-color: var(--color-primary);
+}
