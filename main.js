@@ -62,7 +62,7 @@ const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/c
 let SCREENSHOT_INTERVAL_MINUTES = 5; // Default to 5 minutes for release
 // Set interval based on whether it's development or production
 if (!app.isPackaged) {
-  SCREENSHOT_INTERVAL_MINUTES = 1; // Every minute for development
+  SCREENSHOT_INTERVAL_MINUTES = 5; // Every minute for development
 }
 
 let iconRecordingPath = path.join(__dirname, 'resources', 'icon_recording.png')
