@@ -38,7 +38,7 @@ function showSummaryGeneratedState() {
     // Check if app is paused
     if (getIsPaused()) {
       notes.push({
-        text: 'DoneThat is paused. <a href="#" onclick="resumeRecording()">Resume recording</a>.',
+        text: 'DoneThat is paused. <a href="#" class="resume-link">Resume recording</a>.',
         isWarning: true
       });
     }
@@ -46,7 +46,7 @@ function showSummaryGeneratedState() {
     // Check if Slack is connected but no channel is set
     if (hasSlack() && !hasSlackToken()) {
       notes.push({
-        text: 'No Slack channel configured. <a href="#" onclick="navigateToView(\'settings\')">Set it up in settings</a>.',
+        text: 'No Slack channel configured. <a href="#" class="settings-link">Set it up in settings</a>.',
         isWarning: true
       });
     }
@@ -54,7 +54,7 @@ function showSummaryGeneratedState() {
     // Check if name is not set
     if (!getName()) {
       notes.push({
-        text: 'Complete your profile setup in <a href="#" onclick="navigateToView(\'settings\')">settings</a>.',
+        text: 'Complete your profile setup in <a href="#" class="settings-link">settings</a>.',
         isWarning: true
       });
     }
@@ -90,7 +90,25 @@ function showSummaryGeneratedState() {
       </p>
     `).join('');
 
-    document.getElementById('summaryContainer').innerHTML = notesHTML;
+    const summaryContainer = document.getElementById('summaryContainer');
+    if (summaryContainer) {
+      summaryContainer.innerHTML = notesHTML;
+
+      // Add event listeners for links
+      document.querySelectorAll('.resume-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          resumeRecording();
+        });
+      });
+
+      document.querySelectorAll('.settings-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          navigateToView('settings');
+        });
+      });
+    }
   }
 
   // Reset to initial state
@@ -110,6 +128,9 @@ function showSummaryGeneratedState() {
     showSpinner = showBlockingSpinner;
     hideSpinner = hideBlockingSpinner;
     navigateToView = viewNavigator;
+    
+    // Show initial state
+    dashboardNote();
   }
 
   // Only add event listeners if elements exist
@@ -353,5 +374,13 @@ if (discardSummaryBtn) {
 function resumeRecording() {
   ipcRenderer.send('resumeRecording');
 }
+
+// Add pause state change listener
+ipcRenderer.on('pauseStateChanged', () => {
+  // Add a small delay to ensure app state is updated first
+  setTimeout(() => {
+    dashboardNote();
+  }, 100);
+});
 
 module.exports = { initializeDashboard, resetSummaryState };
