@@ -746,18 +746,10 @@ function loadPauseState() {
           timeoutId: setTimeout(() => resumeRecording(), remainingDuration)
         };
         
-        // Send state update since we restored a pause
-        if (mainWindow) {
-          mainWindow.webContents.send('pauseStateChanged', true);
-        }
         return true
       } else {
         // Pause period has already expired
         store.delete('pauseState')
-        // Send state update since pause expired
-        if (mainWindow) {
-          mainWindow.webContents.send('pauseStateChanged', false);
-        }
       }
     }
   } catch (error) {
@@ -1015,6 +1007,16 @@ function stopRecording() {
     }
 }
 
+// Add IPC handler for resume action
+ipcMain.on('resumeRecording', () => {
+  resumeRecording();
+});
+
+ipcMain.handle('getInitialPauseState', () => {
+  log.info(`Renderer requested initial pause state. Returning: ${isPaused()}`);
+  return isPaused(); // Return the current state determined by loadPauseState
+});
+
 // Function to check screen capture permission
 async function checkScreenCapturePermission() {
   hasScreenCapturePermission = await moduleCheckPermission();
@@ -1123,9 +1125,4 @@ ipcMain.on('pauseStateChanged', (event, isPaused) => {
   if (mainWindow) {
     mainWindow.webContents.send('pauseStateChanged', isPaused);
   }
-});
-
-// Add IPC handler for resume action
-ipcMain.on('resumeRecording', () => {
-  resumeRecording();
 });

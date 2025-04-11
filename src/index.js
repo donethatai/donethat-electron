@@ -166,6 +166,14 @@ async function loadUserSettingsCallback() {
     currentPeriodEnd: result.data?.subscription?.currentPeriodEnd
   });
 
+  // Fetch initial pause state from main process
+  console.log('Requesting initial pause state from main process...'); // Add log
+  const initialIsPaused = await ipcRenderer.invoke('getInitialPauseState');
+  console.log(`Received initial pause state: ${initialIsPaused}`); // Add log
+  
+  // Update app-state with the initial value
+  updatePauseState(initialIsPaused);
+
   // Refresh dashboard notes now that state is loaded
   refreshDashboardNotes();
 
