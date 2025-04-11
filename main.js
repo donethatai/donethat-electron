@@ -1013,7 +1013,6 @@ ipcMain.on('resumeRecording', () => {
 });
 
 ipcMain.handle('getInitialPauseState', () => {
-  log.info(`Renderer requested initial pause state. Returning: ${isPaused()}`);
   return isPaused(); // Return the current state determined by loadPauseState
 });
 

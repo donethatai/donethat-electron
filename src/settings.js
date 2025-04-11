@@ -7,6 +7,8 @@ const { updateSlackUI, updateSlackInputState } = require('./slack');
 const { logAnalyticsEvent } = require('./analytics.js');
 const { ipcRenderer } = require("electron");
 const { updateLastSummary, updateIsPublic } = require('./app-state.js');
+const os = require('os');
+const packageInfo = require('../package.json');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -78,7 +80,6 @@ function setupVersionClickHandler() {
   if (versionElement) {
     try {
       // Try to get version from package.json first
-      const packageInfo = require('../package.json');
       versionElement.textContent = `v${packageInfo.version}`;
       
       // Add click handler for version number
@@ -183,6 +184,14 @@ async function saveUserSettings(type, value) {
       logAnalyticsEvent('settings_updated', {
         type: 'publicSummaries',
         enabled: value
+      });
+    } else if (type === 'app') { // Add handling for 'app' type
+      settingsData.app = value; // value should be { version: '...', osPlatform: '...', osRelease: '...' }
+      logAnalyticsEvent('settings_updated', {
+        type: 'app',
+        version: value.version,
+        osPlatform: value.osPlatform, // Updated field name
+        osRelease: value.osRelease   // Added field
       });
     }
 
@@ -326,6 +335,53 @@ async function updateSettingsUI(result) {
 
   // Send initial workdays to main process
   ipcRenderer.send('updateWorkdays', workdays);
+
+  // --- Check and update App Version and OS ---
+  try {
+    const localVersion = packageInfo.version;
+    const localOSPlatform = os.platform(); // Get platform
+    const localOSRelease = os.release();   // Get release version
+    const storedVersion = result.data?.app?.version;
+    const storedOSPlatform = result.data?.app?.osPlatform; // Updated field name
+    const storedOSRelease = result.data?.app?.osRelease;   // Added field
+
+    let needsUpdate = false;
+    const appData = {
+      version: storedVersion || localVersion,
+      osPlatform: storedOSPlatform || localOSPlatform, // Use stored value as base if exists
+      osRelease: storedOSRelease || localOSRelease    // Use stored value as base if exists
+    };
+
+    if (localVersion && localVersion !== storedVersion) {
+      console.log(`Local app version (${localVersion}) differs from stored version (${storedVersion}). Updating.`);
+      appData.version = localVersion;
+      needsUpdate = true;
+    }
+
+    if (localOSPlatform && localOSPlatform !== storedOSPlatform) {
+      console.log(`Local OS Platform (${localOSPlatform}) differs from stored OS Platform (${storedOSPlatform}). Updating.`);
+      appData.osPlatform = localOSPlatform;
+      needsUpdate = true;
+    }
+
+    if (localOSRelease && localOSRelease !== storedOSRelease) {
+      console.log(`Local OS Release (${localOSRelease}) differs from stored OS Release (${storedOSRelease}). Updating.`);
+      appData.osRelease = localOSRelease;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      // Call saveUserSettings without await to avoid blocking UI update
+      // Spinner is already handled within saveUserSettings
+      saveUserSettings('app', appData).catch(error => {
+        // Log error if the background update fails, but don't block UI
+        console.error("Background update of app version/OS failed:", error);
+      });
+    }
+  } catch (error) {
+    console.error("Error checking/updating app version and OS:", error);
+  }
+  // --- End Check and update App Version and OS ---
 }
 
 /**
