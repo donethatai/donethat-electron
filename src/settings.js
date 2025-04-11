@@ -6,6 +6,7 @@ const firebaseConfig = require("../firebase-config.js");
 const { updateSlackUI, updateSlackInputState } = require('./slack');
 const { logAnalyticsEvent } = require('./analytics.js');
 const { ipcRenderer } = require("electron");
+const { updateLastSummary } = require('./app-state.js');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -216,11 +217,9 @@ async function updateSettingsUI(result) {
   }
 
   // Handle name
-  if (result.data && result.data.name) {
-    const nameInput = document.getElementById('nameInput');
-    if (nameInput) {
-      nameInput.value = result.data.name;
-    }
+  const nameInput = document.getElementById('nameInput');
+  if (nameInput) {
+    nameInput.value = result.data?.name || '';
   }
 
   // Handle screenshots setting
@@ -256,6 +255,11 @@ async function updateSettingsUI(result) {
 
     // Render the email tags
     renderEmailTags();
+  }
+
+  // Handle lastSummary from activity data
+  if (result.data?.activity?.lastSummary) {
+    updateLastSummary(result.data.activity.lastSummary);
   }
   
   // Handle Slack settings

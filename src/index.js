@@ -23,9 +23,8 @@ const {
   updateStoreScreenshots,
   updateCurrentView,
   getCurrentView,
-  hasSlack,
-  hasSlackToken,
-  isAuthenticated
+  isAuthenticated,
+  updatePauseState
 } = require('./app-state.js');
 
 const coreViews = ['settings', 'dashboard'];
@@ -152,7 +151,7 @@ async function loadUserSettingsCallback() {
     result.data?.slack?.defaultChannel,
     !!result.data?.slack?.accessToken
   );
-  updateName(result.data?.name || '');
+  updateName(result.data?.name);
   updateStoreScreenshots(result.data?.storeScreenshots || false);
 
   // Update subscription UI with current data and wait for it to complete
@@ -212,4 +211,9 @@ function hideBlockingSpinner() {
 // Add IPC listener for navigation
 ipcRenderer.on('navigate', (event, viewName) => {
   navigateToView(viewName);
+});
+
+// Add pause state handler
+ipcRenderer.on('pauseStateChanged', (event, isPaused) => {
+  updatePauseState(isPaused);
 });

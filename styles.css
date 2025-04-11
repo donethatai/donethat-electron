@@ -70,8 +70,9 @@
 
 /* Link style */
 .link {
-  @apply hover:underline text-sm;
+  @apply text-sm;
   color: var(--color-primary);
+  text-decoration: underline;
 }
 
 /* Section header */
@@ -443,4 +444,14 @@
 }
 .border-primary {
   border-color: var(--color-primary);
+}
+
+/* Dashboard notes */
+.dashboard-note {
+  @apply mb-2;
+}
+
+.dashboard-note a {
+  text-decoration: underline;
+  color: inherit;
 }

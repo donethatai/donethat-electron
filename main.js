@@ -251,9 +251,7 @@ app.whenReady().then(async () => {
     });
 
     // Load pause state only after store is initialized
-    const pauseStateRestored = loadPauseState();
-    if (pauseStateRestored) {
-    }
+    loadPauseState();
 
     // Load userWorkdays from store, with validation and default fallback
     const savedWorkdays = store.get('userWorkdays');
@@ -690,27 +688,19 @@ function resumeRecording() {
   pauseState = { endTime: null, timeoutId: null };
   if (store) store.delete('pauseState');
 
-  // If already recording (e.g., workday check started it, or manual resume occurred)
-  // Update the icon regardless, but don't start another interval if one exists.
-  if (screenshotInterval) {
-      updateTrayIcon(true); // Ensure icon shows recording
-      // Log resume event if applicable
-      if (wasPaused && mainWindow) {
-         mainWindow.webContents.send('analytics-event', { eventName: 'recording_state_changed', eventParams: { status: 'resumed' }});
-      }
-      return;
+  // Only start new interval if one doesn't exist
+  if (!screenshotInterval) {
+    screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000);
   }
 
-  // Start screenshot interval if it's not already running
-  screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000);
+  // Common operations for all resume cases
   updateTrayIcon(true); // Show recording state
-
-  // Send analytics event if we were manually paused
-  if (wasPaused && mainWindow) {
+  if (mainWindow && wasPaused) {
+    mainWindow.webContents.send('pauseStateChanged', false);
     mainWindow.webContents.send('analytics-event', { 
-      eventName: 'recording_state_changed',
-      eventParams: { status: 'resumed' } 
-    });
+        eventName: 'recording_state_changed',
+        eventParams: { status: 'resumed' } 
+      });
   }
 }
 
@@ -756,10 +746,18 @@ function loadPauseState() {
           timeoutId: setTimeout(() => resumeRecording(), remainingDuration)
         };
         
+        // Send state update since we restored a pause
+        if (mainWindow) {
+          mainWindow.webContents.send('pauseStateChanged', true);
+        }
         return true
       } else {
         // Pause period has already expired
         store.delete('pauseState')
+        // Send state update since pause expired
+        if (mainWindow) {
+          mainWindow.webContents.send('pauseStateChanged', false);
+        }
       }
     }
   } catch (error) {
@@ -987,8 +985,16 @@ ipcMain.on('summarySubmitted', (event) => {
 function startRecording() {
   // Start the interval (caller ensures it doesn't already exist)
   screenshotInterval = setInterval(captureAndSendScreenshot, SCREENSHOT_INTERVAL_MINUTES * 60000);
-  // Update icon to show recording state
-  updateTrayIcon(true);
+  
+  // Common operations
+  updateTrayIcon(true); // Show recording state
+  if (mainWindow) {
+    mainWindow.webContents.send('pauseStateChanged', false);
+    mainWindow.webContents.send('analytics-event', { 
+      eventName: 'recording_state_changed',
+      eventParams: { status: 'started' } 
+    });
+  }
 }
 
 // Stops the interval and updates the icon
@@ -998,6 +1004,15 @@ function stopRecording() {
         screenshotInterval = null;
     }
     updateTrayIcon(false); // Update icon to non-recording state
+    
+    // Send state updates
+    if (mainWindow) {
+      mainWindow.webContents.send('pauseStateChanged', true);
+      mainWindow.webContents.send('analytics-event', { 
+        eventName: 'recording_state_changed',
+        eventParams: { status: 'stopped' } 
+      });
+    }
 }
 
 // Function to check screen capture permission
@@ -1102,3 +1117,15 @@ ipcMain.on('requestScreenCapturePermission', async () => {
   const oldPermission = hasScreenCapturePermission;
   app.on('browser-window-focus', focusListener);
 })
+
+// Add IPC handler for pause state updates
+ipcMain.on('pauseStateChanged', (event, isPaused) => {
+  if (mainWindow) {
+    mainWindow.webContents.send('pauseStateChanged', isPaused);
+  }
+});
+
+// Add IPC handler for resume action
+ipcMain.on('resumeRecording', () => {
+  resumeRecording();
+});

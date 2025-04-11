@@ -2,6 +2,7 @@ const { getFunctions, httpsCallable } = require("firebase/functions");
 const { firebaseApp } = require('./firebase.js');
 const { ipcRenderer } = require('electron');
 const { logAnalyticsEvent } = require('./analytics.js');
+const { hasSlack, hasSlackToken, getName, getLastSummary, getIsPaused } = require('./app-state.js');
 
 const functions = getFunctions(firebaseApp, "europe-west1");
 
@@ -30,6 +31,68 @@ function showSummaryGeneratedState() {
     document.getElementById('discardSummaryBtn').classList.remove('hidden');
   }
   
+  // Function to handle all dashboard note operations
+  function dashboardNote(extraNotes = []) {
+    const notes = [];
+    
+    // Check if app is paused
+    if (getIsPaused()) {
+      notes.push({
+        text: 'DoneThat is paused. <a href="#" onclick="resumeRecording()">Resume recording</a>.',
+        isWarning: true
+      });
+    }
+
+    // Check if Slack is connected but no channel is set
+    if (hasSlack() && !hasSlackToken()) {
+      notes.push({
+        text: 'No Slack channel configured. <a href="#" onclick="navigateToView(\'settings\')">Set it up in settings</a>.',
+        isWarning: true
+      });
+    }
+
+    // Check if name is not set
+    if (!getName()) {
+      notes.push({
+        text: 'Complete your profile setup in <a href="#" onclick="navigateToView(\'settings\')">settings</a>.',
+        isWarning: true
+      });
+    }
+
+    // Check if last summary was submitted more than a day ago
+    const lastSummary = getLastSummary();
+    if (lastSummary) {
+      const lastSummaryDate = new Date(lastSummary);
+      const oneDayInMs = 24 * 60 * 60 * 1000;
+      if (Date.now() - lastSummaryDate.getTime() > oneDayInMs) {
+        notes.push({
+          text: 'Old summaries are available for submission.',
+          isWarning: true
+        });
+      }
+    }
+
+    // Add any extra notes
+    notes.push(...extraNotes);
+
+    // Only add default note if no other notes exist
+    if (notes.length === 0) {
+      notes.push({
+        text: 'Generate a summary to see your activities.',
+        isWarning: false
+      });
+    }
+
+    // Render the notes
+    const notesHTML = notes.map(note => `
+      <p class="dashboard-note ${note.isWarning ? 'text-orange-500' : 'text-gray-500'} text-center text-sm">
+        ${note.text}
+      </p>
+    `).join('');
+
+    document.getElementById('summaryContainer').innerHTML = notesHTML;
+  }
+
   // Reset to initial state
   function resetSummaryState() {
     document.getElementById('generateSummaryBtn').classList.remove('hidden');
@@ -38,8 +101,7 @@ function showSummaryGeneratedState() {
     currentSummaryId = null;
     selectedBulletPoints = [];
   
-    document.getElementById('summaryContainer').innerHTML =
-      '<p class="empty-state-text">Generate a summary to see your activities.</p>';
+    dashboardNote();
   }
 
   // Initialize dashboard
@@ -73,7 +135,6 @@ if (submitSummaryBtn) {
       });
   
       const commentText = document.getElementById('commentInput').value.trim();
-  
   
       saveFinalSummaryFunction({
         summaryId: currentSummaryId,
@@ -134,7 +195,7 @@ if (submitSummaryBtn) {
           error_code: error.code,
           error_message: error.message
         });
-      })
+      });
     });
   }
   
@@ -153,34 +214,11 @@ if (submitSummaryBtn) {
           currentSummaryId = result.data.summaryId;
           const period = result.data.period;
   
-          // Check if this is the same period as the last summary
-          const oneHourInMs = 60 * 60 * 1000; // 1 hour in milliseconds
-          const newEnd = Date.now();
-  
-          // Check if the new period overlaps with the last period within 1 hour
-          if (period && Math.abs(newEnd - period.end) > oneHourInMs) {
-            const existingWarning = document.querySelector('summary-warning-message');
-            if (existingWarning==null) {
-              // Show warning message
-              const warningMessage = document.createElement('p');
-              warningMessage.className = 'summary-warning-message text-gray-500 text-xs text-center mt-2';
-              warningMessage.textContent = 'This summary is older than one hour. Please submit or discard it to generate a summary for what happened since this one.';
-              
-              // Insert warning after the button container
-              const buttonContainer = document.querySelector('.flex.justify-between.mt-4');
-              if (buttonContainer) {
-                buttonContainer.parentNode.insertBefore(warningMessage, buttonContainer.nextSibling);
-              }
-              
-              // Remove warning after 10 seconds
-              setTimeout(() => {
-                warningMessage.remove();
-              }, 10000);
-            }
-          }
-  
           if (bulletPoints.length === 0) {
-            summaryContainer.innerHTML = '<p class="empty-state-text">No activities found for today. Check if DoneThat is paused and try again in a few minutes.</p>';
+            dashboardNote([{
+              text: 'No activities found for today. Check if DoneThat is paused and try again in a few minutes.',
+              isWarning: true
+            }]);
             logAnalyticsEvent('summary_generated', {
               status: 'empty',
               bullet_points_count: 0
@@ -309,6 +347,11 @@ if (discardSummaryBtn) {
       });
     });
   });
+}
+
+// Add resume function
+function resumeRecording() {
+  ipcRenderer.send('resumeRecording');
 }
 
 module.exports = { initializeDashboard, resetSummaryState };

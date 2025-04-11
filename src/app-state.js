@@ -20,10 +20,14 @@ const state = {
   storeScreenshots: false,
   emailRecipients: [],
   slackChannel: null,
+  lastSummary: null,
 
   // Navigation state
   currentView: null
 };
+
+// Add pause state
+let isPaused = false;
 
 // Getters
 function getState() {
@@ -74,6 +78,15 @@ function getCurrentView() {
   return state.currentView;
 }
 
+function getLastSummary() {
+  return state.lastSummary;
+}
+
+// Add getter and setter for pause state
+function getIsPaused() {
+  return isPaused;
+}
+
 // Setters
 function updateAuthState(isAuthenticated, userIdToken) {
   state.isAuthenticated = isAuthenticated;
@@ -115,6 +128,14 @@ function updateCurrentView(view) {
   state.currentView = view;
 }
 
+function updateLastSummary(timestamp) {
+  state.lastSummary = timestamp;
+}
+
+function updatePauseState(paused) {
+  isPaused = paused;
+}
+
 // Reset state (useful for logout)
 function resetState() {
   Object.keys(state).forEach(key => {
@@ -143,6 +164,8 @@ module.exports = {
   getEmailRecipients,
   getSlackChannel,
   getCurrentView,
+  getLastSummary,
+  getIsPaused,
   updateAuthState,
   updateScreenCapturePermission,
   updateSubscriptionState,
@@ -151,5 +174,7 @@ module.exports = {
   updateEmailSettings,
   updateSlackSettings,
   updateCurrentView,
+  updateLastSummary,
+  updatePauseState,
   resetState
 }; 
