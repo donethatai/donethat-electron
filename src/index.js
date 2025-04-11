@@ -24,7 +24,8 @@ const {
   updateCurrentView,
   getCurrentView,
   isAuthenticated,
-  updatePauseState
+  updatePauseState,
+  updateDateCreated
 } = require('./app-state.js');
 
 const coreViews = ['settings', 'dashboard'];
@@ -153,6 +154,7 @@ async function loadUserSettingsCallback() {
   );
   updateName(result.data?.name);
   updateStoreScreenshots(result.data?.storeScreenshots || false);
+  updateDateCreated(result.data?.analytics?.createdAt);
 
   // Update subscription UI with current data and wait for it to complete
   await subscriptionUpdateUI({
