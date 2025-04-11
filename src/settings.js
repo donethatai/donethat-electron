@@ -177,6 +177,12 @@ async function saveUserSettings(type, value) {
         type: 'workdays',
         days: value.join(',') // Log the selected days
       });
+    } else if (type === 'publicSummaries') {
+      settingsData.public = value;
+      logAnalyticsEvent('settings_updated', {
+        type: 'publicSummaries',
+        enabled: value
+      });
     }
 
     await updateUserSettingsFunction(settingsData);
@@ -224,6 +230,16 @@ async function updateSettingsUI(result) {
       screenshotsCheckbox.checked = result.data.storeScreenshots;
       // Show container if screenshots are enabled
       updateScreenshotsContainerVisibility(result.data.storeScreenshots);
+    }
+  }
+
+  // Handle public summaries setting
+  const publicSummariesCheckbox = document.getElementById('publicSummariesCheckbox');
+  if (publicSummariesCheckbox) {
+    if (result.data && typeof result.data.public === 'boolean') {
+      publicSummariesCheckbox.checked = result.data.public;
+    } else {
+      publicSummariesCheckbox.checked = false; // Default to false if not set
     }
   }
 
@@ -407,7 +423,7 @@ function renderEmailTags() {
     tag.className = "email-tag";
     tag.innerHTML = `
       <span class="email-text">${email}</span>
-      <button data-email="${email}" class="remove-email remove-email-btn">
+      <button data-email="${email}" class="remove-email remove-email-btn cursor-pointer">
         &times;
       </button>
     `;
@@ -460,6 +476,22 @@ if (screenshotsCheckbox) {
   });
 }
 
+// Add event listener for public summaries checkbox
+const publicSummariesCheckbox = document.getElementById('publicSummariesCheckbox');
+if (publicSummariesCheckbox) {
+  publicSummariesCheckbox.addEventListener('change', async (e) => {
+    try {
+      showSpinner();
+      await saveUserSettings('publicSummaries', e.target.checked);
+    } catch (error) {
+      // If error occurs, revert to previous value
+      e.target.checked = !e.target.checked;
+    } finally {
+      hideSpinner();
+    }
+  });
+}
+
 // Add event listener for email input
 const emailInput = document.getElementById('emailInput');
 if (emailInput) {
@@ -469,6 +501,19 @@ if (emailInput) {
       const email = emailInput.value.trim();
       if (email) {
         await addEmailTag(email);
+      }
+    }
+  });
+
+  // Add blur event listener to add email when focus leaves the input
+  emailInput.addEventListener('blur', async (e) => {
+    const email = emailInput.value.trim();
+    if (email) {
+      // Check if email is already added to prevent duplicates on Enter + Blur
+      if (!recipientEmails.includes(email)) {
+         await addEmailTag(email);
+      } else {
+        emailInput.value = ""; // Uncomment if desired
       }
     }
   });
@@ -507,18 +552,18 @@ function renderWorkdaySelectors() {
   for (let i = 0; i < 7; i++) {
     const dayIndex = (firstDay + i) % 7; // The actual day number (0-6)
     const button = document.createElement('button');
-    button.className = 'workday-selector flex-1 py-1 text-xs rounded border'; // Base classes
+    button.className = 'workday-selector flex-1 py-1 text-xs rounded border cursor-pointer'; // Base classes
     button.textContent = dayLabels[dayIndex];
     button.setAttribute('data-day', dayIndex.toString());
 
     if (workdays.includes(dayIndex)) {
-      // Active state: Orange background, white text
-      button.classList.add('bg-primary', 'text-white', 'border-primary');
-      button.classList.remove('bg-gray-100', 'text-gray-600', 'border-gray-300');
+      // Active state: Light gray background, dark gray text
+      button.classList.add('bg-gray-200', 'text-gray-700', 'border-gray-300', 'hover:bg-gray-300');
+      button.classList.remove('bg-white', 'text-gray-400', 'border-gray-200', 'hover:bg-gray-100');
     } else {
-      // Inactive state: Light gray background, dark gray text
-      button.classList.add('bg-gray-100', 'text-gray-600', 'border-gray-300');
-      button.classList.remove('bg-primary', 'text-white', 'border-primary');
+      // Inactive state: White background, light gray text
+      button.classList.add('bg-white', 'text-gray-400', 'border-gray-200', 'hover:bg-gray-100');
+      button.classList.remove('bg-gray-200', 'text-gray-700', 'border-gray-300', 'hover:bg-gray-300');
     }
     container.appendChild(button);
   }

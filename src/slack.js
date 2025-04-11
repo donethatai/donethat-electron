@@ -114,7 +114,7 @@ function updateSlackInputState(connected, teamName = '', channel = '') {
     
     // Update button icon based on state
     if (channel === slackInput.value.trim()) {
-      slackButton.className = 'add-email-btn';
+      slackButton.className = 'add-email-btn cursor-pointer';
       slackButton.innerHTML = `
         <div class="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -124,7 +124,7 @@ function updateSlackInputState(connected, teamName = '', channel = '') {
         </div>
       `;
     } else {
-      slackButton.className = 'add-email-btn';
+      slackButton.className = 'add-email-btn cursor-pointer';
       slackButton.innerHTML = `
         <div class="w-4 h-4 rounded-full flex items-center justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -140,7 +140,7 @@ function updateSlackInputState(connected, teamName = '', channel = '') {
     slackInput.disabled = true;
     slackChannel = '';
     slackConnected = false;
-    slackButton.className = 'add-email-btn';
+    slackButton.className = 'add-email-btn cursor-pointer';
     slackButton.innerHTML = `
       <div class="w-4 h-4 rounded-full flex items-center justify-center">
         <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -325,6 +325,65 @@ function initializeSlack(onSettingsUpdate, showBlockingSpinner, hideBlockingSpin
             // Use the Tailwind hide function
             hideSpinner();
           }
+        }
+      }
+    });
+
+    // Add blur event listener to update channel when focus leaves the input
+    slackInput.addEventListener('blur', async () => {
+      const currentValue = slackInput.value.trim();
+
+      // Only save if connected and the value has actually changed
+      if (slackConnected && currentValue !== slackChannel) {
+        try {
+          // Use the Tailwind blocking spinner
+          showSpinner();
+
+          const response = await slackUpdateChannelFunction({ channel: currentValue });
+
+          // Check if the response indicates failure
+          if (response.data && response.data.success === false) {
+            console.warn('Channel update failed:', response.data.error);
+            alert(response.data.error || "Could not find channel. If you are using a private channel, make sure you have invited the bot to the channel.");
+            slackInput.value = slackChannel; // Revert input
+            updateButtonState(true); // Revert button state
+
+            // Log info event for channel update failure
+            logAnalyticsEvent('slack_channel_updated', {
+              status: 'info',
+              trigger: 'blur',
+              message: response.data.error,
+              channel: currentValue
+            });
+          } else {
+            // Success: Update state and UI
+            updateSlackInputState(true, undefined, currentValue);
+            if (loadUserSettingsCallback) loadUserSettingsCallback(); // Reload settings to confirm
+            
+            // Log successful channel update
+            logAnalyticsEvent('slack_channel_updated', {
+              status: 'success',
+              trigger: 'blur',
+              channel: currentValue
+            });
+          }
+        } catch (error) {
+          console.error('Error updating Slack channel on blur:', error);
+          alert('Error updating Slack channel: ' + error.message);
+          slackInput.value = slackChannel; // Revert input
+          updateButtonState(true); // Revert button state
+
+          // Log error in channel update
+          logAnalyticsEvent('slack_channel_updated', {
+            status: 'error',
+            trigger: 'blur',
+            error_code: error.code,
+            error_message: error.message,
+            channel: currentValue
+          });
+        } finally {
+          // Use the Tailwind hide function
+          hideSpinner();
         }
       }
     });

@@ -298,7 +298,7 @@
               />
               <button
                 id="addEmailBtn"
-                class="add-email-btn"
+                class="add-email-btn cursor-pointer"
                 aria-label="Add email"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -324,7 +324,7 @@
               />
               <button
                 id="slackActionBtn"
-                class="add-email-btn"
+                class="add-email-btn cursor-pointer"
                 aria-label="Slack action"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -349,8 +349,23 @@
             </div>
           </div>
 
-
-
+          <!-- Build in Public Section -->
+          <div class="mt-4">
+            <label class="form-label mb-1">
+              Build in public
+            </label>
+            <div class="flex items-center">
+              <input
+                type="checkbox"
+                id="publicSummariesCheckbox"
+                class="form-checkbox h-4 w-4 text-gray-600 checked:bg-gray-600 checked:border-gray-600 accent-gray-600 ring-gray-600 cursor-pointer"
+              />
+              <label for="publicSummariesCheckbox" class="ml-2 text-xs text-gray-600">
+                Summaries visible on the
+                <a href="https://app.donethat.ai" target="_blank" class="underline">feed</a>
+              </label>
+            </div>
+          </div>
 
           <!-- Subscription Management Section -->
           <div class="mt-4">
@@ -367,7 +382,7 @@
               />
               <button
                 id="subscriptionActionBtn"
-                class="add-email-btn"
+                class="add-email-btn cursor-pointer"
                 aria-label="Subscription action"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -389,7 +404,7 @@
           <input
             type="checkbox"
             id="screenshotsCheckbox"
-            class="form-checkbox h-4 w-4 text-blue-600"
+            class="form-checkbox h-4 w-4 text-gray-600 checked:bg-gray-600 checked:border-gray-600 accent-gray-600 ring-gray-600 cursor-pointer"
           />
           <label for="screenshotsCheckbox" class="ml-2 text-xs text-gray-600">
             Save screenshots to improve services
