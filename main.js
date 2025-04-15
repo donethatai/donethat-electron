@@ -994,7 +994,7 @@ ipcMain.on('summarySubmitted', (event) => {
   summarySubmittedTimestamp = Date.now();
 })
 
-////// SCREENSHOTS ////
+////// INPUT DATA ////
 
 // Checks all conditions (login, permission, pause, workday) and starts interval if appropriate
 function startRecording() {
@@ -1153,6 +1153,139 @@ ipcMain.on('pauseStateChanged', (event, isPaused) => {
   }
 });
 
+// After openSettingsBtn)
+ipcMain.on('requestAudioPermission', async () => {
+  const { shell } = require('electron');
+  const { checkPermission } = require('./src-main/captureAudio');
+  
+  // First check if we already have permission
+  const hasPermission = await checkPermission();
+  
+  if (hasPermission) {
+    // Already have permission, inform renderer
+    if (mainWindow) {
+      mainWindow.webContents.send('audioPermission', true);
+    }
+    return;
+  }
+  
+  // Open relevant system settings based on platform
+  if (process.platform === 'darwin') {
+    // macOS - Open microphone privacy settings
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+  } else if (process.platform === 'win32') {
+    // Windows - Open microphone privacy settings
+    shell.openExternal('ms-settings:privacy-microphone');
+  } else if (process.platform === 'linux') {
+    // Linux - No standard way to open settings, notify user to check manually
+    if (mainWindow) {
+      mainWindow.webContents.send('linux-audio-permission-notice');
+    }
+  }
+  
+  // After opening settings, check permission again when app regains focus
+  const focusListener = async () => {
+    // Remove listener immediately to prevent multiple triggers
+    app.removeListener('browser-window-focus', focusListener);
+    
+    const newHasPermission = await checkPermission();
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('audioPermission', newHasPermission);
+    }
+  };
+  
+  app.on('browser-window-focus', focusListener);
+});
+
+ipcMain.on('requestKeystrokesPermission', async () => {
+  const { shell } = require('electron');
+  const { checkPermission } = require('./src-main/captureKeystrokes');
+  
+  // First check if we already have permission
+  const hasPermission = await checkPermission();
+  
+  if (hasPermission) {
+    // Already have permission, inform renderer
+    if (mainWindow) {
+      mainWindow.webContents.send('keystrokesPermission', true);
+    }
+    return;
+  }
+  
+  // Open relevant system settings based on platform
+  if (process.platform === 'darwin') {
+    // macOS - Open accessibility privacy settings
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+  } else if (process.platform === 'win32') {
+    // Windows - No direct settings for keyboard access, open general privacy
+    shell.openExternal('ms-settings:privacy');
+  } else if (process.platform === 'linux') {
+    // Linux - No standard way to open settings
+    if (mainWindow) {
+      mainWindow.webContents.send('linux-keystrokes-permission-notice');
+    }
+  }
+  
+  // After opening settings, check permission again when app regains focus
+  const focusListener = async () => {
+    // Remove listener immediately to prevent multiple triggers
+    app.removeListener('browser-window-focus', focusListener);
+    
+    const newHasPermission = await checkPermission();
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('keystrokesPermission', newHasPermission);
+    }
+  };
+  
+  app.on('browser-window-focus', focusListener);
+});
+
+ipcMain.on('requestWindowsPermission', async () => {
+  const { shell } = require('electron');
+  const { checkPermission } = require('./src-main/captureWindows');
+  
+  // First check if we already have permission
+  const hasPermission = await checkPermission();
+  
+  if (hasPermission) {
+    // Already have permission, inform renderer
+    if (mainWindow) {
+      mainWindow.webContents.send('windowsPermission', true);
+    }
+    return;
+  }
+  
+  // Open relevant system settings based on platform
+  if (process.platform === 'darwin') {
+    // On macOS, directly open System Settings to Accessibility permissions
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+  } else if (process.platform === 'win32') {
+    // Windows - No direct settings for window access, open general privacy
+    shell.openExternal('ms-settings:privacy');
+  } else if (process.platform === 'linux') {
+    // Linux - No standard way to open settings
+    if (mainWindow) {
+      mainWindow.webContents.send('linux-windows-permission-notice');
+    }
+  }
+  
+  // After opening settings, check permission again when app regains focus
+  const focusListener = async () => {
+    // Remove listener immediately to prevent multiple triggers
+    app.removeListener('browser-window-focus', focusListener);
+    
+    const newHasPermission = await checkPermission();
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('windowsPermission', newHasPermission);
+    }
+  };
+  
+  app.on('browser-window-focus', focusListener);
+});
+
 //// NOTIFICATIONS ////
 
 // Function to check for unreviewed work and notify
@@ -1200,3 +1333,4 @@ ipcMain.on('updateLastSummaryTimestamp', (event, timestamp) => {
     log.error('Error processing/storing lastSummaryTimestamp:', error, 'Raw value:', timestamp);
   }
 });
+

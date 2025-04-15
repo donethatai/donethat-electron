@@ -16,10 +16,17 @@ let lastActiveApps = []
 async function checkPermission() {
   try {
     if (process.platform === 'darwin') {
-      // macOS: Check for screen recording permission (required for window title access)
+      // macOS: Check for accessibility permissions (required for window title access)
       try {
-        const activeApps = await getActiveApplications()
-        return Array.isArray(activeApps) && activeApps.length > 0
+        const testScript = `
+          tell application "System Events"
+            set frontApp to name of first application process whose frontmost is true
+            return frontApp
+          end tell
+        `;
+        
+        execSync(`osascript -e '${testScript}'`, { timeout: 3000 });
+        return true;
       } catch (error) {
         log.error('Window tracking permission check failed on macOS:', error)
         return false

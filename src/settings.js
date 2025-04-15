@@ -7,6 +7,7 @@ const { updateSlackUI, updateSlackInputState } = require('./slack');
 const { logAnalyticsEvent } = require('./analytics.js');
 const { ipcRenderer } = require("electron");
 const { updateLastSummary, updateIsPublic } = require('./app-state.js');
+const { requestAudioPermission, requestKeystrokesPermission, requestWindowsPermission } = require('./permissions.js');
 const os = require('os');
 const packageInfo = require('../package.json');
 
@@ -64,6 +65,43 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupWorkdayClickHandler();
   // Set up event listeners for new checkboxes
   setupInputDataCheckboxListeners();
+  // Set up permission result listener
+  setupPermissionResultListener();
+}
+
+// Set up listener for permission check results
+function setupPermissionResultListener() {
+  document.addEventListener('permissionResult', async (event) => {
+    const { type, hasPermission } = event.detail;
+    
+    // If permission was denied, update the corresponding checkbox and setting
+    if (!hasPermission) {
+      const checkboxMap = {
+        'audio': 'audioCheckbox',
+        'keystrokes': 'keystrokesCheckbox',
+        'windows': 'windowsCheckbox'
+      };
+      
+      const checkbox = document.getElementById(checkboxMap[type]);
+      if (checkbox) {
+        checkbox.checked = false;
+        
+        // Update our local state
+        inputData[type] = false;
+        
+        // Save to server - no need to await
+        try {
+          await saveUserSettings('inputData', inputData);
+          logAnalyticsEvent('permission_denied_setting_updated', {
+            type: type,
+            platform: process.platform
+          });
+        } catch (error) {
+          console.error(`Error updating settings after ${type} permission denied:`, error);
+        }
+      }
+    }
+  });
 }
 
 // Helper function to update screenshots container visibility
@@ -707,35 +745,70 @@ function setupInputDataCheckboxListeners() {
   const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
   const audioCheckbox = document.getElementById('audioCheckbox');
 
-  const handleCheckboxChange = async (checkboxId, fieldName) => {
+  const handleCheckboxChange = async (checkboxId, fieldName, permissionFunction) => {
     const checkbox = document.getElementById(checkboxId);
     if (!checkbox) return;
 
     const isChecked = checkbox.checked;
-    const originalValue = inputData[fieldName]; // Use inputData
+    const originalValue = inputData[fieldName];
 
-    // Optimistically update state
-    inputData[fieldName] = isChecked; // Use inputData
-
-    try {
-      // Save the entire inputData object
-      await saveUserSettings('inputData', inputData); // Use inputData
-    } catch (error) { 
-      // Revert UI and state on error
-      inputData[fieldName] = originalValue; // Use inputData
-      checkbox.checked = originalValue;
-      // Error already alerted in saveUserSettings
+    if (isChecked) {
+      // If turning ON, request permission first
+      permissionFunction();
+      
+      // Optimistically update state - permission result will be handled by the listener
+      inputData[fieldName] = isChecked;
+      
+      try {
+        // Save the entire inputData object
+        await saveUserSettings('inputData', inputData);
+      } catch (error) {
+        // Revert UI and state on error with settings save
+        inputData[fieldName] = originalValue;
+        checkbox.checked = originalValue;
+      }
+    } else {
+      // If turning OFF, just update setting - no permission needed
+      inputData[fieldName] = false;
+      
+      try {
+        await saveUserSettings('inputData', inputData);
+      } catch (error) {
+        // Revert UI and state on error
+        inputData[fieldName] = originalValue;
+        checkbox.checked = originalValue;
+      }
     }
   };
 
   if (windowsCheckbox) {
-    windowsCheckbox.addEventListener('change', () => handleCheckboxChange('windowsCheckbox', 'windows')); // Updated ID and fieldName
+    windowsCheckbox.addEventListener('change', () => {
+      if (windowsCheckbox.checked) {
+        handleCheckboxChange('windowsCheckbox', 'windows', requestWindowsPermission);
+      } else {
+        handleCheckboxChange('windowsCheckbox', 'windows', () => {});
+      }
+    });
   }
+  
   if (keystrokesCheckbox) {
-    keystrokesCheckbox.addEventListener('change', () => handleCheckboxChange('keystrokesCheckbox', 'keystrokes'));
+    keystrokesCheckbox.addEventListener('change', () => {
+      if (keystrokesCheckbox.checked) {
+        handleCheckboxChange('keystrokesCheckbox', 'keystrokes', requestKeystrokesPermission);
+      } else {
+        handleCheckboxChange('keystrokesCheckbox', 'keystrokes', () => {});
+      }
+    });
   }
+  
   if (audioCheckbox) {
-    audioCheckbox.addEventListener('change', () => handleCheckboxChange('audioCheckbox', 'audio'));
+    audioCheckbox.addEventListener('change', () => {
+      if (audioCheckbox.checked) {
+        handleCheckboxChange('audioCheckbox', 'audio', requestAudioPermission);
+      } else {
+        handleCheckboxChange('audioCheckbox', 'audio', () => {});
+      }
+    });
   }
 }
 
