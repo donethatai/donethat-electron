@@ -43,7 +43,6 @@ function updateInputDataSettings(settings) {
       keystrokes: !!settings.keystrokes,
       windows: !!settings.windows
     };
-    log.info('Updated input data settings:', inputDataSettings);
   }
   return inputDataSettings;
 }
@@ -424,7 +423,7 @@ async function captureAndSend(idToken, inputData = {}) {
         payload.audio = inputData.audio;
       }
       
-      if (inputData.activity) {
+      if (inputData.activity && inputData.activity.length > 0) {
         payload.activity = inputData.activity;
       }
     }
