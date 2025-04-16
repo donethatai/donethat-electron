@@ -15,6 +15,7 @@ For the GitHub Actions workflow to work properly, you need to set up several sec
 
 - `APPLE_ID`: Your Apple Developer ID email
 - `APPLE_ID_PASSWORD`: An app-specific password for your Apple ID
+- `APPLE_APP_SPECIFIC_PASSWORD`: An app-specific password generated for notarization
 - `APPLE_TEAM_ID`: Your Apple Developer Team ID
 - `MAC_CERTIFICATE`: Base64-encoded developer certificate (p12 file)
 - `MAC_CERTIFICATE_PASSWORD`: Password for the certificate
