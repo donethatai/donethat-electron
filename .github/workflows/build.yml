@@ -27,10 +27,10 @@ jobs:
             arch: x64
             command: upload:linux:x64
           # Note: ARM64 Linux runner is still in beta
-          # - os: ubuntu-latest-arm64
-          #   platform: linux
-          #   arch: arm64
-          #   command: upload:linux:arm64
+          - os: ubuntu-latest-arm64
+            platform: linux
+            arch: arm64
+            command: upload:linux:arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -79,7 +79,7 @@ jobs:
         run: npm run ${{ matrix.command }}
         
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-build
           path: release/
