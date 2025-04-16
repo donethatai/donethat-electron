@@ -15,7 +15,13 @@
     "build:win:arm64": "npm run build:prepare && electron-builder --win --arm64",
     "build:linux:x64": "npm run build:prepare && electron-builder --linux --x64",
     "build:linux:arm64": "npm run build:prepare && electron-builder --linux --arm64",
-    "release": "dotenv -- npm run build:prepare && dotenv -- cross-env ELECTRON_BUILDER_SIGN=true electron-builder --mac --x64 --arm64 --publish always && electron-builder --win --x64 --arm64 --publish always && electron-builder --linux --x64 --arm64 --publish always"
+    "upload:mac:x64": "dotenv -- npm run build:prepare && dotenv -- cross-env ELECTRON_BUILDER_SIGN=true electron-builder --mac --x64 --publish onTagOrDraft",
+    "upload:mac:arm64": "dotenv -- npm run build:prepare && dotenv -- cross-env ELECTRON_BUILDER_SIGN=true electron-builder --mac --arm64 --publish onTagOrDraft",
+    "upload:win:x64": "dotenv -- npm run build:prepare && dotenv -- cross-env ELECTRON_BUILDER_SIGN=true electron-builder --win --x64 --publish onTagOrDraft",
+    "upload:win:arm64": "dotenv -- npm run build:prepare && dotenv -- cross-env ELECTRON_BUILDER_SIGN=true electron-builder --win --arm64 --publish onTagOrDraft",
+    "upload:linux:x64": "dotenv -- npm run build:prepare && dotenv -- cross-env ELECTRON_BUILDER_SIGN=true electron-builder --linux --x64 --publish onTagOrDraft",
+    "upload:linux:arm64": "dotenv -- npm run build:prepare && dotenv -- cross-env ELECTRON_BUILDER_SIGN=true electron-builder --linux --arm64 --publish onTagOrDraft",
+    "release": "echo 'Build strategy: Run the upload:PLATFORM:ARCH command matching your current system architecture'"
   },
   "repository": {
     "type": "git",
@@ -32,6 +38,7 @@
   "homepage": "https://donethat.ai",
   "devDependencies": {
     "@babel/preset-env": "^7.26.9",
+    "@tailwindcss/postcss": "^4.1.4",
     "babel-loader": "^10.0.0",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.7",
@@ -45,7 +52,6 @@
   },
   "dependencies": {
     "@firebase/analytics": "^0.10.12",
-    "@tailwindcss/postcss": "^4.0.6",
     "active-win": "^8.2.1",
     "electron-log": "^5.3.0",
     "electron-store": "^10.0.1",
