@@ -15,6 +15,7 @@ let screenshotInterval = null;
 let captureIntervalMinutes; // Set in main
 let reauthenticateCallback = null; // Store reauthenticate callback function
 let mainWindowRef = null; // Store mainWindow reference
+let settingsInitialized = false; // Flag to track if settings have been loaded
 
 // Track input data settings
 let inputDataSettings = {
@@ -58,13 +59,13 @@ function setCaptureInterval(minutes) {
  */
 function updateInputDataSettings(settings) {
   if (settings && typeof settings === 'object') {
-    // Merge with existing settings rather than replacing completely
     inputDataSettings = {
       ...inputDataSettings,
       ...(settings.audio !== undefined ? { audio: !!settings.audio } : {}),
       ...(settings.keystrokes !== undefined ? { keystrokes: !!settings.keystrokes } : {}),
       ...(settings.windows !== undefined ? { windows: !!settings.windows } : {})
-    };    
+    };
+    settingsInitialized = true;
   }
   return inputDataSettings;
 }
@@ -293,90 +294,6 @@ function processKeystrokeSegments(keystrokeData) {
 }
 
 /**
- * Starts capturing input data including audio, keystrokes, and window information
- * This function handles checking permissions and gracefully handles errors
- * @returns {Promise<void>}
- */
-async function startInputDataCapture() {
-  try {
-    // Handle audio capture
-    try {
-      if (inputDataSettings.audio) {
-        await audioCapture.startRecording();
-      }
-    } catch (audioError) {
-      log.error('Failed to start audio recording:', audioError);
-      // Don't rethrow - continue with other captures
-      updateInputDataSettings({ audio: false }); // Disable setting since it failed
-      
-      // Notify renderer about the permission issue
-      if (mainWindowRef) {
-        mainWindowRef.webContents.send('permission-error', { 
-          type: 'audio', 
-          message: 'Microphone access denied. Please check your system permissions.'
-        });
-      }
-    }
-    
-    // Handle keystroke capture
-    try {
-      if (inputDataSettings.keystrokes) {
-        await keystrokesCapture.startTracking();
-      }
-    } catch (keystrokesError) {
-      log.error('Failed to start keystroke tracking:', keystrokesError);
-      // Don't rethrow - continue with other captures
-      updateInputDataSettings({ keystrokes: false }); // Disable setting since it failed
-      
-      // Notify renderer about the permission issue
-      if (mainWindowRef) {
-        mainWindowRef.webContents.send('permission-error', { 
-          type: 'keystrokes', 
-          message: 'Unable to track keystrokes. Please check your system permissions.'
-        });
-      }
-    }
-    
-    // Handle window tracking
-    try {
-      if (inputDataSettings.windows) {
-        await windowsCapture.startTracking();
-      }
-    } catch (windowsError) {
-      log.error('Failed to start window tracking:', windowsError);
-      // Don't rethrow - continue with other captures
-      updateInputDataSettings({ windows: false }); // Disable setting since it failed
-      
-      // Notify renderer about the permission issue
-      if (mainWindowRef) {
-        mainWindowRef.webContents.send('permission-error', { 
-          type: 'windows', 
-          message: 'Window tracking permission denied. Please grant accessibility permissions in system settings.'
-        });
-      }
-    }
-    
-    // Notify renderer that capture components have been started
-    if (mainWindowRef) {
-      mainWindowRef.webContents.send('capture-status', { isCapturing: true });
-    }
-    
-  } catch (error) {
-    log.error('Failed to start input data capture:', error);
-    
-    // Notify renderer that capture failed
-    if (mainWindowRef) {
-      mainWindowRef.webContents.send('capture-status', { 
-        isCapturing: false,
-        error: error.message || 'Unknown error starting capture'
-      });
-    }
-    
-    throw error;
-  }
-}
-
-/**
  * Collects all input data from the active capture modules without stopping tracking
  * @param {boolean} resetBuffers - Whether to reset data buffers after collection
  * @returns {Promise<Object>} The captured input data
@@ -416,15 +333,13 @@ async function collectInputData(resetBuffers = true) {
   // Get keystroke data
   if (inputDataSettings.keystrokes) {
     try {
-      // Reset timeline after collection to avoid duplicate data in next capture
+      // Reset timeline after collection
       keystrokeData = keystrokesCapture.getKeystrokeTimeline(
-        captureIntervalMinutes * 60 * 1000, // Use capture interval as time window
-        resetBuffers // Reset timeline after collection if requested
+        captureIntervalMinutes * 60 * 1000, 
+        resetBuffers 
       );
       
-      if (keystrokeData.length === 0 && keystrokesCapture.isTracking()) {
-        log.warn('Keystroke tracking is active but no data collected - possible issue with tracking');
-        
+      if (keystrokeData.length === 0 && keystrokesCapture.isTracking()) {        
         // Try to restart keystroke tracking
         try {
           await keystrokesCapture.stopTracking();
@@ -442,11 +357,10 @@ async function collectInputData(resetBuffers = true) {
   // Get window data
   if (inputDataSettings.windows) {
     try {
-      // Get window timeline data from buffer and process it
-      // Reset timeline after collection to avoid duplicate data in next capture
+      // Reset timeline after collection
       const windowTimelineBuffer = windowsCapture.getTimelineBuffer(
-        captureIntervalMinutes * 60 * 1000, // Use capture interval as time window
-        resetBuffers // Reset timeline after collection if requested
+        captureIntervalMinutes * 60 * 1000, 
+        resetBuffers
       );
       
       windowData = windowsCapture.processTimelineData(windowTimelineBuffer);
@@ -537,10 +451,9 @@ async function collectInputData(resetBuffers = true) {
  * @param {Object} inputData Additional input data to send (audio, keystrokes, windows)
  * @returns {Promise<Object|boolean>} Response status
  */
-async function _sendToServer(idToken, screenshots,inputData = {}) {
+async function _sendToServer(idToken, screenshots, inputData = {}) {
   if (!idToken) {
     log.warn('Cannot send data: User not authenticated');
-    // Call the reauthenticate callback if available
     if (reauthenticateCallback) {
       reauthenticateCallback({ authError: true });
     }
@@ -580,19 +493,6 @@ async function _sendToServer(idToken, screenshots,inputData = {}) {
       }
     }
     
-    // Log what's being sent to API (excluding large binary data)
-    log.info('Sending data to API: ', {
-      timestamp: new Date(payload.timestamp).toLocaleString(),
-      screenshotsCount: screenshots.length,
-      hasAudio: !!payload.audio,
-      activity: payload.activity ? payload.activity.map(item => ({
-        type: item.type,
-        formattedDuration: item.formattedDuration,
-        keystrokes: item.keystrokes,
-        ...(item.type === 'window' ? { name: item.name, title: item.title } : {})
-      })) : null
-    });
-    
     // Send data to Firebase
     const response = await fetch(FIREBASE_CAPTURE_URL, {
       method: 'POST',
@@ -631,7 +531,6 @@ async function _sendToServer(idToken, screenshots,inputData = {}) {
       throw new Error(`Server error: ${response.status}`);
     }
     
-    log.info('API response status:', response.status);
     return true;
   } catch (error) {
     log.error('Data capture and send error:', error.message, error.stack);
@@ -678,18 +577,17 @@ async function captureAndSend(idToken) {
 // Helper function to handle errors during capture interval
 function handleCaptureError(error, context, captureErrors = null) {
   log.error(`Error during ${context} capture:`, error);
-  stopCaptureInterval(); // Stop the interval first
+  stopCaptureInterval();
 
-  // Default to disabling everything if we don't have specific error info
   let updatedSettings = { ...inputDataSettings };
   
   if (captureErrors) {
-    // Only disable the problematic features
+    // Disable problematic features
     if (captureErrors.audio) updatedSettings.audio = false;
     if (captureErrors.keystrokes) updatedSettings.keystrokes = false;
     if (captureErrors.windows) updatedSettings.windows = false;
   } else {
-    // We don't know which one failed, so disable all optional captures
+    // Unknown source, disable all
     log.warn('Unknown capture error source - disabling all capture features');
     updatedSettings = {
       audio: false,
@@ -701,8 +599,73 @@ function handleCaptureError(error, context, captureErrors = null) {
   // Update settings
   inputDataSettings = updatedSettings;
 
-  // Notify the renderer to update UI and save settings
-  mainWindowRef.webContents.send('disable-capture-features', updatedSettings);
+  // Notify renderer
+  if (mainWindowRef) {
+    mainWindowRef.webContents.send('disable-capture-features', updatedSettings);
+  } else {
+    log.warn('mainWindowRef is not available, cannot send disable-capture-features event.');
+  }
+}
+
+// Internal function to run a single capture cycle
+async function _runCaptureCycle(idToken) {
+  try {
+    // Start audio capture if needed
+    if (inputDataSettings.audio && !audioCapture.getStatus().recording) {
+      try {
+        await audioCapture.startRecording();
+      } catch (audioError) {
+        log.error('Failed to start audio recording:', audioError);
+        updateInputDataSettings({ audio: false });
+        if (mainWindowRef) {
+          mainWindowRef.webContents.send('permission-error', { 
+            type: 'audio', 
+            message: 'Microphone access denied. Please check system permissions.'
+          });
+        }
+      }
+    }
+    
+    // Start keystroke tracking if needed
+    if (inputDataSettings.keystrokes && !keystrokesCapture.isTracking()) {
+      try {
+        await keystrokesCapture.startTracking();
+      } catch (keystrokesError) {
+        log.error('Failed to start keystroke tracking:', keystrokesError);
+        updateInputDataSettings({ keystrokes: false });
+        if (mainWindowRef) {
+          mainWindowRef.webContents.send('permission-error', { 
+            type: 'keystrokes', 
+            message: 'Unable to track keystrokes. Check system permissions.'
+          });
+        }
+      }
+    }
+    
+    // Start window tracking if needed
+    if (inputDataSettings.windows && !windowsCapture.isTracking()) {
+      try {
+        await windowsCapture.startTracking();
+      } catch (windowsError) {
+        log.error('Failed to start window tracking:', windowsError);
+        updateInputDataSettings({ windows: false });
+        if (mainWindowRef) {
+          mainWindowRef.webContents.send('permission-error', { 
+            type: 'windows', 
+            message: 'Window tracking permission denied. Check accessibility permissions.'
+          });
+        }
+      }
+    }
+    
+    // Capture and send data
+    await captureAndSend(idToken);
+
+  } catch (error) {
+    // Handle errors from captureAndSend or other cycle errors
+    log.error('Error during capture cycle:', error);
+    handleCaptureError(error, 'capture-cycle'); 
+  }
 }
 
 /**
@@ -711,50 +674,29 @@ function handleCaptureError(error, context, captureErrors = null) {
  * @returns {number} The interval ID
  */
 function startCaptureInterval(idToken) {
-  // Clear any existing interval and stop all tracking
+  // Clear existing interval and stop tracking
   stopCaptureInterval();
   
-  // Ensure clean state - explicitly stop tracking first
-  if (inputDataSettings.keystrokes) {
-    keystrokesCapture.stopTracking();
+  const runFirstCycle = () => {
+    _runCaptureCycle(idToken).catch(error => {
+      log.error('Error during initial capture cycle run:', error);
+      // handleCaptureError is called within _runCaptureCycle
+    });
+  };
+
+  // Run first capture cycle (immediately or delayed)
+  if (settingsInitialized) {
+    runFirstCycle();
+  } else {
+    setTimeout(runFirstCycle, 1000);
   }
-  
-  if (inputDataSettings.windows) {
-    windowsCapture.stopTracking();
-  }
-  
-  // Start input data capture from scratch
-  startInputDataCapture().catch(error => {
-    // The startInputDataCapture function already calls handleCaptureError internally
-    log.error('Unhandled error in initial capture:', error);
-  });
-  
-  // Set up interval for regular captures
-  screenshotInterval = setInterval(async () => {
-    try {
-      // Make sure capture is started each time if it somehow stopped
-      if (inputDataSettings.audio && !audioCapture.getStatus().recording) {
-        await audioCapture.startRecording().catch(err => 
-          log.error('Error restarting audio recording:', err));
-      }
-      
-      // Check if keystroke tracking is still active
-      if (inputDataSettings.keystrokes && !keystrokesCapture.isTracking()) {
-        await keystrokesCapture.startTracking().catch(err => 
-          log.error('Error restarting keystroke tracking:', err));
-      }
-      
-      // Check if window tracking is still active
-      if (inputDataSettings.windows && !windowsCapture.isTracking()) {
-        await windowsCapture.startTracking().catch(err => 
-          log.error('Error restarting window tracking:', err));
-      }
-      
-      await captureAndSend(idToken);
-    } catch (error) {
-      // The captureAndSendAllData function already calls handleCaptureError internally
-      log.error('Unhandled error in scheduled capture:', error);
-    }
+
+  // Set up interval for subsequent cycles
+  screenshotInterval = setInterval(() => {
+    _runCaptureCycle(idToken).catch(error => {
+      log.error('Error during scheduled capture cycle run:', error);
+      // handleCaptureError is called within _runCaptureCycle
+    });
   }, captureIntervalMinutes * 60 * 1000);
   
   return screenshotInterval;
