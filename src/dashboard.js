@@ -199,7 +199,14 @@ function showSummaryGeneratedState() {
   // Reset to initial state
   function resetSummaryState() {
     document.getElementById('generateSummaryBtn').classList.remove('hidden');
-    document.getElementById('submitSummaryBtn').classList.add('hidden');
+    
+    // Full reset of the submit button state
+    const submitBtn = document.getElementById('submitSummaryBtn');
+    submitBtn.classList.add('hidden');
+    submitBtn.textContent = "Done That"; // Reset text
+    submitBtn.disabled = false; // Reset disabled state
+    submitBtn.classList.remove('disabled-btn'); // Remove disabled styling
+    
     document.getElementById('visibilityNoteContainer')?.classList.add('hidden'); // Hide note on reset
     currentSummaryId = null;
     selectedBulletPoints = [];
