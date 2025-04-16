@@ -1178,11 +1178,21 @@ function checkAndNotifyForUnreviewedWork() {
       const hoursSinceLastSummary = (Date.now() - storedTimestamp) / (1000 * 60 * 60);
 
       if (hoursSinceLastSummary > 12) {
-        new Notification({
-          title: "Review Yesterday's Work", // Use double quotes for string with apostrophe
-          body: "You haven't reviewed your last summary. Generate one in DoneThat to catch up!",
-          silent: false
-        }).show();
+        // Add 2-minute delay before showing notification
+        setTimeout(() => {
+          const notification = new Notification({
+            title: "Review Yesterday's Work", // Use double quotes for string with apostrophe
+            body: "You haven't reviewed your last summary. Generate one in DoneThat to catch up!",
+            silent: false
+          });
+          
+          // Make notification clickable to open the app
+          notification.on('click', () => {
+            navigateToView('signup-next');
+          });
+          
+          notification.show();
+        }, 2 * 60 * 1000); // 2 minutes in milliseconds
       }
     }
   } catch (error) {
