@@ -19,5 +19,14 @@
         "titleBar.inactiveForeground": "#15202b99"
     },
     "peacock.color": "#42b883",
-    "css.validate": false
+    "css.validate": false,
+    "yaml.validate": true,
+    "yaml.schemas": {
+        "https://json.schemastore.org/github-workflow.json": "/.github/workflows/*.yml"
+    },
+    "[yaml]": {
+        "editor.bracketPairColorization.enabled": true
+    },
+    "redhat.telemetry.enabled": false,
+    "yaml.yamlVersion": "1.2"
 }
