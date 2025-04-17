@@ -1,6 +1,6 @@
 {
   "name": "donethat",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Make your work visible, on your terms.",
   "main": "main.js",
   "scripts": {
@@ -87,7 +87,7 @@
         "provider": "github",
         "owner": "donethatai",
         "repo": "donethat-releases",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ],
     "mac": {
