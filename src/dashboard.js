@@ -280,10 +280,9 @@ if (submitSummaryBtn) {
         summaryLoadingSpinner.classList.add('hidden');
 
         const now = new Date();
-        const isPast3PM = now.getHours() >= 15;
         const isRecentSummary = currentPeriodEndTime && (now.getTime() - currentPeriodEndTime < (60 * 60 * 1000));
 
-        const shouldPauseAndDelayReset = isPast3PM && isRecentSummary;
+        const shouldPauseAndDelayReset = isRecentSummary;
 
         // Clear summary content immediately
         document.getElementById('summaryContainer').innerHTML = '<p class="empty-state-text"></p>';
