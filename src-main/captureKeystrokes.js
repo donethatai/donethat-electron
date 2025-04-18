@@ -196,8 +196,7 @@ function processKeystroke(e, down) {
 
 /**
  * Start tracking keystrokes
- * @throws {Error} If permission is denied
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<boolean>} True if tracking started successfully, false if permission denied or error occurred
  */
 async function startTracking() {
   if (isTracking) {

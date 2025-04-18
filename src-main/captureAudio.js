@@ -78,8 +78,15 @@ async function checkPermission() {
       `new Promise(resolve => {
         navigator.mediaDevices.getUserMedia({ audio: true })
           .then(stream => {
-            stream.getTracks().forEach(track => track.stop());
-            resolve(true);
+            // Immediately stop all tracks to release the microphone
+            const tracks = stream.getTracks();
+            tracks.forEach(track => {
+              if (track.kind === 'audio') {
+                track.stop();
+              }
+            });
+            // Make sure all tracks are stopped before resolving
+            setTimeout(() => resolve(true), 100);
           })
           .catch(err => {
             console.error("Microphone permission denied:", err);

@@ -24,7 +24,7 @@ async function checkPermissions() {
 
 /**
  * Starts continuous tracking of active application windows
- * @throws {Error} If permissions are not granted
+ * @returns {Promise<boolean>} True if tracking started successfully, false if permission denied or error occurred
  */
 async function startTracking() {
   if (isTracking) {
@@ -34,9 +34,9 @@ async function startTracking() {
   // First check if we have permission
   const hasPermission = await checkPermissions()
   if (!hasPermission) {
-    const error = new Error('Permission denied for window tracking. Please grant accessibility permissions in system settings.')
-    log.error('Failed to start window tracking:', error.message)
-    throw error
+    const message = 'Permission denied for window tracking. Please grant accessibility permissions in system settings.'
+    log.error('Failed to start window tracking:', message)
+    return false
   }
   
   // Clear previous data
@@ -58,13 +58,14 @@ async function startTracking() {
     }, TRACKING_INTERVAL_MS)
     
     isTracking = true
+    return true
   } catch (error) {
     log.error('Error during window tracking start:', error)
     if (trackingInterval) {
       clearInterval(trackingInterval)
       trackingInterval = null
     }
-    throw error
+    return false
   }
 }
 

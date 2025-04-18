@@ -60,20 +60,43 @@ async function _startAudioTracking() {
   try {
     if (!mainWindowRef) {
       log.warn('Cannot start audio recording: No main window reference');
-      inputDataSettings.audio = false;
+      handleCaptureError(
+        new Error('No main window reference'), 
+        'audio', 
+        { audio: true },
+        false // Don't stop capturing, just disable this feature
+      );
       return false;
     }
-    await audioCapture.startRecording();
+    
+    const recordingStarted = await audioCapture.startRecording();
+    if (!recordingStarted) {
+      const error = new Error('Audio recording permission denied or failed to start');
+      log.warn(error.message);
+      
+      // Use handleCaptureError with specific audio error
+      handleCaptureError(
+        error, 
+        'audio-permission', 
+        { audio: true },
+        false // Don't stop capturing, just disable this feature
+      );
+      
+      return false;
+    }
+    
     return true;
   } catch (error) {
     log.error('Error starting audio recording:', error);
-    inputDataSettings.audio = false;
-    if (mainWindowRef) {
-      mainWindowRef.webContents.send('permission-error', { 
-        type: 'audio', 
-        message: 'Failed to start audio recording: ' + error.message
-      });
-    }
+    
+    // Use handleCaptureError with specific audio error
+    handleCaptureError(
+      error, 
+      'audio-error', 
+      { audio: true },
+      false // Don't stop capturing, just disable this feature
+    );
+    
     return false;
   }
 }
@@ -84,17 +107,34 @@ async function _startAudioTracking() {
  */
 async function _startKeystrokeTracking() {
   try {
-    await keystrokesCapture.startTracking();
+    const trackingStarted = await keystrokesCapture.startTracking();
+    if (!trackingStarted) {
+      const error = new Error('Keystroke tracking permission denied or failed to start');
+      log.warn(error.message);
+      
+      // Use handleCaptureError with specific keystrokes error
+      handleCaptureError(
+        error, 
+        'keystrokes-permission', 
+        { keystrokes: true },
+        false // Don't stop capturing, just disable this feature
+      );
+      
+      return false;
+    }
+    
     return true;
   } catch (error) {
     log.error('Failed to start keystroke tracking:', error);
-    inputDataSettings.keystrokes = false;
-    if (mainWindowRef) {
-      mainWindowRef.webContents.send('permission-error', { 
-        type: 'keystrokes', 
-        message: 'Unable to track keystrokes. Check system permissions.'
-      });
-    }
+    
+    // Use handleCaptureError with specific keystrokes error
+    handleCaptureError(
+      error, 
+      'keystrokes-error', 
+      { keystrokes: true },
+      false // Don't stop capturing, just disable this feature
+    );
+    
     return false;
   }
 }
@@ -105,17 +145,34 @@ async function _startKeystrokeTracking() {
  */
 async function _startWindowTracking() {
   try {
-    await windowsCapture.startTracking();
+    const trackingStarted = await windowsCapture.startTracking();
+    if (!trackingStarted) {
+      const error = new Error('Window tracking permission denied or failed to start');
+      log.warn(error.message);
+      
+      // Use handleCaptureError with specific windows error
+      handleCaptureError(
+        error, 
+        'windows-permission', 
+        { windows: true },
+        false // Don't stop capturing, just disable this feature
+      );
+      
+      return false;
+    }
+    
     return true;
   } catch (error) {
     log.error('Failed to start window tracking:', error);
-    inputDataSettings.windows = false;
-    if (mainWindowRef) {
-      mainWindowRef.webContents.send('permission-error', { 
-        type: 'windows', 
-        message: 'Window tracking permission denied. Check accessibility permissions.'
-      });
-    }
+    
+    // Use handleCaptureError with specific windows error
+    handleCaptureError(
+      error, 
+      'windows-error', 
+      { windows: true },
+      false // Don't stop capturing, just disable this feature
+    );
+    
     return false;
   }
 }
@@ -673,17 +730,48 @@ async function captureAndSend(idToken) {
 }
 
 // Helper function to handle errors during capture interval
-function handleCaptureError(error, context, captureErrors = null) {
+function handleCaptureError(error, context, captureErrors = null, stopCapture = true) {
   log.error(`Error during ${context} capture:`, error);
-  stopCaptureInterval();
+  
+  // Only stop the capture interval if requested
+  if (stopCapture) {
+    stopCaptureInterval();
+  }
 
   let updatedSettings = { ...inputDataSettings };
+  let dialogOptions = null;
+  
+  // Map of feature types to their friendly names
+  const featureNames = {
+    audio: 'Audio recording',
+    keystrokes: 'Keystroke tracking',
+    windows: 'Window tracking'
+  };
   
   if (captureErrors) {
-    // Disable problematic features
-    if (captureErrors.audio) updatedSettings.audio = false;
-    if (captureErrors.keystrokes) updatedSettings.keystrokes = false;
-    if (captureErrors.windows) updatedSettings.windows = false;
+    // Check which features need to be disabled
+    Object.keys(captureErrors).forEach(feature => {
+      if (captureErrors[feature] && featureNames[feature]) {
+        // Disable the feature
+        updatedSettings[feature] = false;
+        
+        // If context matches this feature, set dialog options
+        if (context.includes(feature)) {
+          const isPermissionError = context.includes('permission');
+          
+          dialogOptions = {
+            type: 'warning',
+            title: isPermissionError ? 'Permission Denied' : 'Capture Error',
+            message: `${featureNames[feature]} ${isPermissionError ? 'permission denied' : 'failed'}`,
+            detail: `${featureNames[feature]} has been disabled. ${
+              isPermissionError 
+                ? `Check ${feature === 'audio' ? 'microphone' : 'accessibility'} permissions in system settings.`
+                : `Error: ${error.message}`
+            }`
+          };
+        }
+      }
+    });
   } else {
     // Unknown source, disable all
     log.warn('Unknown capture error source - disabling all capture features');
@@ -691,6 +779,14 @@ function handleCaptureError(error, context, captureErrors = null) {
       audio: false,
       keystrokes: false,
       windows: false
+    };
+    
+    // Generic error dialog
+    dialogOptions = {
+      type: 'warning',
+      title: 'Capture Error',
+      message: 'Capture features disabled',
+      detail: 'All capture features have been disabled due to an error: ' + error.message
     };
   }
   
@@ -702,6 +798,12 @@ function handleCaptureError(error, context, captureErrors = null) {
     mainWindowRef.webContents.send('disable-capture-features', updatedSettings);
   } else {
     log.warn('mainWindowRef is not available, cannot send disable-capture-features event.');
+  }
+  
+  // Show dialog if options are set
+  if (dialogOptions && mainWindowRef) {
+    const { dialog } = require('electron');
+    dialog.showMessageBox(mainWindowRef, dialogOptions);
   }
 }
 
