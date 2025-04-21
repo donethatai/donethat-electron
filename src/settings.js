@@ -37,6 +37,7 @@ let inputData = {
   keystrokes: false,
   audio: false
 };
+let autoSubmit = false; // Default to false for auto submit
 
 // Initialize settings management
 function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinner, viewNavigator) {
@@ -291,6 +292,12 @@ async function saveUserSettings(type, value) {
         type: 'publicSummaries',
         enabled: value
       });
+    } else if (type === 'autoSubmit') {
+      settingsData.autoSubmit = value;
+      logAnalyticsEvent('settings_updated', {
+        type: 'autoSubmit',
+        enabled: value
+      });
     } else if (type === 'inputData') { // Renamed type
       settingsData.inputData = value; // Use inputData
       logAnalyticsEvent('settings_updated', {
@@ -423,6 +430,15 @@ async function updateSettingsUI(settings) {
     const isPublicValue = settings?.public || false; // Default to false if not set
     publicSummariesCheckbox.checked = isPublicValue;
     updateIsPublic(isPublicValue);
+  }
+
+  // Handle auto submit setting
+  const autoSubmitCheckbox = document.getElementById('autoSubmitCheckbox');
+  if (autoSubmitCheckbox) {
+    autoSubmit = settings?.autoSubmit || false; // Default to false if not set
+    autoSubmitCheckbox.checked = autoSubmit;
+    // Send autoSubmit setting to main process
+    ipcRenderer.send('updateAutoSubmit', autoSubmit);
   }
 
   // Handle email recipients
@@ -702,6 +718,26 @@ if (publicSummariesCheckbox) {
     } catch (error) {
       // If error occurs, revert to previous value
       e.target.checked = !e.target.checked;
+    } finally {
+      hideSpinner();
+    }
+  });
+}
+
+// Add event listener for auto submit checkbox
+const autoSubmitCheckbox = document.getElementById('autoSubmitCheckbox');
+if (autoSubmitCheckbox) {
+  autoSubmitCheckbox.addEventListener('change', async (e) => {
+    try {
+      showSpinner();
+      autoSubmit = e.target.checked;
+      await saveUserSettings('autoSubmit', e.target.checked);
+      // Send updated autoSubmit setting to main process
+      ipcRenderer.send('updateAutoSubmit', autoSubmit);
+    } catch (error) {
+      // If error occurs, revert to previous value
+      e.target.checked = !e.target.checked;
+      autoSubmit = !autoSubmit;
     } finally {
       hideSpinner();
     }

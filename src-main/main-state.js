@@ -15,6 +15,7 @@ let hasScreenCapturePermission = false;
 let isWaylandSession = null;
 let idToken = null; // User authentication token
 let workPeriodCheckTimeoutId = null; // For scheduling next workday/workhours check
+let autoSubmit = false;
 
 // Function references that will be set by main.js
 let checkAndAdjustRecording = null;
@@ -413,6 +414,13 @@ function loadWorkSettings() {
         store.set('userWorkhours', userWorkhours);
       }
     }
+
+    // Load autoSubmit setting from store
+    const storedAutoSubmit = store.get('autoSubmit');
+    if (typeof storedAutoSubmit === 'boolean') {
+      autoSubmit = storedAutoSubmit;
+    }
+
   } catch (error) {
     log.error('Failed to load work settings:', error);
   }
@@ -644,6 +652,22 @@ function setupIPCHandlers() {
       log.error('Error processing/storing lastSummaryPeriodEnd:', error, 'Raw value:', timestamp);
     }
   });
+
+  // Add IPC handler for auto submit setting
+  ipcMain.on('updateAutoSubmit', (event, value) => {
+    if (typeof value === 'boolean') {
+      autoSubmit = value;
+      
+      // Save to persistent store
+      if (store) {
+        store.set('autoSubmit', value);
+      } else {
+        log.warn('Store not initialized, cannot save autoSubmit setting');
+      }
+    } else {
+      log.error('Received invalid autoSubmit value:', value);
+    }
+  });
 }
 
 /**
@@ -785,4 +809,5 @@ function clearIdToken() {
 
 module.exports = {
   initState,
+  getAutoSubmit: () => autoSubmit
 }
