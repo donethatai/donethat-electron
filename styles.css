@@ -72,7 +72,6 @@
 .link {
   @apply text-sm;
   color: var(--color-primary);
-  text-decoration: underline;
 }
 
 /* Section header */
