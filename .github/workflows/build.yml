@@ -123,7 +123,7 @@ jobs:
           
       - name: Install DigiCert KeyLocker Tools
         if: matrix.platform == 'win'
-        shell: powershell
+        shell: pwsh
         env:
           SM_API_KEY: ${{ secrets.SM_API_KEY }}
         run: |
@@ -132,6 +132,21 @@ jobs:
           }
           Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download" -Headers $headers -OutFile "D:\Keylockertools-windows-x64.msi"
           Start-Process -FilePath "msiexec" -ArgumentList "/i D:\Keylockertools-windows-x64.msi /quiet /qn" -Wait
+          
+          # Wait for service to start and verify installation
+          Write-Host "Waiting for DigiCert KeyLocker Tools to initialize..."
+          Start-Sleep -Seconds 30
+          
+          # Verify DLL exists
+          if (-not (Test-Path "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smpkcs11.dll")) {
+            throw "DigiCert KeyLocker Tools DLL not found after installation"
+          }
+          
+          # Verify service is running
+          $service = Get-Service -Name "DigiCert KeyLocker Tools" -ErrorAction SilentlyContinue
+          if (-not $service -or $service.Status -ne "Running") {
+            throw "DigiCert KeyLocker Tools service is not running"
+          }
           
       - name: Build and upload (Windows)
         if: matrix.platform == 'win'
