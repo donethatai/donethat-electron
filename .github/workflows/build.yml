@@ -144,11 +144,7 @@ jobs:
           }
           
           # Create PKCS11 configuration file
-          $pkcs11Config = @"
-name=signingmanager
-library=$keylockerPath\smpkcs11.dll
-slotListIndex=0
-"@
+          $pkcs11Config = "name=signingmanager`nlibrary=$keylockerPath\smpkcs11.dll`nslotListIndex=0"
           $pkcs11Config | Out-File -FilePath "D:\pkcs11properties.cfg" -Encoding ASCII
           
       - name: Build and upload (Windows)
