@@ -133,20 +133,23 @@ jobs:
           Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download" -Headers $headers -OutFile "D:\Keylockertools-windows-x64.msi"
           Start-Process -FilePath "msiexec" -ArgumentList "/i D:\Keylockertools-windows-x64.msi /quiet /qn" -Wait
           
-          # Wait for service to start and verify installation
-          Write-Host "Waiting for DigiCert KeyLocker Tools to initialize..."
-          Start-Sleep -Seconds 30
+          # Add KeyLocker Tools to PATH
+          $keylockerPath = "C:\Program Files\DigiCert\DigiCert Keylocker Tools"
+          $env:PATH = "$keylockerPath;$env:PATH"
+          Add-Content -Path $env:GITHUB_PATH -Value $keylockerPath
           
           # Verify DLL exists
-          if (-not (Test-Path "C:\Program Files\DigiCert\DigiCert Keylocker Tools\smpkcs11.dll")) {
+          if (-not (Test-Path "$keylockerPath\smpkcs11.dll")) {
             throw "DigiCert KeyLocker Tools DLL not found after installation"
           }
           
-          # Verify service is running
-          $service = Get-Service -Name "DigiCert KeyLocker Tools" -ErrorAction SilentlyContinue
-          if (-not $service -or $service.Status -ne "Running") {
-            throw "DigiCert KeyLocker Tools service is not running"
-          }
+          # Create PKCS11 configuration file
+          $pkcs11Config = @"
+name=signingmanager
+library=$keylockerPath\smpkcs11.dll
+slotListIndex=0
+"@
+          $pkcs11Config | Out-File -FilePath "D:\pkcs11properties.cfg" -Encoding ASCII
           
       - name: Build and upload (Windows)
         if: matrix.platform == 'win'
