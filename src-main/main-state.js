@@ -1,4 +1,4 @@
-const { ipcMain, Notification } = require('electron');
+const { ipcMain, Notification, app } = require('electron');
 const log = require('electron-log');
 
 // State variables
@@ -31,6 +31,11 @@ async function initState(options = {}) {
   checkAndAdjustRecording = options.checkRecording;
   navigateToView = options.navigateToView;
   try {
+    // Set AppUserModelId for Windows notifications
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.donethat.app');
+    }
+
     // Initialize electron-store using dynamic import for ES module
     const { default: Store } = await import('electron-store');
     store = new Store({
