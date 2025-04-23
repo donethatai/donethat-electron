@@ -175,11 +175,4 @@ jobs:
           SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
           SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
         run: |
-          npm run ${{ matrix.command }}
-        
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.platform }}-${{ matrix.arch }}-build
-          path: release/
-          if-no-files-found: ignore 
+          npm run ${{ matrix.command }} 
