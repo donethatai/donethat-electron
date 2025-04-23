@@ -1,12 +1,8 @@
 name: 'Build and Release'
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (leave empty to use package.json version)'
-        required: false
-        default: ''
+  push:
+    branches: [ main ]
 
 jobs:
   build:
