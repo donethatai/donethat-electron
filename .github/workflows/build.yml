@@ -108,15 +108,22 @@ jobs:
           echo "Setting up macOS code signing..."
           # Additional setup code if needed
           
-      # Set up Windows code signing (if needed)
-      # - name: Setup Windows code signing
-      #   if: matrix.platform == 'win'
-      #   env:
-      #     CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
-      #     CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-      #   run: |
-      #     echo "Setting up Windows code signing..."
-      #     # Additional setup code if needed
+      # Set up Windows code signing with DigiCert
+      - name: Setup Windows code signing
+        if: matrix.platform == 'win'
+        run: |
+          echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
+          echo "name=signingmanager" > pkcs11properties.cfg
+          echo "library=C:\\Program Files\\DigiCert\\DigiCert Keylocker Tools\\smpkcs11.dll" >> pkcs11properties.cfg
+          echo "slotListIndex=0" >> pkcs11properties.cfg
+        shell: bash
+          
+      - name: Install DigiCert KeyLocker Tools
+        if: matrix.platform == 'win'
+        run: |
+          curl -X GET "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download" -H "x-api-key:${{ secrets.SM_API_KEY }}" -o Keylockertools-windows-x64.msi
+          msiexec /i Keylockertools-windows-x64.msi /quiet /qn
+        shell: cmd
           
       - name: Build and upload
         env:
@@ -132,7 +139,18 @@ jobs:
           FIREBASE_APISECRET: ${{ secrets.FIREBASE_APISECRET }}
           SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
           SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
-        run: npm run ${{ matrix.command }}
+          # Windows signing environment variables
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          WINDOWS_SIGN_CERTIFICATE_NAME: ${{ secrets.WINDOWS_SIGN_CERTIFICATE_NAME }}
+        run: |
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            npm run build:win:x64
+            node scripts/sign-windows.js
+          else
+            npm run ${{ matrix.command }}
+          fi
         
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
