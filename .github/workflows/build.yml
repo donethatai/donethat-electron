@@ -133,7 +133,9 @@ jobs:
           Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download" -Headers $headers -OutFile "D:\Keylockertools-windows-x64.msi"
           Start-Process -FilePath "msiexec" -ArgumentList "/i D:\Keylockertools-windows-x64.msi /quiet /qn" -Wait
           
-      - name: Build and upload
+      - name: Build and upload (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
@@ -152,14 +154,28 @@ jobs:
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           SM_HOST: ${{ secrets.SM_HOST }}
           PKCS11_CONFIG: D:\pkcs11properties.cfg
-        shell: ${{ matrix.platform == 'win' && 'pwsh' || 'bash' }}
         run: |
-          if [ "${{ matrix.platform }}" = "win" ]; then
-            npm run build:win:x64
-            node scripts/sign-windows.js
-          else
-            npm run ${{ matrix.command }}
-          fi
+          npm run build:win:x64
+          node scripts/sign-windows.js
+
+      - name: Build and upload (Non-Windows)
+        if: matrix.platform != 'win'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CI: true
+          FIREBASE_APIKEY: ${{ secrets.FIREBASE_APIKEY }}
+          FIREBASE_APISECRET: ${{ secrets.FIREBASE_APISECRET }}
+          SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+          SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+        run: |
+          npm run ${{ matrix.command }}
         
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
