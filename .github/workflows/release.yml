@@ -1,0 +1,172 @@
+name: 'Release'
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (leave empty to use package.json version)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            arch: x64
+            command: upload:mac:x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+            command: upload:win:x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            command: upload:linux:x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          
+      - name: Setup Python for node-gyp
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+          
+      - name: Fix macOS active-win dependencies
+        if: matrix.platform == 'mac'
+        run: |
+          pip install macholib
+          
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Create config files from secrets (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cat > firebase-config.js << 'EOL'
+          ${{ secrets.FIREBASE_CONFIG }}
+          EOL
+          cat > slack-config.js << 'EOL'
+          ${{ secrets.SLACK_CONFIG }}
+          EOL
+
+      - name: Create config files from secrets (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          FIREBASE_APIKEY: ${{ secrets.FIREBASE_APIKEY }}
+          FIREBASE_APISECRET: ${{ secrets.FIREBASE_APISECRET }}
+          SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+          SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+        run: |
+          (
+          echo module.exports = {
+          echo   apiKey: "%FIREBASE_APIKEY%",
+          echo   authDomain: "donethat.firebaseapp.com",
+          echo   projectId: "donethat",
+          echo   storageBucket: "donethat.firebasestorage.app",
+          echo   messagingSenderId: "1025033172374",
+          echo   appId: "1:1025033172374:web:9f983b7bcbd02c9c2e19b7",
+          echo   measurementId: "G-Q80YWJ3BM4",
+          echo   apiSecret: "%FIREBASE_APISECRET%"
+          echo };
+          ) > firebase-config.js
+          
+          (
+          echo module.exports = {
+          echo   clientId: '%SLACK_CLIENT_ID%',
+          echo   clientSecret: '%SLACK_CLIENT_SECRET%'
+          echo };
+          ) > slack-config.js
+        
+      - name: Setup macOS code signing
+        if: matrix.platform == 'mac'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "Setting up macOS code signing..."
+          
+      - name: Setup Windows code signing
+        if: matrix.platform == 'win'
+        shell: powershell
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: ${{ secrets.SM_HOST }}
+        run: |
+          # Create certificate file from base64
+          [System.Convert]::FromBase64String("${{ secrets.SM_CLIENT_CERT_FILE_B64 }}") | Set-Content -Path "D:\Certificate_pkcs12.p12" -Encoding Byte
+          
+          # Create PKCS11 configuration file
+          @"
+name=signingmanager
+library=C:\Program Files\DigiCert\DigiCert Keylocker Tools\smpkcs11.dll
+slotListIndex=0
+"@ | Out-File -FilePath "D:\pkcs11properties.cfg" -Encoding ASCII
+          
+      - name: Install DigiCert KeyLocker Tools
+        if: matrix.platform == 'win'
+        shell: powershell
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+        run: |
+          $headers = @{
+            "x-api-key" = "${{ secrets.SM_API_KEY }}"
+          }
+          Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download" -Headers $headers -OutFile "D:\Keylockertools-windows-x64.msi"
+          Start-Process -FilePath "msiexec" -ArgumentList "/i D:\Keylockertools-windows-x64.msi /quiet /qn" -Wait
+          
+      - name: Build and upload
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CI: true
+          FIREBASE_APIKEY: ${{ secrets.FIREBASE_APIKEY }}
+          FIREBASE_APISECRET: ${{ secrets.FIREBASE_APISECRET }}
+          SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
+          SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: ${{ secrets.SM_HOST }}
+          PKCS11_CONFIG: D:\pkcs11properties.cfg
+        shell: powershell
+        run: |
+          if ($env:matrix_platform -eq "win") {
+            npm run build:win:x64
+            node scripts/sign-windows.js
+          } else {
+            npm run $env:matrix_command
+          }
+        
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-${{ matrix.arch }}-build
+          path: release/
+          if-no-files-found: ignore 
