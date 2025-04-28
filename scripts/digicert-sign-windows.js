@@ -24,6 +24,7 @@ exports.default = async function(configuration) {
     console.log('SM_CLIENT_CERT_FILE exists:', !!process.env.SM_CLIENT_CERT_FILE);
     console.log('SM_CLIENT_CERT_PASSWORD exists:', !!process.env.SM_CLIENT_CERT_PASSWORD);
     console.log('SM_CODE_SIGNING_CERT_SHA1_HASH exists:', !!process.env.SM_CODE_SIGNING_CERT_SHA1_HASH);
+    console.log('SM_KEYPAIR_ALIAS exists:', !!process.env.SM_KEYPAIR_ALIAS);
     
     // Check if configuration path exists
     console.log('PKCS11 config file exists:', fs.existsSync(pkcs11ConfigPath));
@@ -47,25 +48,6 @@ exports.default = async function(configuration) {
       if (healthcheckError.stdout) console.log('Healthcheck stdout:', healthcheckError.stdout);
       if (healthcheckError.stderr) console.log('Healthcheck stderr:', healthcheckError.stderr);
       throw new Error('Build failed: Healthcheck failed');
-    }
-    
-    // Try to get keypair alias as a fallback
-    let keypairAlias = '';
-    try {
-      console.log('Looking for available keypairs...');
-      const keypairsOutput = execSync('smctl keypair list', { encoding: 'utf8' });
-      console.log('Keypairs output:', keypairsOutput);
-      
-      // Try to extract first keypair alias from output
-      const match = keypairsOutput.match(/\|\s+(\w+)\s+\|/);
-      if (match && match[1]) {
-        keypairAlias = match[1];
-        console.log(`Found keypair alias: ${keypairAlias}`);
-      }
-    } catch (keypairError) {
-      console.error('Failed to list keypairs:', keypairError.message);
-      if (keypairError.stdout) console.log('Keypair list stdout:', keypairError.stdout);
-      if (keypairError.stderr) console.log('Keypair list stderr:', keypairError.stderr);
     }
 
     // List certificates in store
@@ -108,10 +90,10 @@ exports.default = async function(configuration) {
       }
       
       // Attempt 2: Try with keypair alias if available
-      if (keypairAlias) {
+      if (process.env.SM_KEYPAIR_ALIAS) {
         try {
-          console.log(`Attempt 2: Signing with keypair alias: ${keypairAlias}...`);
-          const cmd = `smctl sign --keypair-alias ${keypairAlias} --input "${configuration.path}" --config-file "${pkcs11ConfigPath}"`;
+          console.log(`Attempt 2: Signing with keypair alias: ${process.env.SM_KEYPAIR_ALIAS}...`);
+          const cmd = `smctl sign --keypair-alias ${process.env.SM_KEYPAIR_ALIAS} --input "${configuration.path}" --config-file "${pkcs11ConfigPath}"`;
           console.log(`Executing command: ${cmd}`);
           
           const output = execSync(cmd, { encoding: 'utf8' });
