@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const os = require('os');
 
 // Helper function to get last N lines of output
 function getLastNLines(output, n = 20) {
@@ -9,11 +10,80 @@ function getLastNLines(output, n = 20) {
   return lines.slice(-n).join('\n');
 }
 
+// Helper function to setup local certificate
+function setupLocalCertificate() {
+  const projectRoot = process.cwd();
+  const certPath = path.join(projectRoot, 'Certificate_pkcs12.p12');
+  const configPath = path.join(projectRoot, 'pkcs11properties.cfg');
+  
+  // Check if certificate exists
+  if (!fs.existsSync(certPath)) {
+    throw new Error('Certificate file not found. Please place your certificate at: ' + certPath);
+  }
+  
+  // Create config file if it doesn't exist
+  if (!fs.existsSync(configPath)) {
+    const configContent = `[PKCS11]
+library=C:\\Program Files\\DigiCert\\DigiCert One Signing Manager Tools\\smctlsign.dll
+slot=0
+password=${process.env.SM_CLIENT_CERT_PASSWORD || ''}`;
+    
+    fs.writeFileSync(configPath, configContent);
+  }
+
+  // Set required environment variables
+  process.env.SM_CLIENT_CERT_FILE = certPath;
+  process.env.SM_CLIENT_CERT_PASSWORD = process.env.SM_CLIENT_CERT_PASSWORD || '';
+  process.env.SM_KEYPAIR_ALIAS = process.env.SM_KEYPAIR_ALIAS || '';
+  
+  return {
+    certPath,
+    configPath
+  };
+}
+
 exports.default = async function(configuration) {
   try {
-    // DigiCert tools creates this configuration file automatically
-    const pkcs11ConfigPath = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\smtools-windows-x64\\pkcs11properties.cfg';
-    const smctlLogPath = 'C:\\Users\\RUNNER~1\\.signingmanager\\logs\\smctl.log';
+    // Determine if we're running in GitHub Actions or locally
+    const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
+    
+    let pkcs11ConfigPath;
+    let smctlLogPath;
+    
+    if (isGitHubActions) {
+      // GitHub Actions paths
+      pkcs11ConfigPath = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\smtools-windows-x64\\pkcs11properties.cfg';
+      smctlLogPath = 'C:\\Users\\RUNNER~1\\.signingmanager\\logs\\smctl.log';
+    } else {
+      // Local paths
+      const { configPath } = setupLocalCertificate();
+      pkcs11ConfigPath = configPath;
+      smctlLogPath = path.join(os.homedir(), '.signingmanager', 'logs', 'smctl.log');
+      
+      // Set PATH to include signtools
+      const signtoolsPath = 'C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.22621.0\\x86';
+      process.env.PATH = `${signtoolsPath};${process.env.PATH}`;
+
+      // Create .signingmanager directory if it doesn't exist
+      const signingManagerDir = path.join(os.homedir(), '.signingmanager', 'logs');
+      if (!fs.existsSync(signingManagerDir)) {
+        fs.mkdirSync(signingManagerDir, { recursive: true });
+      }
+
+      // Sync certificate first (only in local environment)
+      try {
+        const syncCmd = `smctl windows certsync --keypair-alias=${process.env.SM_KEYPAIR_ALIAS}`;
+        const syncOutput = execSync(syncCmd, { encoding: 'utf8' });
+        
+        if (syncOutput.includes('FAILED')) {
+          throw new Error('Certificate sync failed - output indicates failure');
+        }
+      } catch (syncError) {
+        console.error('Certificate sync failed:', syncError.message);
+        if (syncError.stderr) console.error('Sync stderr:', syncError.stderr);
+        throw new Error('Build failed: Certificate sync failed');
+      }
+    }
     
     if (!process.env.SM_KEYPAIR_ALIAS) {
       throw new Error('Build failed: SM_KEYPAIR_ALIAS environment variable is not set');
