@@ -55,6 +55,12 @@ exports.default = async function(configuration) {
       pkcs11ConfigPath = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\smtools-windows-x64\\pkcs11properties.cfg';
       smctlLogPath = 'C:\\Users\\RUNNER~1\\.signingmanager\\logs\\smctl.log';
     } else {
+      // Skip signing in local development if SIGN_WINDOWS is not set to "true"
+      if (process.env.SIGN_WINDOWS !== "true") {
+        console.log('Skipping Windows signing in local development (SIGN_WINDOWS is not set to "true")');
+        return true;
+      }
+
       // Local paths
       const { configPath } = setupLocalCertificate();
       pkcs11ConfigPath = configPath;
