@@ -8,6 +8,7 @@ exports.default = async function(configuration) {
   try {
     // DigiCert tools creates this configuration file automatically
     const pkcs11ConfigPath = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\smtools-windows-x64\\pkcs11properties.cfg';
+    const smctlLogPath = 'C:\\Users\\RUNNER~1\\.signingmanager\\logs\\smctl.log';
     
     // Log environment variables (without sensitive values)
     console.log('Checking environment variables...');
@@ -59,11 +60,26 @@ exports.default = async function(configuration) {
       
       const output = execSync(cmd, { encoding: 'utf8' });
       console.log('Signing output:', output);
+      
+      // Check if output contains "FAILED"
+      if (output.includes('FAILED')) {
+        throw new Error('Signing failed - output indicates failure');
+      }
       success = true;
     } catch (error) {
       console.error('Fingerprint signing failed:', error.message);
       if (error.stdout) console.log('Command stdout:', error.stdout);
       if (error.stderr) console.log('Command stderr:', error.stderr);
+      
+      // Read and log SMCTL log file if it exists
+      if (fs.existsSync(smctlLogPath)) {
+        try {
+          const logContent = fs.readFileSync(smctlLogPath, 'utf8');
+          console.log('SMCTL log file contents:', logContent);
+        } catch (logError) {
+          console.error('Failed to read SMCTL log file:', logError.message);
+        }
+      }
       
       // Attempt 2: Try with keypair alias if available
       if (keypairAlias) {
@@ -74,6 +90,11 @@ exports.default = async function(configuration) {
           
           const output = execSync(cmd, { encoding: 'utf8' });
           console.log('Signing output:', output);
+          
+          // Check if output contains "FAILED"
+          if (output.includes('FAILED')) {
+            throw new Error('Signing failed - output indicates failure');
+          }
           success = true;
         } catch (aliasError) {
           console.error('Keypair alias signing failed:', aliasError.message);
@@ -90,23 +111,28 @@ exports.default = async function(configuration) {
         const verifyCmd = `smctl sign verify --input "${configuration.path}"`;
         const verifyOutput = execSync(verifyCmd, { encoding: 'utf8' });
         console.log('Verification output:', verifyOutput);
+        
+        // Check if verification failed
+        if (verifyOutput.includes('FAILED') || verifyOutput.includes('No signature found')) {
+          throw new Error('Signature verification failed');
+        }
       } catch (verifyError) {
-        console.warn('Verification failed, but signing may have succeeded:', verifyError.message);
+        console.error('Verification failed:', verifyError.message);
         if (verifyError.stdout) console.log('Verify stdout:', verifyError.stdout);
         if (verifyError.stderr) console.log('Verify stderr:', verifyError.stderr);
+        success = false;
       }
     }
     
     if (!success) {
-      throw new Error('All signing attempts failed');
+      console.error('All signing attempts failed');
+      return false; // Return false to indicate signing failure
     }
     
     console.log(`Successfully signed: ${configuration.path}`);
     return true;
   } catch (error) {
     console.error('Error during DigiCert code signing:', error.message);
-    // Electron builder continues even if signing fails - don't throw to allow build to complete
-    // Instead, return true to allow the build to continue
-    return true;
+    return false; // Return false to indicate signing failure
   }
 } 
