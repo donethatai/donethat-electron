@@ -106,20 +106,28 @@ jobs:
           echo "Setting up macOS code signing..."
           # Additional setup code if needed
           
-      # Set up Windows code signing with DigiCert
+      - name: Set Apple environment variables
+        if: matrix.platform == 'mac'
+        run: |
+          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> $GITHUB_ENV
+          echo "APPLE_ID_PASSWORD=${{ secrets.APPLE_ID_PASSWORD }}" >> $GITHUB_ENV
+          echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> $GITHUB_ENV
+          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
+          echo "CSC_LINK=${{ secrets.MAC_CERTIFICATE }}" >> $GITHUB_ENV
+          echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CERTIFICATE_PASSWORD }}" >> $GITHUB_ENV
+          
+          # Log for debugging
+          echo "Apple environment variables set"
+        shell: bash
+          
       - name: Setup DigiCert code signing for Windows
         if: matrix.platform == 'win'
         uses: digicert/ssm-code-signing@v1.0.0
         
-      - name: Set up DigiCert certificate for Windows
+      - name: Setup DigiCert certificate and environment variables
         if: matrix.platform == 'win'
         run: |
           echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
-        shell: bash
-        
-      - name: Set DigiCert environment variables for Windows
-        if: matrix.platform == 'win'
-        run: |
           echo "SM_HOST=${{ secrets.SM_HOST }}" >> $GITHUB_ENV
           echo "SM_API_KEY=${{ secrets.SM_API_KEY }}" >> $GITHUB_ENV
           echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> $GITHUB_ENV
@@ -128,31 +136,17 @@ jobs:
           echo "SM_KEYPAIR_ALIAS=${{ secrets.SM_KEYPAIR_ALIAS }}" >> $GITHUB_ENV
           
           # Log for debugging
-          echo "DigiCert environment variables set"
+          echo "DigiCert setup complete"
         shell: bash
           
-      - name: Build and upload (Windows)
-        if: matrix.platform == 'win'
+      - name: Build and upload
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
-          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CI: true
           FIREBASE_APIKEY: ${{ secrets.FIREBASE_APIKEY }}
           FIREBASE_APISECRET: ${{ secrets.FIREBASE_APISECRET }}
           SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
           SLACK_CLIENT_SECRET: ${{ secrets.SLACK_CLIENT_SECRET }}
-          # DigiCert environment variables will be inherited from previous steps
-        run: npm run ${{ matrix.command }}
-        
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.platform }}-${{ matrix.arch }}-build
-          path: release/
-          if-no-files-found: ignore 
+          # Apple and DigiCert environment variables will be inherited from previous steps
+        run: npm run ${{ matrix.command }} 
