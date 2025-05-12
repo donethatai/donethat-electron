@@ -1,5 +1,43 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: 
+globs: 
+alwaysApply: true
 ---
+# Project Ecosystem
+
+## DoneThat Projects
+This repository (`donethat-electron`) is part of a larger ecosystem of DoneThat applications:
+
+### Desktop Application (This Repository)
+- Electron-based desktop application
+- Handles local system integration
+- Captures user activity (windows, keystrokes, audio, screenshots)
+- Communicates with the backend service
+
+### Web Application (Separate Repository)
+- Web-based user interface
+- Dashboard and analytics
+- User settings and preferences
+- Not included in this repository
+- Repository: `donethat-web`
+
+### Backend Service (Separate Repository)
+- API server
+- Data storage and processing
+- Authentication and authorization
+- Integration with third-party services
+- Not included in this repository
+- Repository: `donethat-backend`
+
+## Integration Points
+- Desktop app communicates with backend via REST API
+- Web app shares authentication with desktop app
+- Both apps use the same backend service
+- Data synchronization between desktop and web interfaces
+
+## Development Workflow
+When working on features that span multiple projects:
+1. Backend changes should be implemented first
+2. Desktop app changes can be tested against staging backend
+3. Web app changes can be tested against staging backend
+4. All changes should be coordinated across repositories

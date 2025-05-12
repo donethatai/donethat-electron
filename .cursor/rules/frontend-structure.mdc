@@ -1,5 +1,28 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: 
+globs: 
+alwaysApply: true
 ---
+# Frontend Structure
+
+## Main Components
+- Main UI: [src/index.html](mdc:src/index.html)
+- Application state: [src/app-state.js](mdc:src/app-state.js)
+- Dashboard: [src/dashboard.js](mdc:src/dashboard.js)
+- Settings: [src/settings.js](mdc:src/settings.js)
+
+## Integration Modules
+- Authentication: [src/auth.js](mdc:src/auth.js)
+- Slack Integration: [src/slack.js](mdc:src/slack.js)
+- Firebase Integration: [src/firebase.js](mdc:src/firebase.js)
+- Analytics: [src/analytics.js](mdc:src/analytics.js)
+- Subscription: [src/subscription.js](mdc:src/subscription.js)
+
+## Features
+- Audio Recording: [src/audio-recorder.js](mdc:src/audio-recorder.js)
+- Permissions: [src/permissions.js](mdc:src/permissions.js)
+- Auto-updates: [src/autoupdate.js](mdc:src/autoupdate.js)
+
+## Styling
+- Main stylesheet: [styles.css](mdc:styles.css)
+- Uses Tailwind CSS for styling
