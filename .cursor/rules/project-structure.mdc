@@ -1,0 +1,31 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# DoneThat Project Structure
+
+## Core Files
+- Main entry point: [main.js](mdc:main.js)
+- Frontend entry: [src/index.js](mdc:src/index.js)
+- Main process state: [src-main/main-state.js](mdc:src-main/main-state.js)
+
+## Key Directories
+- `src/`: Frontend code (renderer process)
+- `src-main/`: Backend code (main process)
+- `resources/`: Static assets and configuration
+- `build/`: Compiled assets
+- `scripts/`: Build and deployment scripts
+
+## Configuration Files
+- Package configuration: [package.json](mdc:package.json)
+- Webpack config: [webpack.config.js](mdc:webpack.config.js)
+- Firebase config: [firebase-config.js](mdc:firebase-config.js)
+- Slack config: [slack-config.js](mdc:slack-config.js)
+
+## Build Process
+1. CSS is built using PostCSS: `npm run build:css`
+2. JavaScript is bundled using Webpack: `npm run build:webpack`
+3. Full build preparation: `npm run build:prepare`
+4. Development: `npm run dev`
+5. Production builds: `npm run build`

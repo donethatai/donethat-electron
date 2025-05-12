@@ -1,0 +1,49 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Build and Deployment
+
+## Build Scripts
+- CSS build: `npm run build:css`
+- Webpack build: `npm run build:webpack`
+- Full preparation: `npm run build:prepare`
+- Development: `npm run dev`
+
+## Platform-specific Builds
+### macOS
+- x64: `npm run build:mac:x64`
+- ARM64: `npm run build:mac:arm64`
+
+### Windows
+- x64: `npm run build:win:x64`
+- ARM64: `npm run build:win:arm64`
+
+### Linux
+- x64: `npm run build:linux:x64`
+- ARM64: `npm run build:linux:arm64`
+
+## Deployment
+### macOS
+- x64: `npm run upload:mac:x64`
+- ARM64: `npm run upload:mac:arm64`
+
+### Windows
+- x64: `npm run upload:win:x64`
+- ARM64: `npm run upload:win:arm64`
+
+### Linux
+- x64: `npm run upload:linux:x64`
+- ARM64: `npm run upload:linux:arm64`
+
+## Configuration
+- Build config: [package.json](mdc:package.json)
+- Webpack config: [webpack.config.js](mdc:webpack.config.js)
+- PostCSS config: [postcss.config.cjs](mdc:postcss.config.cjs)
+
+## Release Process
+1. Build for target platform
+2. Sign the application
+3. Notarize (macOS)
+4. Upload to GitHub releases

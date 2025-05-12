@@ -1,0 +1,29 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Backend Structure (Main Process)
+
+## Core Components
+- Main state management: [src-main/main-state.js](mdc:src-main/main-state.js)
+- Main capture functionality: [src-main/capture.js](mdc:src-main/capture.js)
+
+## Capture Modules
+- Audio capture: [src-main/captureAudio.js](mdc:src-main/captureAudio.js)
+- Keystroke capture: [src-main/captureKeystrokes.js](mdc:src-main/captureKeystrokes.js)
+- Window capture: [src-main/captureWindows.js](mdc:src-main/captureWindows.js)
+- Screenshot capture: [src-main/captureScreenshots.js](mdc:src-main/captureScreenshots.js)
+
+## Key Features
+- Window tracking
+- Keystroke monitoring
+- Audio recording
+- Screenshot capture
+- System integration
+
+## Dependencies
+- Uses `active-win` for window tracking
+- Uses `node-global-key-listener` for keystroke monitoring
+- Uses `electron-store` for persistent storage
+- Uses `electron-log` for logging
