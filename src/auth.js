@@ -158,6 +158,30 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
+// Helper function to get user-friendly error messages
+function getErrorMessage(error) {
+  switch (error.code) {
+    case 'auth/invalid-email':
+      return 'Please enter a valid email address';
+    case 'auth/user-disabled':
+      return 'This account has been disabled';
+    case 'auth/user-not-found':
+      return 'No account found with this email';
+    case 'auth/wrong-password':
+      return 'Incorrect password';
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists';
+    case 'auth/weak-password':
+      return 'Password should be at least 6 characters';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please try again later';
+    case 'auth/network-request-failed':
+      return 'Network error. Please check your connection';
+    default:
+      return `An error occurred: ${error.message}`;
+  }
+}
+
 // Handle sign-in form submission
 signInForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -166,15 +190,16 @@ signInForm.addEventListener("submit", (e) => {
   
     signInWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
-        // No need to manually handle the token here
-        // The onAuthStateChanged listener will handle it
+        // Clear input fields
+        document.getElementById("signInEmail").value = "";
+        document.getElementById("signInPassword").value = "";
       })
       .catch((error) => {
         logAnalyticsEvent('sign_in_error', {
           error_code: error.code,
           error_message: error.message
         });
-        alert("Sign in error: " + error.message);
+        alert(getErrorMessage(error));
         console.error("Sign in error:", error);
       });
   });
@@ -187,14 +212,16 @@ signInForm.addEventListener("submit", (e) => {
   
     createUserWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
-        // Email verification is handled in the onAuthStateChanged listener
+        // Clear input fields
+        document.getElementById("signUpEmail").value = "";
+        document.getElementById("signUpPassword").value = "";
       })
       .catch((error) => {
         logAnalyticsEvent('sign_up_error', {
           error_code: error.code,
           error_message: error.message
         });
-        alert("Sign up error: " + error.message);
+        alert(getErrorMessage(error));
         console.error("Sign up error:", error);
       });
   });
@@ -206,6 +233,8 @@ signInForm.addEventListener("submit", (e) => {
   
     sendPasswordResetEmail(auth, email)
       .then(() => {
+        // Clear input field
+        document.getElementById("resetEmail").value = "";
         logAnalyticsEvent('password_reset_email_sent');
         alert("Password reset email sent. Check your inbox.");
         resetView.classList.add("hidden");
@@ -216,7 +245,7 @@ signInForm.addEventListener("submit", (e) => {
           error_code: error.code,
           error_message: error.message
         });
-        alert("Password reset error: " + error.message);
+        alert(getErrorMessage(error));
         console.error("Password reset error:", error);
       });
   });
