@@ -1,7 +1,7 @@
 {
   "name": "donethat",
-  "version": "1.2.5",
-  "description": "Make your work visible, on your terms.",
+  "version": "1.2.6",
+  "description": "Take control of your time, without spending any time on it.",
   "main": "main.js",
   "scripts": {
     "build:css": "postcss styles.css -o ./build/output.css --verbose",

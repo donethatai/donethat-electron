@@ -315,6 +315,9 @@ app.whenReady().then(async () => {
       });
     }
   });
+
+  // Add daily auth check
+  scheduleDailyAuthCheck();
 })
 
 // Handle OS-level quit events properly - especially important for macOS
@@ -797,10 +800,14 @@ ipcMain.on('requestScreenCapturePermission', async () => {
 function handleCaptureAuthErrors(result) {
   // Handle auth error
   if (result && result.authError) {
-    stateManager?.clearIdToken();
-    
+    // Don't clear the token here - let the auth.js retry mechanism handle it
+    // If the token is truly invalid, the capture cycle will keep failing
+    // and eventually trigger a proper logout through Firebase auth state change
     if (mainWindow) {
-      mainWindow.webContents.send('auth-error');
+      mainWindow.webContents.send('auth-error', {
+        code: 'auth/capture-auth-error',
+        message: 'Authentication error during capture'
+      });
     }
   }
   
@@ -809,8 +816,6 @@ function handleCaptureAuthErrors(result) {
     // Request token refresh from renderer process
     if (mainWindow) {
       mainWindow.webContents.send('refresh-token');
-      
-      // No need for ipcMain.once here as main-state now handles token-refreshed
     }
   }
 }
@@ -821,3 +826,34 @@ ipcMain.on('initialAuthCheck', (event, isAuthenticated) => {
     showWindowBelowTray();
   }
 });
+
+// Add this function before app.whenReady()
+function scheduleDailyAuthCheck() {
+  // Calculate time until 10 AM today or tomorrow
+  const now = new Date();
+  const checkTime = new Date(now);
+  checkTime.setHours(10, 0, 0, 0);
+  
+  if (now > checkTime) {
+    // If it's past 10 AM, schedule for tomorrow
+    checkTime.setDate(checkTime.getDate() + 1);
+  }
+  
+  const timeUntilCheck = checkTime.getTime() - now.getTime();
+  
+  // Schedule the check
+  setTimeout(() => {
+    // Check if user is not authenticated
+    if (!stateManager?.isAuthenticated()) {
+      new Notification({
+        title: 'DoneThat Not Logged In',
+        body: 'You are not logged in to DoneThat. Please log in to continue tracking your work.',
+        silent: false,
+        urgency: 'critical'
+      }).show();
+    }
+    
+    // Schedule next check
+    scheduleDailyAuthCheck();
+  }, timeUntilCheck);
+}

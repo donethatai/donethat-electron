@@ -500,8 +500,12 @@ function setupIPCHandlers() {
     if (setIdToken(newToken)) {
       // Token updated successfully
     } else {
+      log.warn('Token refresh failed - no valid token received');
       if (mainWindow) {
-        mainWindow.webContents.send('auth-error');
+        mainWindow.webContents.send('auth-error', {
+          code: 'auth/token-refresh-failed',
+          message: 'Failed to refresh authentication token'
+        });
       }
     }
   });
@@ -755,6 +759,19 @@ function setIdToken(token) {
  */
 function clearIdToken() {
   idToken = null;
+  
+  // Show notification about logout
+  try {
+    const { Notification } = require('electron');
+    new Notification({
+      title: 'DoneThat Logged Out',
+      body: 'You have been logged out. Please log in again to continue tracking your work.',
+      silent: false,
+      urgency: 'critical'
+    }).show();
+  } catch (error) {
+    log.error('Failed to show logout notification:', error);
+  }
 }
 
 module.exports = {

@@ -25,14 +25,94 @@ const backToSignIn = document.getElementById("backToSignIn");
 const showResetPassword = document.getElementById("showResetPassword");
 const backToSignInFromReset = document.getElementById("backToSignInFromReset");
 
-const logoutLink = document.getElementById("logoutLink");
-
 let loadUserSettingsCallback;
 let showSpinner;
 let hideSpinner;
 let navigateToView;
 
 let userIdToken;
+
+// Add these error categories at the top level
+const AUTH_ERROR_TYPES = {
+  CRITICAL: 'critical',      // User disabled, invalid token
+  TEMPORARY: 'temporary',    // Network issues, rate limits
+  SESSION: 'session'         // Refresh token expired
+};
+
+// Add at the top level with other state
+let retryCount = 0;
+const INITIAL_RETRY_DELAY = 5000; // 5 seconds
+const MAX_RETRIES = 5; // 5 retries: 5s, 10s, 20s, 40s, 80s
+
+// Helper to get next retry delay with exponential backoff
+// We use exponential backoff to avoid overwhelming the server during issues
+// but still retry quickly enough to handle temporary network blips
+function getNextRetryDelay() {
+  return INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
+}
+
+// Helper to categorize Firebase auth errors
+function categorizeAuthError(error) {
+  // Only these are permanent issues that require logout
+  if (error.code === 'auth/user-disabled' ||
+      error.code === 'auth/invalid-refresh-token' ||
+      error.code === 'auth/user-not-found' ||
+      error.code === 'auth/user-token-expired' ||
+      error.code === 'auth/id-token-revoked') {
+    return AUTH_ERROR_TYPES.CRITICAL;
+  }
+  
+  // Everything else is temporary and should be retried
+  return AUTH_ERROR_TYPES.TEMPORARY;
+}
+
+// Enhanced error handling function
+async function handleAuthError(error) {
+  console.error('Auth error:', error?.code, error?.message);
+  
+  const errorType = categorizeAuthError(error);
+  
+  if (errorType === AUTH_ERROR_TYPES.CRITICAL) {
+    // Only logout for permanent issues
+    if (auth.currentUser) {
+      logAnalyticsEvent('auth_error_critical', {
+        error_code: error.code,
+        error_message: error.message
+      });
+      await performFullLogout();
+    }
+  } else {
+    // For temporary errors (network issues, rate limits, etc):
+    // - Try up to 5 times with exponential backoff
+    // - After 5 retries, let the next capture cycle handle it
+    // - This prevents overlap with the 5-minute capture cycle
+    // - Total retry window is ~2.5 minutes (5+10+20+40+80 seconds)
+    if (retryCount < MAX_RETRIES) {
+      retryCount++;
+      logAnalyticsEvent('auth_error_retry', {
+        error_code: error.code,
+        error_message: error.message,
+        retry_count: retryCount
+      });
+
+      // Schedule next retry
+      const delay = getNextRetryDelay();
+      setTimeout(() => {
+        if (auth.currentUser) {
+          refreshAuthToken();
+        }
+      }, delay);
+    } else {
+      // After max retries, just log and let next capture cycle handle it
+      // This ensures we don't have retries overlapping with the 5-minute capture cycle
+      logAnalyticsEvent('auth_error_max_retries', {
+        error_code: error.code,
+        error_message: error.message
+      });
+      // No need to force logout - next capture cycle will handle retry
+    }
+  }
+}
 
 function initializeAuth(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinner, viewNavigator) {
     loadUserSettingsCallback = onSettingsUpdate;
@@ -48,71 +128,51 @@ ipcRenderer.on('logout', async () => {
 
 // Listen for token refresh requests from main process
 ipcRenderer.on('refresh-token', async () => {
+  // Reset retry count when a new capture cycle starts
+  retryCount = 0;
   await refreshAuthToken();
 });
 
 // Listen for auth errors from main process
-ipcRenderer.on('auth-error', () => {
-  handleAuthError();
+ipcRenderer.on('auth-error', (event, error) => {
+  handleAuthError(error || { code: 'unknown', message: 'Unknown auth error' });
 });
 
 // Function to refresh Firebase auth token
 async function refreshAuthToken() {
   try {
     if (auth.currentUser) {
-      // Force refresh the token
       const newToken = await auth.currentUser.getIdToken(true);
-      
-      // Update app state with new token
       updateAuthState(true, newToken);
-      
       ipcRenderer.send('token-refreshed', newToken);
+      // Reset retry count on successful refresh
+      retryCount = 0;
       return newToken;
     } else {
-      ipcRenderer.send('token-refreshed', null);
       return null;
     }
   } catch (error) {
     console.error('Renderer: Error during refreshAuthToken:', error);
-    console.error("Renderer: Error Code:", error.code);
-    console.error("Renderer: Error Message:", error.message);
-
-    if (error.code === 'auth/user-token-expired' ||
-        error.code === 'auth/invalid-refresh-token' ||
-        error.code === 'auth/user-disabled' ||
-        error.code === 'auth/invalid-user-token') {
-        console.error("Renderer: Refresh token might be invalid or user session expired server-side.");
-    }
-
-    ipcRenderer.send('token-refreshed', null);
+    await handleAuthError(error);
     return null;
-  }
-}
-
-// Function to handle auth errors
-function handleAuthError() {
-  // For severe auth errors, do a proper logout
-  if (auth.currentUser) {
-    // Perform full logout rather than just updating state
-    performFullLogout();
-  } else {
-    // If no current user, just navigate to sign in
-    navigateToView('signin');
   }
 }
 
 // Update the auth state listener
 onAuthStateChanged(auth, async (user) => {
   if (user) {
+    // Reset retry count on successful auth
+    retryCount = 0;
+    
     // Check if email is verified
     if (!user.emailVerified) {
-      try{
-          await sendEmailVerification(user);
-          logAnalyticsEvent('verification_email_sent');
-          alert("Verification email sent. Please check your inbox.");
-        } catch (error) {
-          alert("Error sending verification email: " + error.message);
-        }
+      try {
+        await sendEmailVerification(user);
+        logAnalyticsEvent('verification_email_sent');
+        alert("Verification email sent. Please check your inbox.");
+      } catch (error) {
+        alert("Error sending verification email: " + error.message);
+      }
       await signOut(auth);
       navigateToView('signin');
       return;
@@ -135,10 +195,9 @@ onAuthStateChanged(auth, async (user) => {
       email_verified: user.emailVerified
     });
 
-    // Set up a token refresh interval using the same refreshAuthToken function
+    // Set up a token refresh interval
     const refreshInterval = setInterval(async () => {
       if (auth.currentUser) {
-        // Use the same refreshAuthToken function for consistency
         await refreshAuthToken();
       } else {
         clearInterval(refreshInterval);
@@ -151,6 +210,10 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     // User is signed out
     updateAuthState(false, null);
+    
+    // Reset retry state
+    retryCount = 0;
+    
     navigateToView('signin');
     
     // Log sign out event
@@ -277,7 +340,10 @@ signInForm.addEventListener("submit", (e) => {
   // Helper function for complete logout cleanup
   async function performFullLogout() {
     try {
-      // Log logout event before actually logging out to include user ID
+      // Reset retry count on logout
+      retryCount = 0;
+      
+      // Log logout event
       if (auth.currentUser) {
         logAnalyticsEvent('user_logout', {
           user_id: auth.currentUser.uid,
