@@ -476,3 +476,13 @@
 .form-input, .summary-container {
   @apply border border-gray-300 rounded-lg;
 }
+
+/* Modal */
+.modal {
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
+}
+
+/* Modal content */
+.modal-content {
+  @apply max-w-xs w-full bg-white p-4 border border-black rounded-lg shadow-xl;
+}
