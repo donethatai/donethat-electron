@@ -420,14 +420,6 @@ async function updateSettingsUI(settings) {
   
   // Send workhours to main process
   ipcRenderer.send('updateWorkhours', workhours);
-
-  // Handle lastSummary from activity data
-  if (settings?.activity?.lastSummary) {
-    const timestamp = settings.activity.lastSummary; // Store timestamp
-    updateLastSummary(timestamp); // Update renderer state
-    // Send the timestamp to the main process
-    ipcRenderer.send('updateLastSummaryTimestamp', timestamp);
-  }
   
   // Handle timezone setting
   let fetchedTimezone = "UTC"; // Default to UTC if not set

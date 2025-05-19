@@ -2,7 +2,7 @@ const { getFunctions, httpsCallable } = require("firebase/functions");
 const { firebaseApp } = require('./firebase.js');
 const { ipcRenderer } = require('electron');
 const { logAnalyticsEvent } = require('./analytics.js');
-const { getLastSummary, getIsPaused, getDateCreated, getIsPublic } = require('./app-state.js');
+const {  getIsPaused, getIsPublic } = require('./app-state.js');
 
 const functions = getFunctions(firebaseApp, "europe-west1");
 
@@ -97,32 +97,6 @@ function showSummaryGeneratedState() {
     if (getIsPaused()) {
       notes.push({
         text: 'DoneThat is paused. <a href="#" class="resume-link">Resume recording</a>.',
-        isWarning: true
-      });
-    }
-
-    // Check for old summaries OR if user is old enough without submitting
-    const lastSummary = getLastSummary();
-    const dateCreated = getDateCreated();
-    const oneDayInMs = 24 * 60 * 60 * 1000;
-    let showOldSummaryNote = false;
-
-    if (lastSummary) {
-      const lastSummaryDate = new Date(lastSummary);
-      if (Date.now() - lastSummaryDate.getTime() > oneDayInMs) {
-        showOldSummaryNote = true;
-      }
-    } else if (dateCreated) {
-      // Check if user created more than a day ago and has no summaries
-      const dateCreatedDate = new Date(dateCreated); // Assuming dateCreated is a valid timestamp/date string
-      if (Date.now() - dateCreatedDate.getTime() > oneDayInMs) {
-        showOldSummaryNote = true;
-      }
-    }
-
-    if (showOldSummaryNote) {
-      notes.push({
-        text: "Save summaries from your last days to get today's data.",
         isWarning: true
       });
     }

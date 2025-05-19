@@ -168,39 +168,7 @@ function _checkWorkdayEndNotification() {
   }
 }
 
-function _checkWorkdayStartNotification() {
-  // Only show notification if we have a valid period end time and it's been more than 12 hours
-  if (typeof lastSummaryTimestamp === 'number' 
-      && !isNaN(lastSummaryTimestamp) && lastSummaryTimestamp > 0) {
-    const hoursSinceLastSummary = (Date.now() - lastSummaryTimestamp) / (1000 * 60 * 60);
-
-    if (hoursSinceLastSummary > 12) {
-      // Create the same notification options as the end notification for consistency
-      const notification = new Notification({
-        title: "Review Yesterday's Work",
-        body: "You haven't reviewed your last summary. Generate one in DoneThat to catch up!",
-        silent: false,
-        hasReply: false,
-        urgency: 'critical'
-      });
-      
-      // Set callback before showing
-      notification.on('click', () => {
-        if (navigateToView) {
-          navigateToView('signup-next');
-        }
-      });
-      
-      notification.show();
-    }
-  }
-}
-
 function _resumeRecording() {
-  if (pauseState.reason === 'workday-start') {
-    _checkWorkdayStartNotification();
-  }
-
   // Clear pause state to avoid issues
   pauseState = { endTime: null, timeoutId: null, reason: null };
 
@@ -469,13 +437,12 @@ function loadSummaryTimestamp() {
         lastSummaryTimestamp = null;
       }
     } else {
-      // For new users, initialize timestamp to current time
-      // This gives them time to use the app before showing notifications
-      lastSummaryTimestamp = Date.now();
-      store.set('lastSummaryPeriodEnd', lastSummaryTimestamp);
+      // If no timestamp in store, initialize to null
+      lastSummaryTimestamp = null;
     }
   } catch (error) {
     log.error('Failed to load summary timestamp:', error);
+    lastSummaryTimestamp = null;
   }
 }
 
@@ -634,32 +601,6 @@ function setupIPCHandlers() {
       }
     } else {
       log.warn('No period end time received with summary submission');
-    }
-  });
-
-  // Add IPC handler for receiving last summary timestamp
-  ipcMain.on('updateLastSummaryTimestamp', (event, timestamp) => {
-    try {
-      // Check if timestamp exists before trying to access its properties
-      if (!timestamp) {
-        log.warn('Received null or undefined timestamp');
-        return;
-      }
-      
-      // Attempt to convert directly, assuming Firebase Timestamp object
-      const timestampInMillis = timestamp._seconds * 1000 + Math.floor(timestamp._nanoseconds / 1000000);
-
-      // Attempt to store the converted milliseconds
-      if (store) {
-        lastSummaryTimestamp = timestampInMillis; // Update local variable
-        store.set('lastSummaryPeriodEnd', timestampInMillis); // Store as periodEnd
-      } else {
-        // Log only if store isn't ready - potentially important
-        log.warn('Store not initialized, cannot save lastSummaryPeriodEnd.');
-      }
-    } catch (error) {
-      // Log any errors during conversion or storage
-      log.error('Error processing/storing lastSummaryPeriodEnd:', error, 'Raw value:', timestamp);
     }
   });
 
