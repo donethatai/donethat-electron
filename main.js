@@ -800,9 +800,10 @@ ipcMain.on('requestScreenCapturePermission', async () => {
 function handleCaptureAuthErrors(result) {
   // Handle auth error
   if (result && result.authError) {
-    // Don't clear the token here - let the auth.js retry mechanism handle it
-    // If the token is truly invalid, the capture cycle will keep failing
-    // and eventually trigger a proper logout through Firebase auth state change
+    // This will be treated as non-critical and will trigger a retry
+    // Because triggered in capture.js when there is no token
+    // If creating token is the issue, then another error will be triggered
+    // and that will be treated as critical and will logout
     if (mainWindow) {
       mainWindow.webContents.send('auth-error', {
         code: 'auth/capture-auth-error',

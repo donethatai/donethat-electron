@@ -61,18 +61,22 @@ function categorizeAuthError(error) {
       error.code === 'auth/id-token-revoked') {
     return AUTH_ERROR_TYPES.CRITICAL;
   }
-  
-  // Everything else is temporary and should be retried
   return AUTH_ERROR_TYPES.TEMPORARY;
 }
 
 // Enhanced error handling function
 async function handleAuthError(error) {
-  console.error('Auth error:', error?.code, error?.message);
+  console.error('Auth error:', error?.code, error?.message, errorType);
+  if (retryCount > 0 || errorType === AUTH_ERROR_TYPES.CRITICAL) {
+    console.log('=== Auth Error Handler ===');
+    console.log('Error details:', error?.code, error?.message);
+    console.log('Current retry count:', retryCount);
+  }
   
   const errorType = categorizeAuthError(error);
   
   if (errorType === AUTH_ERROR_TYPES.CRITICAL) {
+    console.log('Handling CRITICAL error - initiating logout');
     // Only logout for permanent issues
     if (auth.currentUser) {
       logAnalyticsEvent('auth_error_critical', {
@@ -83,12 +87,11 @@ async function handleAuthError(error) {
     }
   } else {
     // For temporary errors (network issues, rate limits, etc):
-    // - Try up to 5 times with exponential backoff
-    // - After 5 retries, let the next capture cycle handle it
-    // - This prevents overlap with the 5-minute capture cycle
-    // - Total retry window is ~2.5 minutes (5+10+20+40+80 seconds)
     if (retryCount < MAX_RETRIES) {
       retryCount++;
+      if (retryCount > 1) { // Only log if this is a retry (not the first attempt)
+        console.log(`Scheduling retry ${retryCount}/${MAX_RETRIES}`);
+      }
       logAnalyticsEvent('auth_error_retry', {
         error_code: error.code,
         error_message: error.message,
@@ -103,13 +106,11 @@ async function handleAuthError(error) {
         }
       }, delay);
     } else {
-      // After max retries, just log and let next capture cycle handle it
-      // This ensures we don't have retries overlapping with the 5-minute capture cycle
+      console.log('Max retries reached - waiting for next capture cycle');
       logAnalyticsEvent('auth_error_max_retries', {
         error_code: error.code,
         error_message: error.message
       });
-      // No need to force logout - next capture cycle will handle retry
     }
   }
 }
@@ -140,19 +141,32 @@ ipcRenderer.on('auth-error', (event, error) => {
 
 // Function to refresh Firebase auth token
 async function refreshAuthToken() {
+  if (retryCount > 0) {
+    console.log('=== Token Refresh ===');
+    console.log('Current retry count:', retryCount);
+    console.log('Has current user:', !!auth.currentUser);
+  }
+  
   try {
     if (auth.currentUser) {
+      if (retryCount > 0) {
+        console.log('Getting new token...');
+      }
       const newToken = await auth.currentUser.getIdToken(true);
+      if (retryCount > 0) {
+        console.log('Token refresh successful');
+      }
       updateAuthState(true, newToken);
       ipcRenderer.send('token-refreshed', newToken);
       // Reset retry count on successful refresh
       retryCount = 0;
       return newToken;
     } else {
+      console.log('No current user - cannot refresh token');
       return null;
     }
   } catch (error) {
-    console.error('Renderer: Error during refreshAuthToken:', error);
+    console.log('Token refresh failed:', error?.code, error?.message);
     await handleAuthError(error);
     return null;
   }
