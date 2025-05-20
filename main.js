@@ -246,6 +246,14 @@ app.whenReady().then(async () => {
     navigateToView: navigateToView // for notifications
   });
 
+  // Create application menu
+  createApplicationMenu();
+  
+  // Register for auth state change events from renderer
+  ipcMain.on('auth-state-changed', (event, isAuthenticated) => {
+    createApplicationMenu(); // Update menu on auth state change
+  });
+
   // Create tray with initial error icon
   let trayIcon = nativeImage.createFromPath(iconErrorPath)
 
@@ -399,7 +407,120 @@ function navigateToView(viewName) {
   mainWindow.webContents.send('navigate', viewName);
 }
 
-// Function to build the context menu with pause options
+// Function to create application menu with Help option and context menu options
+function createApplicationMenu() {
+  const isLoggedIn = stateManager?.isAuthenticated() ?? false;
+  const isPaused = stateManager?.isPaused() ?? false;
+  const hasPermission = stateManager?.hasScreenCapturePermission() ?? false;
+  
+  const template = [];
+  
+  // File menu
+  const fileMenu = {
+    label: 'File',
+    submenu: [
+      {
+        label: 'Home',
+        click: () => navigateToView('signup-next')
+      },
+      {
+        label: 'Settings',
+        click: () => navigateToView('settings'),
+        enabled: isLoggedIn
+      },
+      { type: 'separator' },
+      {
+        label: 'Web Portal',
+        click: () => {
+          const { shell } = require('electron');
+          shell.openExternal('https://app.donethat.ai');
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        accelerator: 'CmdOrCtrl+Q',
+        click: () => app.quit()
+      }
+    ]
+  };
+  
+  // Recording menu
+  const recordingMenu = {
+    label: 'Recording',
+    submenu: [
+      {
+        label: 'Pause for 5 minutes',
+        click: () => stateManager?.pauseRecording(5 * 60 * 1000, mainWindow),
+        enabled: isLoggedIn && !isPaused && hasPermission
+      },
+      {
+        label: 'Pause for 15 minutes',
+        click: () => stateManager?.pauseRecording(15 * 60 * 1000, mainWindow),
+        enabled: isLoggedIn && !isPaused && hasPermission
+      },
+      {
+        label: 'Pause for 30 minutes',
+        click: () => stateManager?.pauseRecording(30 * 60 * 1000, mainWindow),
+        enabled: isLoggedIn && !isPaused && hasPermission
+      },
+      {
+        label: 'Pause for 1 hour',
+        click: () => stateManager?.pauseRecording(60 * 60 * 1000, mainWindow),
+        enabled: isLoggedIn && !isPaused && hasPermission
+      },
+      {
+        label: 'Pause for today',
+        click: () => stateManager?.pauseUntilNextWorkPeriod(mainWindow),
+        enabled: isLoggedIn && !isPaused && hasPermission
+      },
+      {
+        label: 'Resume',
+        click: () => startRecording(),
+        enabled: isLoggedIn && isPaused && hasPermission
+      }
+    ]
+  };
+  
+  // Account menu
+  const accountMenu = {
+    label: 'Account',
+    submenu: [
+      {
+        label: 'Logout',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.webContents.send('logout');
+          }
+        },
+        enabled: isLoggedIn
+      }
+    ]
+  };
+  
+  // Help menu
+  const helpMenu = {
+    label: 'Help',
+    submenu: [
+      {
+        label: 'Support',
+        click: () => {
+          const { shell } = require('electron');
+          shell.openExternal('https://donethat.ai/support');
+        }
+      }
+    ]
+  };
+  
+  // Push menus to template
+  template.push(fileMenu, recordingMenu, accountMenu, helpMenu);
+  
+  // Set as application menu
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+// Update context menu build function to also update application menu
 function buildContextMenu() {
   const isLoggedIn = stateManager?.isAuthenticated() ?? false;
   const isPaused = stateManager?.isPaused() ?? false;
@@ -491,6 +612,9 @@ function buildContextMenu() {
     }
   )
 
+  // After building the context menu, also refresh the application menu
+  createApplicationMenu();
+  
   return Menu.buildFromTemplate(template)
 }
 
@@ -508,6 +632,9 @@ function checkAndAdjustRecording() {
     // but not recording it's not triggering above function because
     // isCurrentlyRecording is false
     updateTrayIcon(isCurrentlyRecording && shouldBeRecording);
+    
+    // Update application menu when recording state changes
+    createApplicationMenu();
 
     // Regular start/stop logic
     if (isCurrentlyRecording && !shouldBeRecording) {
@@ -520,6 +647,7 @@ function checkAndAdjustRecording() {
 // Add IPC handler for resume action
 ipcMain.on('resumeRecording', (event) => {
   startRecording();
+  createApplicationMenu(); // Update menu after resume
 });
 
 ////// WINDOWS /////
@@ -542,6 +670,7 @@ function createWindow() {
       movable: !isPlatformMac,
       show: false,
       skipTaskbar: true, // Hide from taskbar on all platforms
+      fullscreenable: false, // Prevent full screen toggle
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
@@ -602,59 +731,36 @@ function createWindow() {
 function showWindowBelowTray() {
   const isPlatformMac = process.platform === 'darwin';
   
-  // For Windows and Linux, just show the window in its current position or center it if first time
-  if (!isPlatformMac) {
-    if (!mainWindow.isVisible()) {
-      // Get primary display
-      const display = screen.getPrimaryDisplay();
-      const { workArea } = display;
-      const windowBounds = mainWindow.getBounds();
-      
-      // Center window on first show
-      if (!mainWindow._hasBeenShown) {
-        const x = Math.round(workArea.x + (workArea.width / 2) - (windowBounds.width / 2));
-        const y = Math.round(workArea.y + (workArea.height / 2) - (windowBounds.height / 2));
-        mainWindow.setPosition(x, y, false);
-        mainWindow._hasBeenShown = true;
-      }
-    }
-    
-    mainWindow.show();
-    mainWindow.focus();
-    return;
-  }
-  
-  // macOS specific positioning below - original code for positioning below tray
-  // Get tray icon bounds
-  const trayBounds = tray.getBounds()
-
   // Get window size
-  const windowBounds = mainWindow.getBounds()
-
+  const windowBounds = mainWindow.getBounds();
+  
+  // Get tray icon bounds
+  const trayBounds = tray.getBounds();
+  
   // Get all displays
-  const allDisplays = screen.getAllDisplays()
-
+  const allDisplays = screen.getAllDisplays();
+  
   // Find which display contains the tray icon
   const trayDisplay = allDisplays.find(display => {
-    const { x, y, width, height } = display.bounds
+    const { x, y, width, height } = display.bounds;
     return (
       trayBounds.x >= x && trayBounds.x < x + width &&
       trayBounds.y >= y && trayBounds.y < y + height
-    )
-  }) || screen.getPrimaryDisplay() // Fall back to primary if not found
-
+    );
+  }) || screen.getPrimaryDisplay(); // Fall back to primary if not found
+  
   // Use the working area of the display containing the tray
-  const { workArea } = trayDisplay
-
+  const { workArea } = trayDisplay;
+  
   let x, y;
-
+  
   // Linux-specific positioning logic
   if (process.platform === 'linux') {
     // On Linux, center in the primary display as a fallback
     // since tray positioning can be unreliable
-    x = Math.round(workArea.x + (workArea.width / 2) - (windowBounds.width / 2))
-    y = Math.round(workArea.y + (workArea.height / 2) - (windowBounds.height / 2))
-
+    x = Math.round(workArea.x + (workArea.width / 2) - (windowBounds.width / 2));
+    y = Math.round(workArea.y + (workArea.height / 2) - (windowBounds.height / 2));
+    
     // If we have valid tray bounds, try to position near it
     if (trayBounds.width > 0 && trayBounds.height > 0) {
       // Position at the bottom of the screen if the tray appears to be at the bottom
@@ -667,32 +773,38 @@ function showWindowBelowTray() {
       }
     }
   } else {
-    // Original positioning for Windows and macOS
+    // Position relative to tray for both macOS and Windows
     // Calculate x position: center window horizontally relative to the tray icon
-    x = Math.round(trayBounds.x + (trayBounds.width / 2) - (windowBounds.width / 2))
-
-    // Determine if tray is closer to top or bottom of the display
-    const distanceToTop = trayBounds.y - workArea.y
-    const distanceToBottom = (workArea.y + workArea.height) - (trayBounds.y + trayBounds.height)
-
-    if (distanceToTop < distanceToBottom) {
-      // Tray is closer to top - position window below tray
-      y = trayBounds.y + trayBounds.height
+    x = Math.round(trayBounds.x + (trayBounds.width / 2) - (windowBounds.width / 2));
+    
+    // For Windows, the tray is usually at the bottom
+    if (process.platform === 'win32') {
+      // Position above the taskbar/tray
+      y = trayBounds.y - windowBounds.height - 10; // 10px buffer
     } else {
-      // Tray is closer to bottom - position window above tray
-      y = trayBounds.y - windowBounds.height
+      // For macOS, determine if tray is closer to top or bottom of display
+      const distanceToTop = trayBounds.y - workArea.y;
+      const distanceToBottom = (workArea.y + workArea.height) - (trayBounds.y + trayBounds.height);
+      
+      if (distanceToTop < distanceToBottom) {
+        // Tray is closer to top - position window below tray
+        y = trayBounds.y + trayBounds.height;
+      } else {
+        // Tray is closer to bottom - position window above tray
+        y = trayBounds.y - windowBounds.height;
+      }
     }
   }
-
+  
   // Ensure window doesn't go off-screen horizontally
-  x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - windowBounds.width))
-
+  x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - windowBounds.width));
+  
   // Ensure window doesn't go off-screen vertically
-  y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - windowBounds.height))
-
-  mainWindow.setPosition(x, y, false)
-  mainWindow.show()
-  mainWindow.focus() // Ensure window gets focus
+  y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - windowBounds.height));
+  
+  mainWindow.setPosition(x, y, false);
+  mainWindow.show();
+  mainWindow.focus(); // Ensure window gets focus
 }
 
 // Modify the window-all-closed handler to respect system quit
@@ -729,12 +841,12 @@ function startRecording() {
     return;
   }
 
-
   startCaptureInterval(); // Call without token
 
   stateManager?.recordingStarted(mainWindow);
   
   updateTrayIcon(true) // Show recording state
+  createApplicationMenu(); // Update menu when recording starts
 
   if (mainWindow) {
     mainWindow.webContents.send('pauseStateChanged', false)
@@ -755,6 +867,7 @@ function stopRecording() {
   // or by permissions (already in state)
 
   updateTrayIcon(false) // Update icon to non-recording state
+  createApplicationMenu(); // Update menu when recording stops
   
   // Send state updates
   if (mainWindow) {
@@ -779,6 +892,9 @@ async function checkScreenCapturePermission() {
   } else {
     log.warn('State manager not initialized, cannot update screen capture permission');
   }
+  
+  // Update application menu when permission changes
+  createApplicationMenu();
   
   return hasPermission;
 }
@@ -869,6 +985,7 @@ ipcMain.on('initialAuthCheck', (event, isAuthenticated) => {
     // If user is not authenticated, show the window
     showWindowBelowTray();
   }
+  createApplicationMenu(); // Update menu after auth check
 });
 
 // Add this function before app.whenReady()
