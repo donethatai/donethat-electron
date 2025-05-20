@@ -44,6 +44,11 @@ let retryCount = 0;
 const INITIAL_RETRY_DELAY = 5000; // 5 seconds
 const MAX_RETRIES = 5; // 5 retries: 5s, 10s, 20s, 40s, 80s
 
+// Auth notification elements
+let authErrorNotification;
+let authErrorMessage;
+let authErrorClose;
+
 // Helper to get next retry delay with exponential backoff
 // We use exponential backoff to avoid overwhelming the server during issues
 // but still retry quickly enough to handle temporary network blips
@@ -64,8 +69,42 @@ function categorizeAuthError(error) {
   return AUTH_ERROR_TYPES.TEMPORARY;
 }
 
+// Function to show the auth error notification
+function showAuthErrorNotification(message) {
+  if (!authErrorNotification) {
+    authErrorNotification = document.getElementById('authErrorNotification');
+    authErrorMessage = document.getElementById('authErrorMessage');
+    authErrorClose = document.getElementById('authErrorClose');
+    
+    // Set up close button handler
+    if (authErrorClose) {
+      authErrorClose.addEventListener('click', hideAuthErrorNotification);
+    }
+  }
+  
+  if (authErrorNotification && authErrorMessage) {
+    // Use a simplified message instead of the detailed one
+    const displayMessage = message || 'Connection issue. This will disappear once resolved.';
+    authErrorMessage.textContent = displayMessage;
+    authErrorNotification.classList.remove('hidden');
+  }
+}
+
+// Function to hide the auth error notification
+function hideAuthErrorNotification() {
+  if (!authErrorNotification) {
+    authErrorNotification = document.getElementById('authErrorNotification');
+  }
+  
+  if (authErrorNotification) {
+    authErrorNotification.classList.add('hidden');
+  }
+}
+
 // Enhanced error handling function
 async function handleAuthError(error) {
+  const errorType = categorizeAuthError(error);
+  
   console.error('Auth error:', error?.code, error?.message, errorType);
   if (retryCount > 0 || errorType === AUTH_ERROR_TYPES.CRITICAL) {
     console.log('=== Auth Error Handler ===');
@@ -73,10 +112,11 @@ async function handleAuthError(error) {
     console.log('Current retry count:', retryCount);
   }
   
-  const errorType = categorizeAuthError(error);
-  
   if (errorType === AUTH_ERROR_TYPES.CRITICAL) {
     console.log('Handling CRITICAL error - initiating logout');
+    // Show error notification for critical errors
+    showAuthErrorNotification('Authentication error. Please sign in again.');
+    
     // Only logout for permanent issues
     if (auth.currentUser) {
       logAnalyticsEvent('auth_error_critical', {
@@ -90,9 +130,13 @@ async function handleAuthError(error) {
     // For temporary errors (network issues, rate limits, etc):
     if (retryCount < MAX_RETRIES) {
       retryCount++;
-      if (retryCount > 1) { // Only log if this is a retry (not the first attempt)
+      
+      // Show notification for retry > 1
+      if (retryCount > 1) {
+        showAuthErrorNotification();
         console.log(`Scheduling retry ${retryCount}/${MAX_RETRIES}`);
       }
+      
       logAnalyticsEvent('auth_error_retry', {
         error_code: error.code,
         error_message: error.message,
@@ -108,6 +152,8 @@ async function handleAuthError(error) {
       }, delay);
     } else {
       console.log('Max retries reached - waiting for next capture cycle');
+      showAuthErrorNotification('Connection issue. Please check your internet connection.');
+      
       logAnalyticsEvent('auth_error_max_retries', {
         error_code: error.code,
         error_message: error.message
@@ -122,6 +168,16 @@ function initializeAuth(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinn
     showSpinner = showBlockingSpinner;
     hideSpinner = hideBlockingSpinner;
     navigateToView = viewNavigator;
+    
+    // Initialize auth notification elements
+    authErrorNotification = document.getElementById('authErrorNotification');
+    authErrorMessage = document.getElementById('authErrorMessage');
+    authErrorClose = document.getElementById('authErrorClose');
+    
+    // Set up close button handler
+    if (authErrorClose) {
+      authErrorClose.addEventListener('click', hideAuthErrorNotification);
+    }
 }
 
 // Listen for logout event from tray menu at module level
@@ -133,6 +189,8 @@ ipcRenderer.on('logout', async () => {
 ipcRenderer.on('refresh-token', async () => {
   // Reset retry count when a new capture cycle starts
   retryCount = 0;
+  // Hide any previous error notifications
+  hideAuthErrorNotification();
   await refreshAuthToken();
 });
 
@@ -157,6 +215,8 @@ async function refreshAuthToken() {
       const newToken = await auth.currentUser.getIdToken(true);
       if (retryCount > 0) {
         console.log('Token refresh successful');
+        // Hide error notification on successful refresh
+        hideAuthErrorNotification();
       }
       updateAuthState(true, newToken);
       ipcRenderer.send('token-refreshed', newToken);
@@ -180,6 +240,8 @@ onAuthStateChanged(auth, async (user) => {
     if (user) {
       // Reset retry count on successful auth
       retryCount = 0;
+      // Hide any error notifications
+      hideAuthErrorNotification();
       
       // Check if email is verified
       if (!user.emailVerified) {
@@ -312,9 +374,11 @@ signInForm.addEventListener("submit", (e) => {
     showSpinner();
     signInWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
-        // Clear input fields
-        document.getElementById("signInEmail").value = "";
-        document.getElementById("signInPassword").value = "";
+        // Delay clearing input fields to give password managers time to save
+        setTimeout(() => {
+          document.getElementById("signInEmail").value = "";
+          document.getElementById("signInPassword").value = "";
+        }, 1000);
       })
       .catch((error) => {
         hideSpinner();
@@ -336,9 +400,11 @@ signInForm.addEventListener("submit", (e) => {
     showSpinner();
     createUserWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
-        // Clear input fields
-        document.getElementById("signUpEmail").value = "";
-        document.getElementById("signUpPassword").value = "";
+        // Delay clearing input fields to give password managers time to save
+        setTimeout(() => {
+          document.getElementById("signUpEmail").value = "";
+          document.getElementById("signUpPassword").value = "";
+        }, 1000);
       })
       .catch((error) => {
         hideSpinner();

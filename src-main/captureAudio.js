@@ -31,6 +31,12 @@ function initialize(window, config = {}) {
     return processAudioFromRenderer(audioData);
   });
   
+  // Listen for audio device changes from renderer
+  ipcMain.on('audio-device-changed', (event, info) => {
+    log.info('Audio device change detected:', info);
+    // No need to do anything here - renderer handles the restart
+  });
+  
   // Initialize the renderer-side audio recorder with configuration
   mainWindow.webContents.executeJavaScript(
     `window.initAudioRecorder && window.initAudioRecorder({

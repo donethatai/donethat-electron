@@ -1,5 +1,6 @@
-const { ipcMain, Notification, app } = require('electron');
+const { ipcMain, Notification, app, dialog } = require('electron');
 const log = require('electron-log');
+const path = require('path');
 
 // State variables
 let store = null;
@@ -16,10 +17,67 @@ let isWaylandSession = null;
 let idToken = null; // User authentication token
 let workPeriodCheckTimeoutId = null; // For scheduling next workday/workhours check
 let autoSubmit = false;
+let hasShownStorageError = false; // Flag to prevent multiple error alerts
 
 // Function references that will be set by main.js
 let checkAndAdjustRecording = null;
 let navigateToView = null;
+
+/**
+ * Show storage error message to the user
+ * @param {Error} error The error that occurred
+ */
+function showStorageError(error) {
+  if (hasShownStorageError) return; // Prevent multiple alerts
+  
+  log.error('Storage operation failed:', error);
+  
+  // Only show for permission errors
+  if (error.code === 'EPERM' || error.message.includes('permission') || 
+      error.message.includes('access') || error.message.includes('denied')) {
+    
+    hasShownStorageError = true;
+    
+    try {
+      dialog.showErrorBox(
+        'Storage Permission Error',
+        'Could not store configuration. This may be caused by antivirus software or permission settings. Please check your security software and ensure DoneThat has permission to write files.'
+      );
+    } catch (dialogError) {
+      // Fallback to notification if dialog fails
+      try {
+        new Notification({
+          title: 'Storage Permission Error',
+          body: 'Could not store configuration. Please check your antivirus software.',
+          silent: false,
+          urgency: 'critical'
+        }).show();
+      } catch (notificationError) {
+        log.error('Failed to show storage error notification:', notificationError);
+      }
+    }
+  }
+}
+
+/**
+ * Safely perform store operations with error handling
+ * @param {Function} operation Function that performs store operation
+ * @param {string} errorContext Context description for logging
+ * @returns {any} Result of the operation or undefined on error
+ */
+function safeStoreOperation(operation, errorContext) {
+  if (!store) {
+    return undefined;
+  }
+  
+  try {
+    return operation();
+  } catch (error) {
+    log.error(`Store operation failed (${errorContext}):`, error);
+    showStorageError(error);
+    return undefined;
+  }
+}
 
 /**
  * Initialize the state manager
@@ -36,11 +94,8 @@ async function initState(options = {}) {
       app.setAppUserModelId('com.donethat.app');
     }
 
-    // Initialize electron-store using dynamic import for ES module
-    const { default: Store } = await import('electron-store');
-    store = new Store({
-      name: 'donethat-config'
-    });
+    // Initialize store with fallback mechanism
+    initializeStore();
 
     // Load saved states
     loadWorkSettings();
@@ -73,11 +128,91 @@ async function initState(options = {}) {
       setIdToken,
       clearIdToken,
       cleanupOnQuit,
-      resume
+      resume,
     };
   } catch (error) {
     log.error('Failed to initialize state:', error);
     return null;
+  }
+}
+
+/**
+ * Initialize electron-store with fallback locations
+ */
+async function initializeStore() {
+  const { default: Store } = await import('electron-store');
+  const locations = [
+    { name: 'default', cwd: app.getPath('userData') },
+    { name: 'documents', cwd: path.join(app.getPath('documents'), '.donethat-config') },
+    { name: 'temp', cwd: app.getPath('temp') }
+  ];
+  
+  // Check all locations for existing data
+  let dataFound = false;
+  
+  for (const location of locations) {
+    try {
+      // Create a test store to check if data exists
+      const testStore = new Store({
+        name: 'donethat-config',
+        cwd: location.cwd,
+        clearInvalidConfig: true
+      });
+      
+      // If we get here, we could access this location
+      // Check if there's existing data
+      const hasData = Object.keys(testStore.store).length > 0;
+      
+      if (hasData) {
+        // Found data, use this location
+        store = testStore;
+        log.info(`Using existing data from ${location.name} location: ${location.cwd}`);
+        dataFound = true;
+        break;
+      }
+    } catch (err) {
+      log.warn(`Unable to access ${location.name} location:`, err.message);
+      
+      // Check if this is a permission error
+      if (err.code === 'EPERM' || err.message.includes('permission') || 
+          err.message.includes('access') || err.message.includes('denied')) {
+        showStorageError(err);
+      }
+      
+      // Continue to next location
+    }
+  }
+  
+  // If no data was found, create a new store in the first available location
+  if (!dataFound) {
+    for (const location of locations) {
+      try {
+        store = new Store({
+          name: 'donethat-config',
+          cwd: location.cwd,
+          clearInvalidConfig: true
+        });
+        log.info(`Created new store in ${location.name} location: ${location.cwd}`);
+        break;
+      } catch (err) {
+        log.warn(`Failed to create store in ${location.name} location:`, err.message);
+        
+        // Check if this is a permission error
+        if (err.code === 'EPERM' || err.message.includes('permission') || 
+            err.message.includes('access') || err.message.includes('denied')) {
+          showStorageError(err);
+        }
+        
+        // Continue to next location
+      }
+    }
+  }
+  
+  // If we still don't have a store, throw an error
+  if (!store) {
+    const error = new Error('Unable to initialize configuration storage in any location');
+    showStorageError(error);
+    throw error;
   }
 }
 
@@ -290,7 +425,9 @@ function recordingStarted(mainWindow) {
   // Reset pause state
   const wasPaused = isPaused(); // Check if we were paused
   pauseState = { endTime: null, timeoutId: null };
-  if (store) store.delete('pauseState');
+  
+  // Clear the saved pause state
+  safeStoreOperation(() => store.delete('pauseState'), 'clear pause state');
 
   _scheduleNextWorkEndCheck();
 
@@ -306,142 +443,126 @@ function recordingStarted(mainWindow) {
 
 // Function to save pause state using electron-store
 function savePauseState() {
-  try {
-    // Skip if store is not initialized
-    if (!store) {
-      log.warn('Store not initialized');
-      return;
-    }
-
-    const stateToSave = {
-      endTime: pauseState.endTime ? pauseState.endTime.getTime() : null,
-      reason: pauseState.reason
-    };
-    store.set('pauseState', stateToSave);
-  } catch (error) {
-    log.error('Failed to save pause state:', error);
+  // Skip if store is not initialized
+  if (!store) {
+    log.warn('Store not initialized');
+    return;
   }
+
+  const stateToSave = {
+    endTime: pauseState.endTime ? pauseState.endTime.getTime() : null,
+    reason: pauseState.reason
+  };
+  
+  safeStoreOperation(() => store.set('pauseState', stateToSave), 'save pause state');
 }
 
 // Function to load pause state using electron-store
 function loadPauseState() {
-  try {
-    // Skip if store is not initialized
-    if (!store) {
-      log.warn('Store not initialized when loading pause state');
-      return false;
-    }
-
-    const savedState = store.get('pauseState');
-    
-    if (savedState && savedState.endTime) {
-      const endTime = new Date(savedState.endTime);
-      const now = new Date();
-      
-      // If pause end time is in the future, restore the pause
-      if (endTime > now) {
-        const remainingDuration = endTime.getTime() - now.getTime();
-        
-        pauseState = {
-          endTime: endTime,
-          timeoutId: setTimeout(() => _resumeRecording(), remainingDuration),
-          reason: savedState.reason
-        };
-        
-        return true;
-      } else {
-        // Pause period has already expired
-        store.delete('pauseState');
-      }
-    }
-  } catch (error) {
-    log.error('Failed to load pause state:', error);
+  // Skip if store is not initialized
+  if (!store) {
+    log.warn('Store not initialized when loading pause state');
+    return false;
   }
+
+  const savedState = safeStoreOperation(() => store.get('pauseState'), 'load pause state');
+  
+  if (savedState && savedState.endTime) {
+    const endTime = new Date(savedState.endTime);
+    const now = new Date();
+    
+    // If pause end time is in the future, restore the pause
+    if (endTime > now) {
+      const remainingDuration = endTime.getTime() - now.getTime();
+      
+      pauseState = {
+        endTime: endTime,
+        timeoutId: setTimeout(() => _resumeRecording(), remainingDuration),
+        reason: savedState.reason
+      };
+      
+      return true;
+    } else {
+      // Pause period has already expired
+      safeStoreOperation(() => store.delete('pauseState'), 'delete expired pause state');
+    }
+  }
+  
   return false;
 }
 
 // Load work settings (days and hours) from store
 function loadWorkSettings() {
-  try {
-    if (!store) {
-      log.warn('Store not initialized when loading work settings');
-      return;
-    }
+  if (!store) {
+    log.warn('Store not initialized when loading work settings');
+    return;
+  }
 
-    // Load userWorkdays from store, with validation and default fallback
-    const savedWorkdays = store.get('userWorkdays');
-    if (Array.isArray(savedWorkdays) && savedWorkdays.every(d => typeof d === 'number' && d >= 0 && d <= 6)) {
-      userWorkdays = [...new Set(savedWorkdays)].sort((a, b) => a - b); // Ensure unique & sorted
-    } else {
-      // Default is already set, but save it initially if not present
-      if (!savedWorkdays) {
-        store.set('userWorkdays', userWorkdays);
-      }
+  // Load userWorkdays from store, with validation and default fallback
+  const savedWorkdays = safeStoreOperation(() => store.get('userWorkdays'), 'load workdays');
+  if (Array.isArray(savedWorkdays) && savedWorkdays.every(d => typeof d === 'number' && d >= 0 && d <= 6)) {
+    userWorkdays = [...new Set(savedWorkdays)].sort((a, b) => a - b); // Ensure unique & sorted
+  } else {
+    // Default is already set, but save it initially if not present
+    if (!savedWorkdays) {
+      safeStoreOperation(() => store.set('userWorkdays', userWorkdays), 'save default workdays');
     }
+  }
 
-    // Load userWorkhours from store, with validation and default fallback
-    const savedWorkhours = store.get('userWorkhours');
-    if (savedWorkhours && typeof savedWorkhours === 'object' && savedWorkhours.start && savedWorkhours.end) {
-      userWorkhours = {
-        start: savedWorkhours.start,
-        end: savedWorkhours.end
-      };
-    } else {
-      // Default is already set, but save it initially if not present
-      if (!savedWorkhours) {
-        store.set('userWorkhours', userWorkhours);
-      }
+  // Load userWorkhours from store, with validation and default fallback
+  const savedWorkhours = safeStoreOperation(() => store.get('userWorkhours'), 'load workhours');
+  if (savedWorkhours && typeof savedWorkhours === 'object' && savedWorkhours.start && savedWorkhours.end) {
+    userWorkhours = {
+      start: savedWorkhours.start,
+      end: savedWorkhours.end
+    };
+  } else {
+    // Default is already set, but save it initially if not present
+    if (!savedWorkhours) {
+      safeStoreOperation(() => store.set('userWorkhours', userWorkhours), 'save default workhours');
     }
+  }
 
-    // Load autoSubmit setting from store
-    const storedAutoSubmit = store.get('autoSubmit');
-    if (typeof storedAutoSubmit === 'boolean') {
-      autoSubmit = storedAutoSubmit;
-    }
-
-  } catch (error) {
-    log.error('Failed to load work settings:', error);
+  // Load autoSubmit setting from store
+  const storedAutoSubmit = safeStoreOperation(() => store.get('autoSubmit'), 'load autoSubmit');
+  if (typeof storedAutoSubmit === 'boolean') {
+    autoSubmit = storedAutoSubmit;
   }
 }
 
 // Load last summary timestamp from store
 function loadSummaryTimestamp() {
-  try {
-    if (!store) {
-      log.warn('Store not initialized when loading summary timestamp');
-      return;
-    }
-    
-    let loadedTimestamp = store.get('lastSummaryPeriodEnd');
+  if (!store) {
+    log.warn('Store not initialized when loading summary timestamp');
+    return;
+  }
+  
+  let loadedTimestamp = safeStoreOperation(() => store.get('lastSummaryPeriodEnd'), 'load summary timestamp');
 
-    // Directly try to use the loaded value, assuming it's milliseconds (number)
-    if (loadedTimestamp !== null && loadedTimestamp !== undefined) {
-      try {
-        const dateObject = new Date(loadedTimestamp);
-        // Validate the date created from the loaded number
-        if (!isNaN(dateObject.getTime())) {
-          lastSummaryTimestamp = loadedTimestamp; // Store as milliseconds
-        } else {
-          // If the loaded number results in an invalid date, log error and delete the stored value
-          log.error('Invalid period end format received:', loadedTimestamp, 
-                    'Type:', typeof loadedTimestamp, 
-                    'Resulting date object:', dateObject);
-          store.delete('lastSummaryPeriodEnd');
-          lastSummaryTimestamp = null;
-        }
-      } catch (error) {
-        log.error('Error processing period end:', error, 
-                 'Raw value:', loadedTimestamp, 
-                 'Type:', typeof loadedTimestamp);
-        store.delete('lastSummaryPeriodEnd');
+  // Directly try to use the loaded value, assuming it's milliseconds (number)
+  if (loadedTimestamp !== null && loadedTimestamp !== undefined) {
+    try {
+      const dateObject = new Date(loadedTimestamp);
+      // Validate the date created from the loaded number
+      if (!isNaN(dateObject.getTime())) {
+        lastSummaryTimestamp = loadedTimestamp; // Store as milliseconds
+      } else {
+        // If the loaded number results in an invalid date, log error and delete the stored value
+        log.error('Invalid period end format received:', loadedTimestamp, 
+                  'Type:', typeof loadedTimestamp, 
+                  'Resulting date object:', dateObject);
+        safeStoreOperation(() => store.delete('lastSummaryPeriodEnd'), 'delete invalid summary timestamp');
         lastSummaryTimestamp = null;
       }
-    } else {
-      // If no timestamp in store, initialize to null
+    } catch (error) {
+      log.error('Error processing period end:', error, 
+               'Raw value:', loadedTimestamp, 
+               'Type:', typeof loadedTimestamp);
+      safeStoreOperation(() => store.delete('lastSummaryPeriodEnd'), 'delete invalid summary timestamp');
       lastSummaryTimestamp = null;
     }
-  } catch (error) {
-    log.error('Failed to load summary timestamp:', error);
+  } else {
+    // If no timestamp in store, initialize to null
     lastSummaryTimestamp = null;
   }
 }
@@ -516,15 +637,13 @@ function setupIPCHandlers() {
       userWorkdays = [...new Set(days)].sort((a, b) => a - b); // Update state, ensure unique & sorted
       
       // Save the updated workdays to the store
-      try {
+      safeStoreOperation(() => {
         if (store) {
           store.set('userWorkdays', userWorkdays);
         } else {
           log.warn('Store not initialized, cannot save userWorkdays.');
         }
-      } catch (error) {
-        log.error('Failed to save userWorkdays:', error);
-      }
+      }, 'save updated workdays');
       
       if (isPaused() && pauseState.reason === 'workday-start') {
         pauseUntilNextWorkPeriod(event.sender.getOwnerBrowserWindow(), silent=true);
@@ -546,15 +665,13 @@ function setupIPCHandlers() {
       };
       
       // Save the updated workhours to the store
-      try {
+      safeStoreOperation(() => {
         if (store) {
           store.set('userWorkhours', userWorkhours);
         } else {
           log.warn('Store not initialized, cannot save userWorkhours.');
         }
-      } catch (error) {
-        log.error('Failed to save userWorkhours:', error);
-      }
+      }, 'save updated workhours');
       
       // Check if we should adjust recording based on the new hours
       if (isPaused() && pauseState.reason === 'workday-start') {
@@ -598,11 +715,13 @@ function setupIPCHandlers() {
       lastSummaryTimestamp = lastSummaryPeriodEnd;
       
       // Save to persistent store
-      if (store) {
-        store.set('lastSummaryPeriodEnd', lastSummaryPeriodEnd);
-      } else {
-        log.warn('Store not initialized, cannot save lastSummaryPeriodEnd on summary submission');
-      }
+      safeStoreOperation(() => {
+        if (store) {
+          store.set('lastSummaryPeriodEnd', lastSummaryPeriodEnd);
+        } else {
+          log.warn('Store not initialized, cannot save lastSummaryPeriodEnd on summary submission');
+        }
+      }, 'save summary period end');
     } else {
       log.warn('No period end time received with summary submission');
     }
@@ -614,11 +733,13 @@ function setupIPCHandlers() {
       autoSubmit = value;
       
       // Save to persistent store
-      if (store) {
-        store.set('autoSubmit', value);
-      } else {
-        log.warn('Store not initialized, cannot save autoSubmit setting');
-      }
+      safeStoreOperation(() => {
+        if (store) {
+          store.set('autoSubmit', value);
+        } else {
+          log.warn('Store not initialized, cannot save autoSubmit setting');
+        }
+      }, 'save autoSubmit setting');
     } else {
       log.error('Received invalid autoSubmit value:', value);
     }

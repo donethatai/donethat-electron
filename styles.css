@@ -19,6 +19,41 @@
   --color-neutral-300: #d1d5db;
   --color-neutral-200: #e5e7eb;
   --color-neutral-50: #f9fafb;
+
+  /* Status colors */
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+}
+
+/* Auth Error Notification Styles */
+.auth-error-notification {
+  @apply fixed top-0 left-0 right-0 z-50;
+  background-color: var(--color-warning);
+  color: white;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+  transform: translateY(0);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.auth-error-notification.hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.auth-error-content {
+  @apply flex justify-between items-center max-w-screen-lg mx-auto;
+}
+
+.auth-error-close {
+  @apply ml-4 p-1 rounded-full;
+  background-color: rgba(255,255,255,0.2);
+  transition: background-color 0.2s;
+}
+
+.auth-error-close:hover {
+  background-color: rgba(255,255,255,0.3);
 }
 
 /* Ensure hidden class works on all elements with !important to override other styles */

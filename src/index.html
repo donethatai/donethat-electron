@@ -13,6 +13,7 @@
       connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com https://*.google-analytics.com https://*.analytics.google.com;
       frame-src 'self' https://checkout.stripe.com;
       form-action 'self' https://checkout.stripe.com;
+      object-src 'self';
     ">
     <meta http-equiv="X-Content-Security-Policy" content="
       default-src 'self';
@@ -22,6 +23,7 @@
       connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com https://*.google-analytics.com https://*.analytics.google.com;
       frame-src https://checkout.stripe.com;
       form-action 'self' https://checkout.stripe.com;
+      object-src 'self';
     ">
     <title>DoneThat</title>
     <!-- Local Tailwind CSS -->
@@ -30,6 +32,23 @@
     <link href="styles.css" rel="stylesheet" />
   </head>
   <body class="bg-white h-full w-full overflow-y-auto">
+    <!-- Auth Error Notification Banner -->
+    <div id="authErrorNotification" class="auth-error-notification hidden">
+      <div class="auth-error-content">
+        <div class="flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          <span id="authErrorMessage">Connection issue. Attempting to reconnect...</span>
+        </div>
+        <button id="authErrorClose" class="auth-error-close">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <!-- Global Spinner -->
     <div id="globalSpinner" class="fixed inset-0 z-50 hidden">
       <div class="absolute inset-0 bg-white/30 backdrop-blur-[2px]"></div>
@@ -42,7 +61,7 @@
     <div id="signInView" class="view-container">
       <div class="form-container">
         <h1 class="section-header">Sign In</h1>
-        <form id="signInForm" class="form-group">
+        <form id="signInForm" class="form-group" autocomplete="on">
           <div>
             <label for="signInEmail" class="form-label">
               Email:
@@ -50,6 +69,8 @@
             <input
               type="email"
               id="signInEmail"
+              name="email"
+              autocomplete="username email"
               required
               class="form-input"
             />
@@ -61,6 +82,8 @@
             <input
               type="password"
               id="signInPassword"
+              name="password"
+              autocomplete="current-password"
               required
               class="form-input"
             />
@@ -89,7 +112,7 @@
     <div id="signUpView" class="view-container hidden">
       <div class="form-container">
         <h1 class="section-header">Sign Up</h1>
-        <form id="signUpForm" class="form-group">
+        <form id="signUpForm" class="form-group" autocomplete="on">
           <div>
             <label for="signUpEmail" class="form-label">
               Email:
@@ -97,6 +120,8 @@
             <input
               type="email"
               id="signUpEmail"
+              name="email"
+              autocomplete="username email"
               required
               class="form-input"
             />
@@ -108,6 +133,8 @@
             <input
               type="password"
               id="signUpPassword"
+              name="password"
+              autocomplete="new-password"
               required
               class="form-input"
             />
@@ -133,7 +160,7 @@
     <div id="resetView" class="view-container hidden">
       <div class="form-container">
         <h1 class="section-header">Reset Password</h1>
-        <form id="resetForm" class="form-group">
+        <form id="resetForm" class="form-group" autocomplete="on">
           <div>
             <label for="resetEmail" class="form-label">
               Email:
@@ -141,6 +168,8 @@
             <input
               type="email"
               id="resetEmail"
+              name="email"
+              autocomplete="username email"
               required
               class="form-input"
             />

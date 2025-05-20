@@ -7,6 +7,28 @@ let chunkTimestamps = [];
 let MAX_BUFFER_DURATION_MS;
 
 /**
+ * Get the best supported audio MIME type
+ * @returns {string} Best supported MIME type
+ */
+function getBestSupportedMimeType() {
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+    'audio/mpeg'
+  ];
+  
+  for (const type of types) {
+    if (MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  
+  return ''; // Fall back to browser default
+}
+
+/**
  * Initialize audio recorder
  * @param {Object} config Configuration
  * @param {number} config.bufferDurationMs Buffer duration in ms
@@ -20,6 +42,23 @@ window.initAudioRecorder = function(config = {}) {
   }
   
   MAX_BUFFER_DURATION_MS = config.bufferDurationMs;
+  
+  // Add device change listener
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      // Restart recording with new default device if we're recording
+      if (isRecording) {
+        restartAudioRecording();
+      }
+      
+      // Notify main process about device change
+      if (window.electron && window.electron.ipcRenderer) {
+        window.electron.ipcRenderer.send('audio-device-changed', {
+          event: 'devicechange'
+        });
+      }
+    });
+  }
 };
 
 /**
@@ -35,12 +74,25 @@ window.startAudioRecording = async function() {
     audioChunks = [];
     chunkTimestamps = [];
     
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm;codecs=opus',
-      audioBitsPerSecond: 128000
+    // Use improved audio constraints for better quality
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true, 
+        autoGainControl: true
+      } 
     });
+    
+    const mimeType = getBestSupportedMimeType();
+    const options = {
+      audioBitsPerSecond: 128000
+    };
+    
+    if (mimeType) {
+      options.mimeType = mimeType;
+    }
+    
+    mediaRecorder = new MediaRecorder(stream, options);
     
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
@@ -66,6 +118,72 @@ window.startAudioRecording = async function() {
     return false;
   }
 };
+
+// Restart recording when audio device changes
+async function restartAudioRecording() {
+  if (!isRecording) return true;
+  
+  try {
+    console.log('Restarting audio recording due to device change');
+    
+    // Stop the current recording cleanly
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      mediaRecorder = null;
+    }
+    
+    // Save current chunks
+    const previousChunks = [...audioChunks];
+    const previousTimestamps = [...chunkTimestamps];
+    
+    // Start a new recording with the new default device
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true, 
+        autoGainControl: true
+      } 
+    });
+    
+    const mimeType = getBestSupportedMimeType();
+    const options = {
+      audioBitsPerSecond: 128000
+    };
+    
+    if (mimeType) {
+      options.mimeType = mimeType;
+    }
+    
+    mediaRecorder = new MediaRecorder(stream, options);
+    
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        const now = Date.now();
+        audioChunks.push(event.data);
+        chunkTimestamps.push(now);
+        trimAudioBuffer();
+      }
+    };
+    
+    mediaRecorder.onerror = (event) => {
+      console.error('MediaRecorder error:', event.error);
+    };
+    
+    // Restore previous chunks if possible
+    audioChunks = previousChunks;
+    chunkTimestamps = previousTimestamps;
+    
+    mediaRecorder.start(1000);
+    return true;
+  } catch (error) {
+    console.error('Error restarting audio recording:', error);
+    isRecording = false;
+    return false;
+  }
+}
+
+// Add to window for access from main process
+window.restartAudioRecording = restartAudioRecording;
 
 /**
  * Trim audio buffer to maximum duration
@@ -112,7 +230,9 @@ window.stopAudioRecording = async function() {
       return null;
     }
     
-    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+    // Use the recorder's selected MIME type
+    const mimeType = mediaRecorder.mimeType || 'audio/webm';
+    const blob = new Blob(audioChunks, { type: mimeType });
     
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -120,7 +240,7 @@ window.stopAudioRecording = async function() {
       reader.onloadend = () => {
         resolve({
           base64Data: reader.result,
-          mimeType: 'audio/webm',
+          mimeType: mimeType,
           timeMs: duration
         });
       };
@@ -147,5 +267,6 @@ window.shutdownAudioRecording = function() {
 module.exports = {
   startAudioRecording: window.startAudioRecording,
   stopAudioRecording: window.stopAudioRecording,
-  shutdownAudioRecording: window.shutdownAudioRecording
+  shutdownAudioRecording: window.shutdownAudioRecording,
+  restartAudioRecording
 }; 
