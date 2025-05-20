@@ -1,5 +1,5 @@
 const log = require('electron-log')
-const activeWindow = require('active-win')
+const { activeWindow } = require('get-windows')
 
 // Track active windows
 let isTracking = false
@@ -138,8 +138,8 @@ async function recordCurrentWindow() {
     windowTimeline.push({
       timestamp: new Date().toISOString(),
       title: activeWindowInfo.title || 'Unknown',
-      app: activeWindowInfo.owner.name || 'Unknown',
-      executable: activeWindowInfo.owner.path || 'unknown'
+      app: activeWindowInfo.owner?.name || activeWindowInfo.owner?.processName || 'Unknown',
+      executable: activeWindowInfo.owner?.path || 'unknown'
     })
     
     // Keep timeline at a reasonable size (store at most 1 hour of data)
