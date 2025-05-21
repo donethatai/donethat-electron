@@ -26,26 +26,16 @@ if (!gotTheLock) {
 
 // Set up second-instance handler
 app.on('second-instance', (event, commandLine, workingDirectory) => {
-  // Event won't work for mac
-  const { dialog } = require('electron');
-  
-  // Define platform-specific messages
-  let message = 'The app is already running in the tray. Please open it there.';
-  
-  if (process.platform === 'win32') {
-    message += ' (bottom right of the screen next to the time)';
-  } else {
-    message += ' (You might have to enable your system tray)';
+  // Instead of showing a dialog, bring the existing window to foreground
+  if (mainWindow) {
+    // If window exists but is hidden, show it
+    if (!mainWindow.isVisible()) {
+      showWindowBelowTray();
+    } else {
+      // Focus the window to bring it to foreground
+      mainWindow.focus();
+    }
   }
-  
-  // Show platform-specific alert
-  dialog.showMessageBoxSync({
-    type: 'info',
-    title: 'DoneThat',
-    message: 'DoneThat is Already Running',
-    detail: message,
-    buttons: ['OK']
-  });
 });
 
 // Handle macOS reactivation (when user clicks dock icon or reopens app)
@@ -454,6 +444,8 @@ function navigateToView(viewName) {
   // Only show/position window if it's not already visible
   if (!mainWindow.isVisible()) {
     showWindowBelowTray();
+  } else {
+    mainWindow.focus();
   }
   mainWindow.webContents.send('navigate', viewName);
 }
