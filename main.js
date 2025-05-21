@@ -180,9 +180,32 @@ function setupAutoUpdater() {
             autoUpdater.quitAndInstall(true, true);
           }
         }, 30 * 60 * 1000); // 30 minutes
+      } else if (process.platform === 'linux') {
+        // Linux - show dialog, never silent install
+        log.info('Linux platform: using dialog-based update');
+        
+        const { dialog } = require('electron');
+        dialog.showMessageBox({
+          type: 'info',
+          title: 'DoneThat Update Available',
+          message: `A new version (${info.version}) is available and has been downloaded.`,
+          detail: 'You will need to manually restart DoneThat after the update is installed.',
+          buttons: ['Cancel', 'Install Update'],
+          cancelId: 0,
+          defaultId: 1
+        }).then(({ response }) => {
+          if (response === 1) { // Install Update
+            log.info('Update dialog approved, installing update');
+            autoUpdater.quitAndInstall(false, false);
+          } else {
+            log.info('Update dialog canceled by user');
+          }
+        }).catch(err => {
+          log.error('Error showing update dialog:', err);
+        });
       } else {
-        // macOS and Linux - use the original silent install approach
-        log.info('Non-Windows platform: using silent update');
+        // macOS - use the original silent install approach
+        log.info('macOS platform: using silent update');
         setTimeout(() => {
           autoUpdater.quitAndInstall(true, true);
         }, 1000); // 1 second delay
