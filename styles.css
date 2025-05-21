@@ -152,6 +152,42 @@
   @apply absolute inset-0 bg-white/80 flex items-center justify-center z-10;
 }
 
+/* Subscription-specific styles */
+/* Target subscription price specifically in the bullet list context */
+.text-gray-600 .subscription-price,
+.text-gray-600 .subscription-period {
+  font-size: inherit;
+  font-weight: inherit;
+  text-align: inherit;
+  margin-top: 0;
+  color: var(--color-neutral-700);
+}
+
+/* Override any other styling that might be applied */
+.text-left .subscription-price,
+.text-left .subscription-period {
+  color: var(--color-neutral-700) !important;
+}
+
+/* Special classes for subscription price in bullet points - no inline styles needed */
+.subscription-bullet-price,
+.subscription-bullet-period {
+  font-size: inherit;
+  font-weight: normal;
+  text-align: left;
+  margin-top: 0;
+  color: var(--color-neutral-700) !important;
+}
+
+/* Add email button (used for subscription action button as well) */
+.add-email-btn {
+  @apply absolute right-1.5 top-1/2 transform -translate-y-1/2 text-white rounded-full w-4 h-4 flex items-center justify-center transition-colors;
+  background-color: var(--color-primary);
+}
+.add-email-btn:hover {
+  background-color: var(--color-primary-dark);
+}
+
 /* Time input container styling */
 .time-input-container {
   @apply relative w-full;
@@ -240,71 +276,6 @@
   background-position: right 8px center;
   background-repeat: no-repeat;
   background-size: 16px 16px;
-}
-
-/* Subscription-specific styles */
-.subscription-info-panel {
-  @apply border border-gray-300 rounded-lg p-3 mt-2;
-  background-color: var(--color-neutral-50);
-}
-
-.subscription-status-container {
-  @apply flex flex-col;
-}
-
-.subscription-status {
-  @apply text-sm font-medium mb-1;
-  color: var(--color-neutral-900);
-}
-
-.subscription-detail {
-  @apply text-xs mb-1;
-  color: var(--color-neutral-600);
-}
-
-.subscription-secondary-btn {
-  @apply text-white py-1.5 px-3 rounded text-xs cursor-pointer transition duration-200 mt-2;
-  background-color: var(--color-primary);
-}
-.subscription-secondary-btn:hover {
-  background-color: var(--color-primary-dark);
-}
-
-.subscription-cancel-btn {
-  @apply mt-2 text-sm;
-  color: var(--color-neutral-700);
-}
-
-.subscription-cancel-btn:hover {
-  color: var(--color-neutral-900);
-}
-
-/* Add these new CSS rules to fix subscription price styling in bullet points */
-
-/* Target subscription price specifically in the bullet list context */
-.text-gray-600 .subscription-price,
-.text-gray-600 .subscription-period {
-  font-size: inherit;
-  font-weight: inherit;
-  text-align: inherit;
-  margin-top: 0;
-  color: var(--color-neutral-700);
-}
-
-/* Override any other styling that might be applied */
-.text-left .subscription-price,
-.text-left .subscription-period {
-  color: var(--color-neutral-700) !important;
-}
-
-/* Special classes for subscription price in bullet points - no inline styles needed */
-.subscription-bullet-price,
-.subscription-bullet-period {
-  font-size: inherit;
-  font-weight: normal;
-  text-align: left;
-  margin-top: 0;
-  color: var(--color-neutral-700) !important;
 }
 
 /* Price display container styling */
