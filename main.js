@@ -701,7 +701,7 @@ function createWindow() {
     // Platform-specific window configurations
     const isPlatformMac = process.platform === 'darwin';
     const windowWidth = DEBUG ? 600 : (isPlatformMac ? 250 : 300); // Wider for Win/Linux
-    const windowHeight = DEBUG ? 600 : (isPlatformMac ? 400 : 475); // Slightly taller for Win/Linux
+    const windowHeight = DEBUG ? 600 : (isPlatformMac ? 420 : 475); // Slightly taller for Win/Linux
     
     mainWindow = new BrowserWindow({
       width: windowWidth,
