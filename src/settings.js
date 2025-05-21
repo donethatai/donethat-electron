@@ -352,7 +352,7 @@ async function saveUserSettings(type, value) {
           
           // Include app data in this settings update
           settingsData.app = {
-            version: settings?.app?.version, // Keep existing version
+            version: settings?.app?.version || packageInfo.version, // Keep existing version
             osPlatform: localOSPlatform || storedOSPlatform,
             osRelease: localOSRelease || storedOSRelease
           };

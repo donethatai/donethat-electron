@@ -197,7 +197,9 @@ function setupAutoUpdater() {
         // macOS - use the original silent install approach
         log.info('macOS platform: using silent update');
         setTimeout(() => {
-          autoUpdater.quitAndInstall(true, true);
+          log.info('Executing quitAndInstall() for macOS');
+          app.isQuitting = true; // Explicitly set this flag to prevent event.preventDefault in close handlers
+          autoUpdater.quitAndInstall();
         }, 1000); // 1 second delay
       }
     } else {
