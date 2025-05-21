@@ -686,7 +686,7 @@ function createWindow() {
     // Platform-specific window configurations
     const isPlatformMac = process.platform === 'darwin';
     const windowWidth = DEBUG ? 600 : (isPlatformMac ? 250 : 300); // Wider for Win/Linux
-    const windowHeight = DEBUG ? 600 : (isPlatformMac ? 400 : 450); // Slightly taller for Win/Linux
+    const windowHeight = DEBUG ? 600 : (isPlatformMac ? 400 : 475); // Slightly taller for Win/Linux
     
     mainWindow = new BrowserWindow({
       width: windowWidth,
@@ -777,13 +777,21 @@ function showWindowBelowTray() {
     );
   }) || screen.getPrimaryDisplay(); // Fall back to primary if not found
   
+  // For Windows, use the built-in center method which is more reliable
+  if (process.platform === 'win32') {
+    mainWindow.center();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  
   // Use the working area of the display containing the tray
   const { workArea } = trayDisplay;
   
   let x, y;
   
-  // Linux and Windows positioning logic - center by default with intelligent positioning
-  if (process.platform === 'linux' || process.platform === 'win32') {
+  // Linux positioning logic
+  if (process.platform === 'linux') {
     // Center in the display - calculate with integer positions
     x = Math.floor(workArea.x + (workArea.width / 2) - (windowBounds.width / 2));
     y = Math.floor(workArea.y + (workArea.height / 2) - (windowBounds.height / 2));
