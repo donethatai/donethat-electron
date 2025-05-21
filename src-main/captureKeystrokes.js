@@ -245,7 +245,6 @@ async function startTracking() {
       const rejectionHandler = (reason) => {
         if (reason && reason.message && reason.message.includes('pkexec') && 
             reason.message.includes('X11KeyServer')) {
-          log.error('Caught pkexec error for X11KeyServer:', reason);
           // Clean up this specific listener - we've handled it
           process.removeListener('unhandledRejection', rejectionHandler);
           
