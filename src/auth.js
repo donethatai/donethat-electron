@@ -14,6 +14,8 @@ const { auth } = require('./firebase.js');
 const { logAnalyticsEvent, setAnalyticsUserProperties } = require('./analytics.js');
 const { updateAuthState } = require('./app-state.js');
 const { resetSummaryState } = require('./dashboard.js');
+// Import modal functions for UI notifications
+const { showErrorModal, showSuccessModal, showPersistentErrorModal, hideModal } = require('./modal.js');
 
 const signInForm = document.getElementById("signInForm");
 const signUpForm = document.getElementById("signUpForm");
@@ -44,11 +46,6 @@ let retryCount = 0;
 const INITIAL_RETRY_DELAY = 5000; // 5 seconds
 const MAX_RETRIES = 5; // 5 retries: 5s, 10s, 20s, 40s, 80s
 
-// Auth notification elements
-let authErrorNotification;
-let authErrorMessage;
-let authErrorClose;
-
 // Helper to get next retry delay with exponential backoff
 // We use exponential backoff to avoid overwhelming the server during issues
 // but still retry quickly enough to handle temporary network blips
@@ -69,49 +66,6 @@ function categorizeAuthError(error) {
   return AUTH_ERROR_TYPES.TEMPORARY;
 }
 
-// Function to show the auth error notification
-function showAuthErrorNotification(message) {
-  if (!authErrorNotification) {
-    authErrorNotification = document.getElementById('authErrorNotification');
-    authErrorMessage = document.getElementById('authErrorMessage');
-    authErrorClose = document.getElementById('authErrorClose');
-    
-    // Set up close button handler
-    if (authErrorClose) {
-      authErrorClose.addEventListener('click', hideAuthErrorNotification);
-    }
-  }
-  
-  if (authErrorNotification && authErrorMessage) {
-    // Use a simplified message instead of the detailed one
-    const displayMessage = message || 'Connection issue. Try logging in again.';
-    authErrorMessage.textContent = displayMessage;
-    authErrorNotification.classList.remove('hidden');
-    
-    // Store the active element before showing notification
-    const activeElement = document.activeElement;
-    
-    // Return focus to the previously active element after a short delay
-    // This helps prevent Windows from losing input focus
-    setTimeout(() => {
-      if (activeElement && typeof activeElement.focus === 'function') {
-        activeElement.focus();
-      }
-    }, 100);
-  }
-}
-
-// Function to hide the auth error notification
-function hideAuthErrorNotification() {
-  if (!authErrorNotification) {
-    authErrorNotification = document.getElementById('authErrorNotification');
-  }
-  
-  if (authErrorNotification) {
-    authErrorNotification.classList.add('hidden');
-  }
-}
-
 // Enhanced error handling function
 async function handleAuthError(error) {
   const errorType = categorizeAuthError(error);
@@ -125,8 +79,8 @@ async function handleAuthError(error) {
   
   if (errorType === AUTH_ERROR_TYPES.CRITICAL) {
     console.log('Handling CRITICAL error - initiating logout');
-    // Show error notification for critical errors
-    showAuthErrorNotification('Authentication error. Please sign in again.');
+    // Show error notification for critical errors - use persistent modal
+    showPersistentErrorModal('Authentication error. Please sign in again.');
     
     // Only logout for permanent issues
     if (auth.currentUser) {
@@ -144,7 +98,7 @@ async function handleAuthError(error) {
       
       // Show notification for retry > 1
       if (retryCount > 1) {
-        showAuthErrorNotification();
+        showPersistentErrorModal('Connection issue. Please check your internet connection.');
         console.log(`Scheduling retry ${retryCount}/${MAX_RETRIES}`);
       }
       
@@ -163,7 +117,7 @@ async function handleAuthError(error) {
       }, delay);
     } else {
       console.log('Max retries reached - waiting for next capture cycle');
-      showAuthErrorNotification('Connection issue. Please check your internet connection.');
+      showPersistentErrorModal('Connection issue. Please check your internet connection.');
       
       logAnalyticsEvent('auth_error_max_retries', {
         error_code: error.code,
@@ -179,16 +133,6 @@ function initializeAuth(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinn
     showSpinner = showBlockingSpinner;
     hideSpinner = hideBlockingSpinner;
     navigateToView = viewNavigator;
-    
-    // Initialize auth notification elements
-    authErrorNotification = document.getElementById('authErrorNotification');
-    authErrorMessage = document.getElementById('authErrorMessage');
-    authErrorClose = document.getElementById('authErrorClose');
-    
-    // Set up close button handler
-    if (authErrorClose) {
-      authErrorClose.addEventListener('click', hideAuthErrorNotification);
-    }
 }
 
 // Listen for logout event from tray menu at module level
@@ -201,7 +145,7 @@ ipcRenderer.on('refresh-token', async () => {
   // Reset retry count when a new capture cycle starts
   retryCount = 0;
   // Hide any previous error notifications
-  hideAuthErrorNotification();
+  hideModal();
   await refreshAuthToken();
 });
 
@@ -227,7 +171,7 @@ async function refreshAuthToken() {
       if (retryCount > 0) {
         console.log('Token refresh successful');
         // Hide error notification on successful refresh
-        hideAuthErrorNotification();
+        hideModal();
       }
       updateAuthState(true, newToken);
       ipcRenderer.send('token-refreshed', newToken);
@@ -252,16 +196,16 @@ onAuthStateChanged(auth, async (user) => {
       // Reset retry count on successful auth
       retryCount = 0;
       // Hide any error notifications
-      hideAuthErrorNotification();
+      hideModal();
       
       // Check if email is verified
       if (!user.emailVerified) {
         try {
           await sendEmailVerification(user);
           logAnalyticsEvent('verification_email_sent');
-          alert("Verification email sent. Please check your inbox.");
+          showSuccessModal("Verification email sent. Please check your inbox.");
         } catch (error) {
-          alert("Error sending verification email: " + error.message);
+          showErrorModal("Error sending verification email: " + error.message);
         }
         await signOut(auth);
         hideSpinner();
@@ -400,14 +344,7 @@ signInForm.addEventListener("submit", (e) => {
           error_code: error.code,
           error_message: error.message
         });
-        alert(getErrorMessage(error));
-        console.error("Sign in error:", error);
-        
-        // Reset form fields and focus to ensure they're usable after error
-        const emailField = document.getElementById("signInEmail");
-        const passwordField = document.getElementById("signInPassword");
-        passwordField.value = "";  // Clear password on error
-        emailField.focus();  // Return focus to the email field
+        showErrorModal(getErrorMessage(error));
       });
   });
   
@@ -432,14 +369,7 @@ signInForm.addEventListener("submit", (e) => {
           error_code: error.code,
           error_message: error.message
         });
-        alert(getErrorMessage(error));
-        console.error("Sign up error:", error);
-        
-        // Reset form fields and focus to ensure they're usable after error
-        const emailField = document.getElementById("signUpEmail");
-        const passwordField = document.getElementById("signUpPassword");
-        passwordField.value = "";  // Clear password on error
-        emailField.focus();  // Return focus to the email field
+        showErrorModal(getErrorMessage(error));
       });
   });
   
@@ -455,7 +385,7 @@ signInForm.addEventListener("submit", (e) => {
         document.getElementById("resetEmail").value = "";
         hideSpinner();
         logAnalyticsEvent('password_reset_email_sent');
-        alert("Password reset email sent. Check your inbox.");
+        showSuccessModal("Password reset email sent. Check your inbox.");
         resetView.classList.add("hidden");
         signInView.classList.remove("hidden");
       })
@@ -465,12 +395,7 @@ signInForm.addEventListener("submit", (e) => {
           error_code: error.code,
           error_message: error.message
         });
-        alert(getErrorMessage(error));
-        console.error("Password reset error:", error);
-        
-        // Reset form field and focus to ensure it's usable after error
-        const emailField = document.getElementById("resetEmail");
-        emailField.focus();  // Return focus to the email field
+        showErrorModal(getErrorMessage(error));
       });
   });
   
@@ -535,7 +460,7 @@ signInForm.addEventListener("submit", (e) => {
     } catch (error) {
       console.error('Error during logout:', error);
       hideSpinner();
-      alert(`Error signing out: ${error.message}`);
+      showErrorModal(`Error signing out: ${error.message}`);
     }
   }
 

@@ -10,6 +10,7 @@ const { requestAudioPermission, requestKeystrokesPermission, requestWindowsPermi
 const { refreshAuthToken } = require('./auth.js');
 const os = require('os');
 const packageInfo = require('../package.json');
+const { showErrorModal } = require('./modal.js');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -381,7 +382,7 @@ async function saveUserSettings(type, value) {
       error_message: error.message
     });
     console.error("Error saving settings:", error);
-    alert(`Error saving settings: ${error.message}`);
+    showErrorModal(`Error saving settings: ${error.message}`);
     throw error; // Re-throw error so UI can react (e.g., revert input)
   } finally {
     // Hide spinner

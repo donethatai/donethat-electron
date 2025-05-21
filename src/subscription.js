@@ -3,6 +3,7 @@ const { getFunctions, httpsCallable } = require("firebase/functions");
 const { getAuth } = require("firebase/auth");
 const firebaseConfig = require("../firebase-config.js");
 const { logAnalyticsEvent } = require('./analytics.js');
+const { showErrorModal } = require('./modal.js');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -104,7 +105,7 @@ function subscriptionInitialize(onSettingsUpdate, showBlockingSpinner, hideBlock
       } catch (error) {
         console.error('Error in subscription action button handler:', error);
         hideSpinner();
-        alert(`Failed to open billing portal: ${error.message}`);
+        showErrorModal(`Failed to open billing portal: ${error.message}`);
         
         // Log error in billing portal access
         logAnalyticsEvent('billing_portal_opened', {
