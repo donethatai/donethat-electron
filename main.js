@@ -166,7 +166,7 @@ function setupAutoUpdater() {
         
         notification.on('click', () => {
           log.info('Update notification clicked, installing update');
-          autoUpdater.quitAndInstall(true, true);
+          autoUpdater.quitAndInstall(false, true);
         });
         
         notification.show();
@@ -177,7 +177,7 @@ function setupAutoUpdater() {
           // Check if we're still running the old version
           if (app.getVersion() === currentVersion) {
             log.info('Update not installed after 30 minutes, forcing silent update');
-            autoUpdater.quitAndInstall(true, true);
+            autoUpdater.quitAndInstall(false, true);
           }
         }, 30 * 60 * 1000); // 30 minutes
       } else if (process.platform === 'linux') {
