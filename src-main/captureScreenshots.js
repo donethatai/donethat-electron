@@ -7,6 +7,15 @@ const log = require('electron-log')
 let linuxScreenshotTool = null
 let isWaylandSession = null
 
+// Store the last captured screenshots for next upload
+let lastScreenshots = null
+let lastScreenshotTimestamp = null
+
+// Scale factor for previous screenshot (25% = 0.25)
+const PREVIOUS_SCREENSHOT_SCALE_FACTOR = 0.25
+// Maximum age factor for previous screenshot (1.5x the capture interval)
+const PREVIOUS_SCREENSHOT_MAX_AGE_FACTOR = 1.5
+
 ///// UTILITIES /////
 
 // Wayland vs X11 for linux
@@ -15,6 +24,76 @@ function _checkSessionType() {
   isWaylandSession = process.env.XDG_SESSION_TYPE === 'wayland'
   return isWaylandSession
 }
+
+// Function to scale down a screenshot to the configured scale factor
+function scaleScreenshotToPreviousSize(dataUrl) {
+  try {
+    // Convert data URL to buffer
+    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+    const buffer = Buffer.from(base64Data, 'base64')
+    
+    // Create native image from buffer
+    let img = nativeImage.createFromBuffer(buffer)
+    
+    // Get original dimensions
+    const { width, height } = img.getSize()
+    
+    // Calculate scaled dimensions using the constant
+    const newWidth = Math.round(width * PREVIOUS_SCREENSHOT_SCALE_FACTOR)
+    const newHeight = Math.round(height * PREVIOUS_SCREENSHOT_SCALE_FACTOR)
+    
+    // Resize image to the configured scale factor
+    const scaledImg = img.resize({ width: newWidth, height: newHeight })
+    
+    // Convert to JPEG with 70% quality (consistent with processScreenshotForUpload)
+    const jpegBuffer = scaledImg.toJPEG(70)
+    
+    // Convert back to data URL
+    return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`
+  } catch (error) {
+    log.error(`Error scaling screenshot to ${PREVIOUS_SCREENSHOT_SCALE_FACTOR * 100}%:`, error)
+    // Return original as fallback
+    return dataUrl
+  }
+}
+
+// Function to get the previous screenshots scaled down to the configured scale factor
+// Only returns them if they're less than 1.5x the capture interval old
+function getPreviousScreenshots(captureIntervalMinutes = null) {
+  if (!lastScreenshots || !lastScreenshotTimestamp || !captureIntervalMinutes) {
+    return null
+  }
+  
+  const now = Date.now()
+  const screenshotAge = now - lastScreenshotTimestamp
+  const maxAge = captureIntervalMinutes * 60 * 1000 * PREVIOUS_SCREENSHOT_MAX_AGE_FACTOR
+  
+  // Only return the previous screenshots if they're not too old
+  if (screenshotAge < maxAge) {
+    // Return object with timestamp and scaled screenshots
+    return {
+      timestamp: lastScreenshotTimestamp,
+      scale: PREVIOUS_SCREENSHOT_SCALE_FACTOR,
+      images: lastScreenshots.map((screenshot, index) => ({
+        base64Data: scaleScreenshotToPreviousSize(screenshot),
+        index
+      }))
+    }
+  }
+  
+  return null
+}
+
+// Function to save the current screenshots for next upload
+function saveCurrentScreenshot(screenshots) {
+  if (screenshots && screenshots.length > 0) {
+    // Save all screenshots
+    lastScreenshots = screenshots
+    lastScreenshotTimestamp = Date.now()
+  }
+}
+
+
 
 // Function to check screen capture permission
 async function checkScreenCapturePermission() {
@@ -160,6 +239,9 @@ async function captureScreenshot() {
       log.warn('No screenshots captured');
       return [];
     }
+
+    // Save the current screenshot for next upload
+    saveCurrentScreenshot(screenshots);
 
     return screenshots;
   } catch (error) {
@@ -385,5 +467,8 @@ async function processScreenshotForUpload(dataUrl) {
 module.exports = {
   captureScreenshot,
   checkScreenCapturePermission,
-  getWaylandStatus: () => isWaylandSession
+  getWaylandStatus: () => isWaylandSession,
+  getPreviousScreenshots,
+  saveCurrentScreenshot,
+  PREVIOUS_SCREENSHOT_SCALE_FACTOR
 } 

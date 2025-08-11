@@ -1,5 +1,5 @@
 const log = require('electron-log');
-const { captureScreenshot } = require('./captureScreenshots');
+const { captureScreenshot, getPreviousScreenshots } = require('./captureScreenshots');
 const { ipcMain } = require('electron');
 
 // Firebase URL constant
@@ -625,11 +625,19 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
   try {
     const fetch = await import('node-fetch').then(module => module.default);
     
+    // Get the previous screenshots scaled down to the configured scale factor
+    const previousScreenshotData = getPreviousScreenshots(captureIntervalMinutes);
+    
     // Create payload with screenshots and timestamp
     const payload = {
       timestamp: Date.now(),
       screenshots: screenshots
     };
+    
+    // Add previous screenshot data if available
+    if (previousScreenshotData) {
+      payload.previousScreenshotData = previousScreenshotData;
+    }
     
     // Add input data if provided
     if (inputData) {
