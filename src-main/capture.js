@@ -54,7 +54,7 @@ function setCaptureInterval(minutes) {
 }
 
 /**
- * Helper function to start audio recording
+ * Helper function to start audio tracking
  * @returns {Promise<boolean>} Success status
  */
 async function _startAudioTracking() {
@@ -69,26 +69,22 @@ async function _startAudioTracking() {
       );
       return false;
     }
-    
-    const recordingStarted = await audioCapture.startRecording();
-    if (!recordingStarted) {
-      const error = new Error('Audio recording permission denied or failed to start');
-      log.warn(error.message);
-      
-      // Use handleCaptureError with specific audio error
+    // Ensure microphone permission is granted
+    const hasPermission = await audioCapture.checkPermission();
+    if (!hasPermission) {
       handleCaptureError(
-        error, 
-        'audio-permission', 
+        new Error('Microphone permission not granted'),
+        'audio-permission',
         { audio: true },
-        false // Don't stop capturing, just disable this feature
+        false
       );
-      
       return false;
     }
-    
+    // Session detection will handle recording start/stop automatically
     return true;
+    
   } catch (error) {
-    log.error('Error starting audio recording:', error);
+    log.error('Error starting audio tracking:', error);
     
     // Use handleCaptureError with specific audio error
     handleCaptureError(
@@ -267,6 +263,16 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
   // Handler for updating input data settings
   ipcMain.on('updateInputDataSettings', (event, settings) => {
     updateInputDataSettings(settings);
+  });
+
+  // Handler for getting audio capture status
+  ipcMain.handle('getAudioCaptureStatus', async (event) => {
+    try {
+      return audioCapture.getStatus();
+    } catch (error) {
+      log.error('Error getting audio capture status:', error);
+      return { error: error.message };
+    }
   });
 
   // Add other capture-related IPC handlers here as needed

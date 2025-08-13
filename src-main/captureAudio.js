@@ -1,10 +1,20 @@
 const log = require('electron-log')
 const { ipcMain } = require('electron')
 const voiceToText = require('./voiceToText')
+const audioSessionDetector = require('./audioSessionDetector')
 
 // Variables to track audio capture
 let isRecording = false
 let mainWindow = null
+
+// Periodic check and low audio detection
+let periodicCheckInterval = null
+let isPausedForCheck = false
+const PERIODIC_CHECK_INTERVAL_MS = 15000
+const TRANSCRIPTION_INTERVAL_MS = 10000
+
+// Periodic transcription ticker
+let transcriptionInterval = null
 
 /**
  * Initialize audio capture module
@@ -30,10 +40,9 @@ function initialize(window, config = {}) {
   });
   
   // Listen for audio device changes from renderer
-  ipcMain.on('audio-device-changed', (event, info) => {
-    log.info('Audio device change detected:', info);
-    // No need to do anything here - renderer handles the restart
-  });
+  ipcMain.on('audio-device-changed', (event, info) => {});
+  
+  // Low-audio IPC not needed; periodic checks suffice
   
   // Initialize the renderer-side audio recorder with configuration
   mainWindow.webContents.executeJavaScript(
@@ -44,6 +53,289 @@ function initialize(window, config = {}) {
     log.error('Error initializing audio recorder in renderer:', error);
     throw error; // Re-throw to propagate the error
   });
+  
+  // Initialize session detection
+  initializeSessionDetection(config);
+}
+
+/**
+ * Initialize audio session detection
+ * @param {Object} config Configuration
+ */
+function initializeSessionDetection(config) {
+  try {
+    // Initialize the session detector
+    audioSessionDetector.initialize({ checkIntervalMs: 1000 });
+    
+    // Set up callbacks
+    audioSessionDetector.onSessionStart(async (deviceId) => {
+      
+      // Check permission before starting recording
+      const hasPermission = await checkPermission();
+      if (!hasPermission) {
+        return;
+      }
+      
+      startRecordingInternal().catch(error => {
+        log.error('Failed to start recording after session detection:', error);
+      });
+    });
+    
+    // Low audio detection removed (periodic checks suffice)
+    
+    // Lightweight periodic permission check during recording (less frequent)
+    setInterval(async () => {
+      if (!isRecording) return;
+      const hasPermission = await checkPermission();
+      if (!hasPermission) {
+        log.warn('Microphone permission revoked during recording, stopping');
+        stopRecordingInternal().catch(error => {
+          log.error('Failed to stop recording after permission loss:', error);
+        });
+      }
+    }, 30000);
+    
+    audioSessionDetector.onSessionEnd(() => {
+      stopRecordingInternal().catch(error => {
+        log.error('Failed to stop recording after session detection:', error);
+      });
+    });
+    
+    audioSessionDetector.onDeviceSwitch((deviceInfo) => {
+      handleDeviceSwitch(deviceInfo).catch(error => {
+        log.error('Failed to handle device switch:', error);
+      });
+    });
+    
+    
+  } catch (error) {
+    log.error('Failed to initialize audio session detection:', error);
+    // Continue without session detection - manual recording will still work
+  }
+}
+
+/**
+ * Start periodic checks for microphone usage
+ */
+function startPeriodicChecks() {
+  if (periodicCheckInterval) {
+    clearInterval(periodicCheckInterval);
+  }
+  
+  periodicCheckInterval = setInterval(async () => {
+    if (isRecording && !isPausedForCheck) {
+      
+      await performPeriodicCheck();
+    }
+  }, PERIODIC_CHECK_INTERVAL_MS);
+  
+  
+}
+
+/**
+ * Stop periodic checks
+ */
+function stopPeriodicChecks() {
+  if (periodicCheckInterval) {
+    clearInterval(periodicCheckInterval);
+    periodicCheckInterval = null;
+  }
+  
+  
+  
+}
+
+/**
+ * Perform periodic check - pause recording briefly to check if others are still using mic
+ */
+async function performPeriodicCheck() {
+  if (isPausedForCheck) return;
+  
+  try {
+    isPausedForCheck = true;
+    
+    // Pause recording
+    await pauseRecording();
+    
+    // Wait a moment for CoreAudio/WebAudio state to settle
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    
+    // Check if other apps are still using the microphone
+    const isOtherAppUsingMic = await checkIfOtherAppUsingMic();
+    
+    if (isOtherAppUsingMic) {
+      
+      await resumeRecording();
+    } else {
+      
+      await stopRecordingInternal();
+    }
+    
+  } catch (error) {
+    log.error('Error during periodic check:', error);
+    // Resume recording on error to be safe
+    try {
+      await resumeRecording();
+    } catch (resumeError) {
+      log.error('Failed to resume recording after periodic check error:', resumeError);
+    }
+  } finally {
+    isPausedForCheck = false;
+  }
+}
+
+/**
+ * Perform check when low audio is detected
+ */
+async function performLowAudioCheck() {
+  if (isPausedForCheck) return;
+  
+  try {
+    isPausedForCheck = true;
+    
+    // Pause recording
+    await pauseRecording();
+    
+    // Wait a moment for CoreAudio/WebAudio state to settle
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    
+    // Check if other apps are still using the microphone
+    const isOtherAppUsingMic = await checkIfOtherAppUsingMic();
+    
+    if (isOtherAppUsingMic) {
+      
+      await resumeRecording();
+    } else {
+      
+      await stopRecordingInternal();
+    }
+    
+  } catch (error) {
+    log.error('Error during low audio check:', error);
+    // Resume recording on error to be safe
+    try {
+      await resumeRecording();
+    } catch (resumeError) {
+      log.error('Failed to resume recording after low audio check error:', resumeError);
+    }
+  } finally {
+    isPausedForCheck = false;
+  }
+}
+
+/**
+ * Check if other apps are using the microphone
+ * @returns {Promise<boolean>} True if other apps are using mic
+ */
+async function checkIfOtherAppUsingMic() {
+  try {
+    // Use the session detector to check for microphone usage
+    const result = await audioSessionDetector.detectMicrophoneUsage();
+    return result && result.isActive;
+  } catch (error) {
+    log.error('Error checking if other apps using mic:', error);
+    return false; // Assume no usage on error
+  }
+}
+
+/**
+ * Pause recording temporarily
+ */
+async function pauseRecording() {
+  if (!isRecording || !mainWindow) return;
+  
+  try {
+    await mainWindow.webContents.executeJavaScript(`
+      if (window.shutdownAudioRecording) {
+        window.shutdownAudioRecording();
+      } else if (window.audioRecorder && window.audioRecorder.pause) {
+        window.audioRecorder.pause();
+      }
+    `);
+    
+  } catch (error) {
+    log.error('Error stopping recording for check:', error);
+  }
+}
+
+/**
+ * Resume recording
+ */
+async function resumeRecording() {
+  if (!isRecording || !mainWindow) return;
+  
+  try {
+    await mainWindow.webContents.executeJavaScript(`
+      if (window.startAudioRecording) {
+        window.startAudioRecording();
+      } else if (window.audioRecorder && window.audioRecorder.resume) {
+        window.audioRecorder.resume();
+      }
+    `);
+    
+  } catch (error) {
+    log.error('Error resuming recording:', error);
+  }
+}
+
+/**
+ * Check for low audio levels and trigger check if needed
+ * @param {number} audioLevel Current audio level (0-1)
+ */
+function checkLowAudioLevel(audioLevel) {
+  if (!isRecording || isPausedForCheck) return;
+  
+  lastAudioLevel = audioLevel;
+  
+  if (audioLevel < LOW_AUDIO_THRESHOLD) {
+    if (!lowAudioStartTime) {
+      lowAudioStartTime = Date.now();
+      
+    } else {
+      const duration = Date.now() - lowAudioStartTime;
+      if (duration >= LOW_AUDIO_DURATION_MS) {
+        
+        performLowAudioCheck().catch(error => {
+          log.error('Error during low audio check:', error);
+        });
+        lowAudioStartTime = null;
+      }
+    }
+  } else {
+    // Reset low audio timer if audio level is normal
+    lowAudioStartTime = null;
+  }
+}
+
+/**
+ * Handle audio device switching
+ * @param {Object} deviceInfo Device switch information
+ */
+async function handleDeviceSwitch(deviceInfo) {
+  if (isRecording) {
+    
+    
+    try {
+      // Stop current recording
+      await stopRecordingInternal();
+      
+      // Wait for device switch to complete
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Start recording on new device
+      await startRecordingInternal();
+      
+      
+    } catch (error) {
+      log.error('Error during audio device switch:', error);
+      // Try to restart recording even if switch failed
+      try {
+        await startRecordingInternal();
+      } catch (restartError) {
+        log.error('Failed to restart recording after device switch:', restartError);
+      }
+    }
+  }
 }
 
 /**
@@ -104,16 +396,16 @@ async function checkPermission() {
 }
 
 /**
- * Start continuous recording
+ * Internal function to start recording (used by session detection)
  * @returns {Promise<boolean>} Success status
  */
-async function startRecording() {
+async function startRecordingInternal() {
   if (isRecording) {
     return true;
   }
   
-  if (!mainWindow) {
-    log.error('Cannot start audio recording: main window not initialized');
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    log.error('Cannot start audio recording: main window not available');
     return false;
   }
   
@@ -130,6 +422,20 @@ async function startRecording() {
     
     // Update recording state
     isRecording = true;
+    // Start periodic transcription pulls to ensure processing
+    if (transcriptionInterval) clearInterval(transcriptionInterval)
+    transcriptionInterval = setInterval(async () => {
+      try {
+        if (!isRecording || !mainWindow) return;
+        const audioData = await mainWindow.webContents.executeJavaScript('window.stopAudioRecording && window.stopAudioRecording();')
+        if (audioData) {
+          await processAudioFromRenderer(audioData)
+        }
+      } catch (e) {}
+    }, TRANSCRIPTION_INTERVAL_MS)
+    
+    // Start periodic checks when recording starts
+    startPeriodicChecks();
     
     return true;
   } catch (error) {
@@ -139,12 +445,55 @@ async function startRecording() {
 }
 
 /**
+ * Internal function to stop recording (used by session detection)
+ * @returns {Promise<boolean>} Success status
+ */
+async function stopRecordingInternal() {
+  if (!isRecording) {
+    return true;
+  }
+  
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      
+      isRecording = false;
+      return true;
+    }
+    
+    // Ask renderer to completely stop recording
+    await mainWindow.webContents.executeJavaScript(
+      'window.shutdownAudioRecording && window.shutdownAudioRecording();'
+    );
+    
+    isRecording = false;
+    if (transcriptionInterval) { clearInterval(transcriptionInterval); transcriptionInterval = null }
+    
+    // Stop periodic checks when recording stops
+    stopPeriodicChecks();
+    
+    return true;
+  } catch (error) {
+    log.error('Error stopping audio recording:', error);
+    isRecording = false;
+    return false;
+  }
+}
+
+/**
+ * Start continuous recording
+ * @returns {Promise<boolean>} Success status
+ */
+async function startRecording() {
+  return await startRecordingInternal();
+}
+
+/**
  * Get current buffer without stopping recording
  * @returns {Promise<{filePath: string, duration: number} | null>} Recording info
  */
 async function stopRecording() {
   if (!isRecording) {
-    log.warn('No audio recording in progress');
+    
     return null;
   }
   
@@ -160,7 +509,7 @@ async function stopRecording() {
     );
     
     if (!audioData) {
-      log.warn('No audio data received from renderer');
+      
       return null;
     }
     
@@ -168,7 +517,7 @@ async function stopRecording() {
     const audioResult = audioData ? await processAudioFromRenderer(audioData) : null;
     
     if (!audioResult) {
-      log.warn('Failed to process audio data from renderer');
+      
       return null;
     }    
     // Return recording information
@@ -187,27 +536,22 @@ async function stopRecording() {
  * @returns {Promise<boolean>} Success status
  */
 async function shutdownRecording() {
-  if (!isRecording) {
-    return true;
-  }
-  
   try {
-    if (!mainWindow) {
-      log.warn('Cannot shut down recording: main window not initialized');
-      isRecording = false;
-      return true;
+    // Stop recording if active
+    if (isRecording) {
+      await stopRecordingInternal();
     }
     
-    // Ask renderer to completely stop recording
-    await mainWindow.webContents.executeJavaScript(
-      'window.shutdownAudioRecording && window.shutdownAudioRecording();'
-    );
+    // Stop periodic checks
+    stopPeriodicChecks();
     
-    isRecording = false;
+    // Shutdown session detection
+    audioSessionDetector.shutdown();
+    
+    
     return true;
   } catch (error) {
-    log.error('Error shutting down audio recording:', error);
-    isRecording = false;
+    log.error('Error during audio capture shutdown:', error);
     return false;
   }
 }
@@ -219,7 +563,8 @@ async function shutdownRecording() {
 function getStatus() {
   return {
     recording: isRecording,
-    voiceToTextAvailable: voiceToText.getStatus().available
+    voiceToTextAvailable: voiceToText.getStatus().available,
+    sessionDetection: audioSessionDetector.getStatus()
   };
 }
 
@@ -230,4 +575,5 @@ module.exports = {
   stopRecording,
   shutdownRecording,
   getStatus,
+  checkLowAudioLevel, // Export for external audio level monitoring
 } 

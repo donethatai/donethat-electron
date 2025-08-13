@@ -12,7 +12,7 @@ let MAX_BUFFER_DURATION_MS;
  */
 function getBestSupportedMimeType() {
   // Use WebM format directly since we're using temp files
-  console.log('Using WebM format with temp file processing');
+  
   return 'audio/webm;codecs=opus';
 }
 
@@ -94,6 +94,7 @@ window.startAudioRecording = async function() {
     mediaRecorder.onerror = (event) => {
       console.error('MediaRecorder error:', event.error);
     };
+    
     
     mediaRecorder.start(1000);
     recordingStartTime = Date.now();

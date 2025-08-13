@@ -4,9 +4,12 @@
   "description": "DoneThat",
   "main": "main.js",
   "scripts": {
+    "predev": "node scripts/postinstall-macos-micstatus.js",
     "build:css": "postcss styles.css -o ./build/output.css --verbose",
     "build:webpack": "webpack --config webpack.config.js",
+    "prebuild:prepare": "node scripts/postinstall-macos-micstatus.js",
     "build:prepare": "npm run build:css && npm run build:webpack",
+    "postinstall": "node scripts/postinstall-macos-micstatus.js || electron-builder install-app-deps",
     "dev": "npm run build:prepare && electron .",
     "build": "npm run build:prepare && electron-builder",
     "build:mac:x64": "npm run build:prepare && electron-builder --mac --x64",
@@ -72,6 +75,7 @@
     "node-global-key-listener": "^0.3.0",
     "tailwindcss": "^4.1.7"
   },
+  
   "build": {
     "appId": "com.donethat.app",
     "productName": "DoneThat",
@@ -83,6 +87,7 @@
       "main.js",
       "firebase-config.js",
       "src/**/*",
+      "bin/**/*",
       "build/**/*",
       "resources/**/*",
       "src-main/**/*",

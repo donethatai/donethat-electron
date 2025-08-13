@@ -111,14 +111,44 @@ async function transcribeAudioBuffer(audioBuffer) {
     
     // 3. Use Whisper pipeline with the converted Float32Array
     const result = await pipeline(audioData, {
-      chunk_length_s: 30,
-      stride_length_s: 5,
-      return_timestamps: false
+      // Shorter chunks reduce repetition across boundaries
+      chunk_length_s: 20,
+      stride_length_s: 2.5,
+      return_timestamps: false,
+      // Anti-repetition/quality controls
+      condition_on_previous_text: false,
+      temperature: 0.0,
+      compression_ratio_threshold: 2.4,
+      logprob_threshold: -1.0,
+      no_speech_threshold: 0.6
     })
     
-    const transcription = result.text.trim()
+    let transcription = result.text.trim()
+
+    // Lightweight de-duplication of immediate repeated segments
+    // (handles edge cases where the same phrase is emitted multiple times)
+    if (transcription.length > 0) {
+      const parts = transcription.split(/([.!?]\s+|\n+)/)
+      const cleaned = []
+      for (let i = 0; i < parts.length; i++) {
+        const seg = parts[i]
+        if (seg && seg.trim().length > 0) {
+          const last = cleaned[cleaned.length - 1]
+          if (!last || last.trim().toLowerCase() !== seg.trim().toLowerCase()) {
+            cleaned.push(seg)
+          }
+        } else if (seg) {
+          // keep delimiters
+          cleaned.push(seg)
+        }
+      }
+      transcription = cleaned.join("")
+    }
+
+    // Additional de-duplication for repeated word- and phrase-loops
+    transcription = removeRepetitions(transcription)
     
-    log.info('Transcription result:', transcription)
+    console.log('Transcript:', transcription)
     
     return transcription || 'No speech detected'
 
@@ -157,4 +187,26 @@ module.exports = {
   transcribeAudioBuffer,
   isAvailable,
   getStatus
+}
+
+// --- helpers ---
+function normalizeWhitespace(text) {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function removeRepetitions(text) {
+  if (!text) return text
+  let t = normalizeWhitespace(text)
+
+  // 1) Remove exact 2-gram loops like: "hello hello hello"
+  t = t.replace(/\b(\w+)(?:\s+\1){2,}\b/gi, (m, w) => w)
+
+  // 2) Remove short phrase loops up to ~6 words: "let's go there let's go there let's go there"
+  // Capture a phrase of 2-6 words and collapse consecutive repeats
+  t = t.replace(/\b((?:\w+[\s,;:]+){1,5}\w+)\b(?:[\s,;:]+\1\b){1,}\.?/gi, '$1')
+
+  // 3) Collapse triple-or-more sentence repeats separated by punctuation or newlines
+  t = t.replace(/(\b[^.!?\n]{3,}\b)(?:[\s]*[.!?\n]+\s*\1){1,}/gi, '$1')
+
+  return t
 }
