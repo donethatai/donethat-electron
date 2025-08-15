@@ -30,6 +30,20 @@ if (!gotTheLock) {
 
 // Set up second-instance handler
 app.on('second-instance', (event, commandLine, workingDirectory) => {
+  // Check if the app was launched with a URL (for Google SSO)
+  const url = commandLine.find(arg => arg.startsWith('donethat://'));
+  if (url) {
+    try {
+      const urlObj = new URL(url);
+      const token = urlObj.searchParams.get('token');
+      if (token && mainWindow) {
+        mainWindow.webContents.send('firebase-custom-token', token);
+      }
+    } catch (error) {
+      log.error('Error parsing URL in second-instance:', error);
+    }
+  }
+
   // Instead of showing a dialog, bring the existing window to foreground
   if (mainWindow) {
     // If window exists but is hidden, show it
@@ -254,6 +268,21 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
 
+// Add IPC handler for custom token
+ipcMain.on('firebase-custom-token', (event, token) => {
+  if (mainWindow) {
+    mainWindow.webContents.send('firebase-custom-token', token);
+  }
+});
+
+// Add IPC handler to focus app window
+ipcMain.on('focus-app-window', (event) => {
+  if (mainWindow) {
+    mainWindow.focus();
+    mainWindow.show();
+  }
+});
+
 ////// AUTOSTART /////
 
 // Fix autostart implementation with platform-specific logic
@@ -293,6 +322,15 @@ function setupAutoStart() {
 ////// MAIN /////
 
 app.whenReady().then(async () => {
+  // Register custom URL scheme for Google SSO
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('donethat', process.execPath, [path.resolve(process.argv[1])])
+    }
+  } else {
+    app.setAsDefaultProtocolClient('donethat')
+  }
+
   // Initialize the state manager with necessary callbacks
   stateManager = await initState({
     checkRecording: checkAndAdjustRecording, // for pause state changes
@@ -382,6 +420,31 @@ app.whenReady().then(async () => {
 
   // Add daily auth check
   scheduleDailyAuthCheck();
+
+  // Handle custom URL scheme for Google SSO
+  app.on('open-url', (event, urlString) => {
+    event.preventDefault();
+    const url = new URL(urlString);
+    const token = url.searchParams.get('token');
+    if (token && mainWindow) {
+      // Send the token to the window so it can sign in
+      mainWindow.webContents.send('firebase-custom-token', token);
+    }
+  });
+
+  // Handle URL when app is launched with URL (all platforms)
+  const url = process.argv.find(arg => arg.startsWith('donethat://'));
+  if (url) {
+    try {
+      const urlObj = new URL(url);
+      const token = urlObj.searchParams.get('token');
+      if (token && mainWindow) {
+        mainWindow.webContents.send('firebase-custom-token', token);
+      }
+    } catch (error) {
+      log.error('Error parsing URL in app launch:', error);
+    }
+  }
 })
 
 ////// OVERLAY IPC //////

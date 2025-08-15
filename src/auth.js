@@ -4,7 +4,8 @@ const {
     sendPasswordResetEmail,
     onAuthStateChanged,
     signOut,
-    sendEmailVerification
+    sendEmailVerification,
+    signInWithCustomToken
   } = require("firebase/auth");
 
 const { ipcRenderer } = require("electron");
@@ -20,6 +21,7 @@ const { showErrorModal, showSuccessModal, showPersistentErrorModal, hideModal } 
 const signInForm = document.getElementById("signInForm");
 const signUpForm = document.getElementById("signUpForm");
 const resetForm = document.getElementById("resetForm");
+const googleSignInBtn = document.getElementById("googleSignInBtn");
 
 const showSignUp = document.getElementById("showSignUp");
 const backToSignIn = document.getElementById("backToSignIn");
@@ -418,6 +420,63 @@ signInForm.addEventListener("submit", (e) => {
   showResetPassword.addEventListener("click", (e) => {
     e.preventDefault();
     navigateToView('reset');
+  });
+
+  // Handle Google Sign In/Up (single button for both)
+  googleSignInBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    
+    try {
+      // Call the Firebase function to start Google Sign In
+      const { httpsCallable } = require('firebase/functions');
+      const { functions } = require('./firebase.js');
+      
+      const googleSignInStart = httpsCallable(functions, 'authGoogleSignInStart');
+      
+      googleSignInStart()
+        .then((result) => {
+          // The function should return a URL to open
+          const url = result.data?.authUrl || result.data?.url || result.data?.data?.url;
+          if (url) {
+            // Open the URL in the default browser
+            const { shell } = require('electron');
+            shell.openExternal(url);
+          } else {
+            console.error('No URL found in result:', JSON.stringify(result.data, null, 2));
+            showErrorModal('No URL returned from Google Sign In function.');
+          }
+        })
+        .catch((error) => {
+          console.error('Google Sign In error:', error);
+          logAnalyticsEvent('google_sign_in_error', {
+            error_code: error.code,
+            error_message: error.message
+          });
+          showErrorModal(`Failed to start Google Sign In: ${error.message}`);
+        });
+    } catch (error) {
+      console.error('Google Sign In setup error:', error);
+      showErrorModal(`Failed to setup Google Sign In: ${error.message}`);
+    }
+  });
+
+  // Handle custom token from main process
+  ipcRenderer.on('firebase-custom-token', (event, token) => {
+    // Request main process to focus the window
+    ipcRenderer.send('focus-app-window');
+    
+    signInWithCustomToken(auth, token)
+      .then((userCredential) => {
+        logAnalyticsEvent('google_sign_in_success');
+      })
+      .catch((error) => {
+        logAnalyticsEvent('google_sign_in_token_error', {
+          error_code: error.code,
+          error_message: error.message
+        });
+        showErrorModal('Failed to complete Google Sign In. Please try again.');
+        console.error("Firebase custom token sign-in error:", error);
+      });
   });
   
   // Toggle to go back to the sign-in view from the password reset view

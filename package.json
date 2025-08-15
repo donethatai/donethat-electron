@@ -83,6 +83,12 @@
     "icon": "resources/icon_inverse.png",
     "artifactName": "${productName}-${arch}.${ext}",
     "generateUpdatesFilesForAllChannels": true,
+    "protocols": [
+      {
+        "name": "DoneThat Protocol",
+        "schemes": ["donethat"]
+      }
+    ],
     "files": [
       "main.js",
       "firebase-config.js",
