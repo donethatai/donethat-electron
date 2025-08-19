@@ -84,7 +84,11 @@
 
 /* Common view container */
 .view-container {
-  @apply h-full w-full items-start justify-center pt-0;
+  @apply w-full items-start justify-center pt-0;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* Form container */
@@ -566,15 +570,17 @@
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 .auth-card {
   background: #fff;
   border: 1px solid #f3f4f6;
   border-radius: 14px;
-  padding: 28px 28px 48px 28px;
+  padding: 28px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.06);
-  margin-bottom: 72px; /* whitespace below tile */
+  margin-bottom: 24px; /* modest whitespace below tile */
 }
 
 .auth-legal {
@@ -584,11 +590,19 @@
   text-align: center;
 }
 
+/* Layout: top bar + fill remainder with dashboard */
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
 /* Dashboard shell layout for embedded portal */
 .dashboard-shell {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
 }
 
@@ -704,14 +718,15 @@
 
 .dashboard-embed {
   flex: 1 1 auto;
-  /* approx 90% height is achieved by flex layout with small topbar */
   min-height: 0; /* required so iframe can flex properly */
+  display: flex;
 }
 
 .portal-frame {
   width: 100%;
   height: 100%;
   border: none;
+  flex: 1 1 auto;
 }
 
 .linux-permission-help {
@@ -806,13 +821,18 @@
 .toggle input:disabled:checked + .slider { background-color: var(--color-primary); }
 .toggle input:disabled + .slider:before { background-color: #f3f4f6; border: 0; }
 
-/* Settings view scrolling */
+/* Settings view scrolling + proper sizing under topbar */
 #settingsView {
-  height: 100vh;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 #settingsView .auth-page {
   min-height: auto;
   justify-content: flex-start;
-  padding-bottom: 48px;
+  padding-top: 24px;
+  padding-bottom: 24px;
+  width: 100%;
 }

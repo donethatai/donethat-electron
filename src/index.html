@@ -31,14 +31,14 @@
     <!-- Custom styles -->
     <link href="styles.css" rel="stylesheet" />
   </head>
-  <body class="bg-white h-full w-full overflow-hidden">
+  <body class="bg-white h-full w-full overflow-hidden" style="height:100vh;display:flex;flex-direction:column;">
     <!-- Global Top Bar (visible on all views except auth screens) -->
     <div id="appTopbar" class="dashboard-topbar hidden">
       <div class="topbar-left">
-        <button id="openSettingsViewBtn" class="btn-secondary topbar-btn" title="Recording Settings">Recording Settings</button>
+        <button id="openSettingsViewBtn" class="btn-secondary topbar-btn" title="Permissions">Permissions</button>
       </div>
       <div class="topbar-actions">
-        <button id="openChatBtn" class="btn-secondary topbar-btn">Open Chat</button>
+        <button id="openChatBtn" class="btn-secondary topbar-btn">Chat</button>
         <button id="generateSummaryBtn" class="btn-primary topbar-btn">Generate Summary</button>
         <button id="submitSummaryBtn" class="btn-primary topbar-btn hidden">Done That</button>
         <div class="recording-control">

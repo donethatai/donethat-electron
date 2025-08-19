@@ -42,7 +42,7 @@ function updateSettingsToggleLabelGlobal() {
     if (!settingsToggleBtn) return;
     const v = getCurrentView();
     if (v === 'settings') settingsToggleBtn.textContent = 'Dashboard';
-    else settingsToggleBtn.textContent = 'Recording Settings';
+    else settingsToggleBtn.textContent = 'Permissions';
   } catch (_) {}
 }
 
@@ -285,10 +285,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (openChatBtn) {
     try {
       const isMac = process.platform === 'darwin';
-      openChatBtn.textContent = `Open Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
+      openChatBtn.textContent = `Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
     } catch (e) {}
     openChatBtn.addEventListener('click', () => {
-      try { ipcRenderer.send('overlay:show'); } catch (e) {}
+      try { ipcRenderer.send('overlay:toggle'); } catch (e) {}
     });
   }
   if (openSettingsViewBtn) {
