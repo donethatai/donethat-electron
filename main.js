@@ -67,11 +67,8 @@ app.on('second-instance', (event, commandLine, workingDirectory) => {
 // Handle macOS reactivation (when user clicks dock icon or reopens app)
 app.on('activate', () => {
   log.info('App activated');
-  // Show the tray menu on reactivation if tray exists
-  if (tray) {
-    const contextMenu = buildContextMenu();
-    tray.popUpContextMenu(contextMenu);
-  }
+  // Open dashboard instead of showing tray dropdown
+  try { navigateToView('dashboard') } catch (e) {}
 });
 
 // To show dev tools next to main window
@@ -95,6 +92,11 @@ let tray = null
 let mainWindow = null
 let overlayWindow = null
 let screenshotInterval = null
+// Persist overlay position
+let overlayStore = null
+let savedOverlayPosition = null
+let saveOverlayPositionDebounce = null
+let overlayPositionUserSet = false
 
 if (DEBUG) {
   // Add custom notification transport for warnings and errors
@@ -340,6 +342,15 @@ function setupAutoStart() {
 ////// MAIN /////
 
 app.whenReady().then(async () => {
+  // Lazy-load electron-store for overlay position persistence
+  try {
+    const { default: Store } = await import('electron-store');
+    overlayStore = new Store({ name: 'donethat-config' });
+    try {
+      savedOverlayPosition = overlayStore.get('overlayPosition') || null;
+      overlayPositionUserSet = !!savedOverlayPosition;
+    } catch (e) {}
+  } catch (e) {}
   // Register custom URL scheme for Google SSO
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
@@ -523,7 +534,7 @@ ipcMain.on('overlay:toggle', () => {
     positionOverlayWindow();
     overlayWindow.show();
     overlayWindow.focus();
-    try { overlayWindow.webContents.send('overlay:focus-input') } catch (e) {}
+    try { setTimeout(() => overlayWindow.webContents.send('overlay:focus-input'), 0) } catch (e) {}
   } catch (e) {}
 });
 
@@ -1025,9 +1036,39 @@ function createWindow() {
 function createOverlayWindow() {
   if (!overlayWindow) {
     const isPlatformMac = process.platform === 'darwin';
+    // Compute an initial position explicitly to avoid Electron's default centering
+    const margin = 16;
+    const defaultWidth = 260;
+    const defaultHeight = 40;
+    let initX;
+    let initY;
+    try {
+      if (overlayPositionUserSet && savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && Number.isFinite(savedOverlayPosition.y)) {
+        initX = Math.round(savedOverlayPosition.x);
+        initY = Math.round(savedOverlayPosition.y);
+      } else {
+        const cursorPoint = screen.getCursorScreenPoint();
+        let targetDisplay = screen.getDisplayNearestPoint(cursorPoint) || screen.getPrimaryDisplay();
+        const trayBounds = tray?.getBounds();
+        if (trayBounds) {
+          const allDisplays = screen.getAllDisplays();
+          const found = allDisplays.find(d => {
+            const b = d.bounds;
+            return trayBounds.x >= b.x && trayBounds.x < b.x + b.width && trayBounds.y >= b.y && trayBounds.y < b.y + b.height;
+          });
+          if (found) targetDisplay = found;
+        }
+        const work = targetDisplay.workArea;
+        initX = Math.floor(work.x + (work.width / 2) - (defaultWidth / 2));
+        initY = Math.floor(work.y + work.height - defaultHeight - margin);
+      }
+    } catch (e) {}
+
     overlayWindow = new BrowserWindow({
-      width: 260,
-      height: 40,
+      width: defaultWidth,
+      height: defaultHeight,
+      x: initX,
+      y: initY,
       frame: false,
       resizable: false,
       movable: true,
@@ -1049,7 +1090,7 @@ function createOverlayWindow() {
       ...(isPlatformMac ? { visibleOnAllWorkspaces: true, acceptFirstMouse: true } : {})
     })
 
-    overlayWindow.loadFile('./src/overlay.html')
+    overlayWindow.loadFile('./src/chat.html')
 
     overlayWindow.once('ready-to-show', () => {
       positionOverlayWindow()
@@ -1066,6 +1107,20 @@ function createOverlayWindow() {
 
     overlayWindow.on('closed', () => {
       overlayWindow = null
+    })
+
+    // Persist position when moved
+    overlayWindow.on('move', () => {
+      try {
+        if (!overlayStore) return
+        const [x, y] = overlayWindow.getPosition()
+        savedOverlayPosition = { x, y }
+        overlayPositionUserSet = true
+        clearTimeout(saveOverlayPositionDebounce)
+        saveOverlayPositionDebounce = setTimeout(() => {
+          try { overlayStore.set('overlayPosition', savedOverlayPosition) } catch (e) {}
+        }, 200)
+      } catch (e) {}
     })
 
     // Enable context menus (copy/paste) for overlay window
@@ -1100,8 +1155,11 @@ function positionOverlayWindow() {
 
   const allDisplays = screen.getAllDisplays()
   const trayBounds = tray?.getBounds()
-  let targetDisplay = screen.getPrimaryDisplay()
+  // Prefer the display under the cursor as the active screen
+  const cursorPoint = screen.getCursorScreenPoint()
+  let targetDisplay = screen.getDisplayNearestPoint(cursorPoint)
 
+  // Default target display is where the tray is, otherwise primary
   if (trayBounds) {
     const found = allDisplays.find(d => {
       const b = d.bounds
@@ -1110,11 +1168,25 @@ function positionOverlayWindow() {
     if (found) targetDisplay = found
   }
 
-  const work = targetDisplay.workArea
   const winBounds = overlayWindow.getBounds()
-  // Bottom-center within the work area
-  const x = Math.floor(work.x + (work.width / 2) - (winBounds.width / 2))
-  const y = Math.floor(work.y + work.height - winBounds.height - margin)
+  let x, y
+
+  if (overlayPositionUserSet && savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && Number.isFinite(savedOverlayPosition.y)) {
+    // Use the display nearest to the saved coordinates so restoring is stable across multi-displays
+    const nearest = screen.getDisplayNearestPoint({ x: savedOverlayPosition.x, y: savedOverlayPosition.y })
+    const work = nearest?.workArea || targetDisplay.workArea
+    x = Math.round(savedOverlayPosition.x)
+    y = Math.round(savedOverlayPosition.y)
+    const maxX = work.x + work.width - winBounds.width
+    const maxY = work.y + work.height - winBounds.height
+    x = Math.min(Math.max(x, work.x), Math.max(work.x, maxX))
+    y = Math.min(Math.max(y, work.y), Math.max(work.y, maxY))
+  } else {
+    // Bottom-center within the work area of the tray/primary display
+    const work = targetDisplay.workArea
+    x = Math.floor(work.x + (work.width / 2) - (winBounds.width / 2))
+    y = Math.floor(work.y + work.height - winBounds.height - margin)
+  }
   try { overlayWindow.setPosition(x, y, false) } catch (e) {}
 }
 
