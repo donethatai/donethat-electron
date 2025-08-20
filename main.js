@@ -523,6 +523,7 @@ ipcMain.on('overlay:toggle', () => {
     positionOverlayWindow();
     overlayWindow.show();
     overlayWindow.focus();
+    try { overlayWindow.webContents.send('overlay:focus-input') } catch (e) {}
   } catch (e) {}
 });
 
@@ -534,6 +535,7 @@ ipcMain.on('overlay:show', () => {
     positionOverlayWindow();
     overlayWindow.show();
     overlayWindow.focus();
+    try { overlayWindow.webContents.send('overlay:focus-input') } catch (e) {}
   } catch (e) {}
 });
 

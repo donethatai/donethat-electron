@@ -56,6 +56,8 @@
         </div>
       </div>
     </div>
+    <!-- Visibility note area under topbar (shared across views) -->
+    <div id="visibilityNoteContainer" class="topbar-note hidden"></div>
     <!-- Auth Error Notification Banner -->
     <div id="authErrorNotification" class="auth-error-notification hidden">
       <div class="auth-error-content">
@@ -270,9 +272,6 @@
     <!-- Dashboard View -->
     <div id="dashboardView" class="view-container hidden">
       <div class="dashboard-shell">
-        <!-- Visibility note area under topbar buttons (inline) -->
-        <div id="visibilityNoteContainer" class="topbar-note hidden"></div>
-
         <!-- Embedded web portal area -->
         <div class="dashboard-embed">
           <webview id="portalView" src="https://app.donethat.ai" class="portal-frame" allowpopups partition="persist:donethat" preload="./portal-preload.js"></webview>

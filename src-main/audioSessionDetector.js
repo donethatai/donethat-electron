@@ -160,6 +160,8 @@ class AudioSessionManager {
     }
   }
 
+  
+
   shutdown() {
     
     if (this.sessionCheckInterval) {

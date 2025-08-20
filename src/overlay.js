@@ -164,8 +164,8 @@ input0.addEventListener('keydown', (e) => {
     e.preventDefault()
     addMessageFromInput(input0)
   } else if (e.key === 'Escape') {
-    // Collapse on escape for convenience
-    collapseChatAnimated()
+    // Hide overlay on Escape
+    ipcRenderer.send('overlay:hide')
   }
 })
 
@@ -241,6 +241,16 @@ ipcRenderer.on('overlay:notify', (event, { title, body }) => {
   })
 })
 
+// Focus chat input when requested by main
+ipcRenderer.on('overlay:focus-input', () => {
+  try {
+    input0.focus()
+    // Place caret at end
+    const len = (input0.value || '').length
+    input0.setSelectionRange(len, len)
+  } catch (e) {}
+})
+
 // No state updates needed here currently
 
 function bootstrap() {
@@ -252,6 +262,14 @@ function bootstrap() {
   lastSentHeight = inputH + chrome
   ipcRenderer.send('overlay:resize', lastSentHeight)
   autoresize()
+  // Ensure focusing input when window gains focus (e.g., opened)
+  window.addEventListener('focus', () => {
+    try {
+      input0.focus()
+      const len = (input0.value || '').length
+      input0.setSelectionRange(len, len)
+    } catch (e) {}
+  })
   // Try initial state from main for icon
   // no state button anymore
 }

@@ -563,8 +563,7 @@ async function shutdownRecording() {
 function getStatus() {
   return {
     recording: isRecording,
-    voiceToTextAvailable: voiceToText.getStatus().available,
-    sessionDetection: audioSessionDetector.getStatus()
+    voiceToTextAvailable: voiceToText.getStatus().available
   };
 }
 
