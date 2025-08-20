@@ -348,7 +348,11 @@ app.whenReady().then(async () => {
     overlayStore = new Store({ name: 'donethat-config' });
     try {
       savedOverlayPosition = overlayStore.get('overlayPosition') || null;
-      overlayPositionUserSet = !!savedOverlayPosition;
+      if (savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && (Number.isFinite(savedOverlayPosition.y) || Number.isFinite(savedOverlayPosition.bottom))) {
+        overlayPositionUserSet = true;
+      } else {
+        overlayPositionUserSet = false;
+      }
     } catch (e) {}
   } catch (e) {}
   // Register custom URL scheme for Google SSO
@@ -509,6 +513,66 @@ ipcMain.handle('overlay:get-state', () => {
   }
 })
 
+  // Chat message handling - main window handles all Firebase logic
+  ipcMain.handle('chat:send-message', async (event, messageData) => {
+    // Forward to main window for Firebase processing
+    mainWindow.webContents.send('chat:process-message', messageData)
+    return { success: true, pending: true }
+  })
+
+  // Handle chat message response from main window
+  ipcMain.on('chat:message-result', (event, result) => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('chat:message-update', result)
+    }
+  })
+
+  // Handle new chat messages from main window
+  ipcMain.on('chat:new-messages', (event, messages) => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('chat:receive-messages', messages)
+    }
+  })
+
+  // Handle screenshot capture for chat
+  ipcMain.handle('chat:capture-screenshot', async () => {
+    try {
+      const { captureScreenshot } = require('./src-main/captureScreenshots');
+      const screenshots = await captureScreenshot();
+      
+      // The screenshots are already processed by processScreenshotForUpload()
+      // and returned as optimized JPEG data URLs, so we can use them directly
+      const imageData = screenshots;
+      
+      return { success: true, images: imageData };
+    } catch (error) {
+      console.error('[MAIN] Error capturing screenshot for chat:', error);
+      return { success: false, error: error.message };
+    }
+  })
+
+  // Handle chat reset - clear current chat and prepare for new chat
+  ipcMain.handle('chat:reset', () => {
+    // Forward to main window to reset chat state
+    mainWindow.webContents.send('chat:reset-state');
+    return { success: true };
+  })
+
+
+
+
+
+ipcMain.on('create-overlay-if-needed', () => {
+  try {
+    // Create overlay if it doesn't exist
+    if (!overlayWindow || overlayWindow.isDestroyed()) {
+      createOverlayWindow();
+    }
+  } catch (e) {
+    console.error('[MAIN] Error creating overlay after sign-in:', e);
+  }
+})
+
 ipcMain.on('overlay:hide', () => {
   try {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -548,6 +612,24 @@ ipcMain.on('overlay:show', () => {
     overlayWindow.focus();
     try { overlayWindow.webContents.send('overlay:focus-input') } catch (e) {}
   } catch (e) {}
+});
+
+ipcMain.on('overlay:show-if-hidden', () => {
+  try {
+    if (!overlayWindow || overlayWindow.isDestroyed()) {
+      createOverlayWindow();
+    }
+    
+    // Only show if the window is currently hidden
+    if (!overlayWindow.isVisible()) {
+      positionOverlayWindow();
+      overlayWindow.show();
+      overlayWindow.focus();
+      try { overlayWindow.webContents.send('overlay:focus-input') } catch (e) {}
+    }
+  } catch (e) {
+    console.error('[MAIN] Error in overlay:show-if-hidden:', e)
+  }
 });
 
 // Overlay dynamic resize
@@ -1038,14 +1120,15 @@ function createOverlayWindow() {
     const isPlatformMac = process.platform === 'darwin';
     // Compute an initial position explicitly to avoid Electron's default centering
     const margin = 16;
-    const defaultWidth = 260;
+    const defaultWidth = 390; // Increased from 260 to 390 (1.5x wider)
     const defaultHeight = 40;
     let initX;
     let initY;
     try {
-      if (overlayPositionUserSet && savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && Number.isFinite(savedOverlayPosition.y)) {
+      if (overlayPositionUserSet && savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && (Number.isFinite(savedOverlayPosition.y) || Number.isFinite(savedOverlayPosition.bottom))) {
+        const hasBottom = Number.isFinite(savedOverlayPosition.bottom)
         initX = Math.round(savedOverlayPosition.x);
-        initY = Math.round(savedOverlayPosition.y);
+        initY = Math.round(hasBottom ? (savedOverlayPosition.bottom - defaultHeight) : savedOverlayPosition.y);
       } else {
         const cursorPoint = screen.getCursorScreenPoint();
         let targetDisplay = screen.getDisplayNearestPoint(cursorPoint) || screen.getPrimaryDisplay();
@@ -1092,6 +1175,11 @@ function createOverlayWindow() {
 
     overlayWindow.loadFile('./src/chat.html')
 
+    // Log any overlay webContents console messages
+    overlayWindow.webContents.on('console-message', (event) => {
+      console.log('Overlay Console:', event.message);
+    });
+
     overlayWindow.once('ready-to-show', () => {
       positionOverlayWindow()
       overlayWindow.showInactive()
@@ -1109,12 +1197,15 @@ function createOverlayWindow() {
       overlayWindow = null
     })
 
-    // Persist position when moved
+    // Persist position when moved (save both y and bottom to be robust)
     overlayWindow.on('move', () => {
       try {
         if (!overlayStore) return
         const [x, y] = overlayWindow.getPosition()
-        savedOverlayPosition = { x, y }
+        const bounds = overlayWindow.getBounds()
+        const bottom = y + bounds.height
+        // Save both y and bottom for backward/forward compatibility
+        savedOverlayPosition = { x, y, bottom }
         overlayPositionUserSet = true
         clearTimeout(saveOverlayPositionDebounce)
         saveOverlayPositionDebounce = setTimeout(() => {
@@ -1171,12 +1262,15 @@ function positionOverlayWindow() {
   const winBounds = overlayWindow.getBounds()
   let x, y
 
-  if (overlayPositionUserSet && savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && Number.isFinite(savedOverlayPosition.y)) {
+  if (overlayPositionUserSet && savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && (Number.isFinite(savedOverlayPosition.y) || Number.isFinite(savedOverlayPosition.bottom))) {
     // Use the display nearest to the saved coordinates so restoring is stable across multi-displays
-    const nearest = screen.getDisplayNearestPoint({ x: savedOverlayPosition.x, y: savedOverlayPosition.y })
+    const hasBottom = Number.isFinite(savedOverlayPosition.bottom)
+    const hasY = Number.isFinite(savedOverlayPosition.y)
+    const virtualY = hasBottom ? savedOverlayPosition.bottom - winBounds.height : (hasY ? savedOverlayPosition.y : undefined)
+    const nearest = screen.getDisplayNearestPoint({ x: savedOverlayPosition.x, y: virtualY })
     const work = nearest?.workArea || targetDisplay.workArea
     x = Math.round(savedOverlayPosition.x)
-    y = Math.round(savedOverlayPosition.y)
+    y = Math.round(virtualY ?? (work.y + work.height - winBounds.height - margin))
     const maxX = work.x + work.width - winBounds.width
     const maxY = work.y + work.height - winBounds.height
     x = Math.min(Math.max(x, work.x), Math.max(work.x, maxX))

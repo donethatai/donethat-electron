@@ -1,6 +1,4 @@
 const {
-  browserLocalPersistence,
-  setPersistence,
   onAuthStateChanged,
   onIdTokenChanged,
 } = require("firebase/auth");
@@ -23,7 +21,8 @@ const {
   getCurrentView,
   isAuthenticated,
   updatePauseState,
-  updateDateCreated
+  updateDateCreated,
+  initializeChat
 } = require('./app-state.js');
 
 require('./audio-recorder');
@@ -57,10 +56,8 @@ async function sendPortalLoginIfPossible() {
     const sameToken = lastPortalTokenSent && lastPortalTokenSent === token;
     const withinCooldown = now - lastPortalTokenTs < 10000; // 10s
     if (sameToken && withinCooldown) {
-      console.log('[PortalSync] Skipping token send (debounced)');
       return;
     }
-    console.log('[PortalSync] Sending auth token to webview');
     try { portalView.send('auth:setToken', token); } catch (e) { console.error('[PortalSync] Error sending token', e); }
     lastPortalTokenSent = token;
     lastPortalTokenTs = now;
@@ -69,13 +66,7 @@ async function sendPortalLoginIfPossible() {
   } catch (e) {}
 }
 
-// Set persistence to browser local storage
-setPersistence(auth, browserLocalPersistence)
-  .then(() => {
-  })
-  .catch((error) => {
-    console.error("Error setting persistence:", error);
-  });
+
 
 // Add a small delay to check initial auth state
 setTimeout(() => {
@@ -286,7 +277,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const isMac = process.platform === 'darwin';
       openChatBtn.textContent = `Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
+      openChatBtn.title = `Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
     } catch (e) {}
+    
     openChatBtn.addEventListener('click', () => {
       try { ipcRenderer.send('overlay:toggle'); } catch (e) {}
     });
@@ -465,7 +458,6 @@ onAuthStateChanged(auth, async (user) => {
     try {
       const token = await user.getIdToken();
       // Send token via IPC to the webview; web app will handle login via message
-      console.log('[PortalSync] Auth changed: sending token');
       try { portalView.send('auth:setToken', token); } catch (e) { console.error('[PortalSync] Error sending token', e); }
       lastPortalTokenSent = token;
       lastPortalTokenTs = Date.now();
@@ -474,7 +466,6 @@ onAuthStateChanged(auth, async (user) => {
     } catch (e) {}
   } else {
     // Notify webview to clear client-side session via message
-    console.log('[PortalSync] Auth changed: sending logout');
     try { portalView.send('auth:logout'); } catch (e) { console.error('[PortalSync] Error sending logout', e); }
     lastPortalTokenSent = null;
     lastPortalTokenTs = 0;
@@ -488,7 +479,6 @@ onIdTokenChanged(auth, async (user) => {
   if (user) {
     try {
       const token = await user.getIdToken();
-      console.log('[PortalSync] Token refreshed: sending token');
       portalView.send('auth:setToken', token);
       lastPortalTokenSent = token;
       lastPortalTokenTs = Date.now();
@@ -530,3 +520,6 @@ ipcRenderer.on('navigate', (event, viewName) => {
 ipcRenderer.on('pauseStateChanged', (event, isPaused) => {
   updatePauseState(isPaused);
 });
+
+// Initialize centralized chat (state-managed)
+initializeChat();

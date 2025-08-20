@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';" />
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data:;
+      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com;
+    " />
     <link href="../build/output.css" rel="stylesheet" />
     <link href="../styles.css" rel="stylesheet" />
     <title>Chat</title>
@@ -28,20 +34,28 @@
       .icon-btn svg { width: 16px; height: 16px; }
       .tiny-text { font-size: 12px; }
       .text-btn { font-size: 12px; background: transparent; color: #111; border: none; padding: 0 2px; line-height: 18px; }
-      .bubble { max-width: 85%; border-radius: 10px; padding: 6px 8px; font-size: 12px; line-height: 1.25; }
+      .bubble { max-width: 85%; border-radius: 10px; padding: 6px 8px; font-size: 12px; line-height: 1.35; -webkit-user-select: text; user-select: text; }
       .bubble-user { background: #ffffff; color: #111; }
       .bubble-system { background: rgba(255, 182, 35, 0.18); color: #111; }
+      /* Markdown styling */
+      .bubble strong { font-weight: 600; }
+      .bubble em { font-style: italic; }
+      .bubble code { background: rgba(0, 0, 0, 0.08); padding: 1px 3px; border-radius: 3px; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 11px; }
+      .bubble br { display: block; height: 4px; content: ''; }
+      .bubble ul { list-style: disc; padding-left: 18px; margin: 4px 0; }
+      .bubble ol { list-style: decimal; padding-left: 18px; margin: 4px 0; }
+      .bubble li { margin: 2px 0; }
       .z-chat { position: relative; z-index: 1; }
       .z-input { position: relative; z-index: 2; }
     </style>
   </head>
-  <body class="w-[260px] h-full overflow-visible">
+  <body class="w-full h-full overflow-visible">
     <div id="overlayRoot" class="overlay-root relative w-full h-full">
       <div class="overlay-card w-full p-2 relative flex flex-col justify-center drag-region">
         <div id="chatContainer" class="z-chat space-y-2 overflow-y-auto pb-2 flex-1"></div>
         <div class="z-input">
-          <div class="max-w-full mx-auto input-row">
-            <div class="input-wrap flex-1 no-drag">
+          <div class="w-full flex justify-center input-row">
+            <div class="input-wrap flex-1 max-w-full no-drag">
               <button id="includeScreenBtn" class="no-drag icon-btn screen-toggle" title="Include screenshot" aria-pressed="true">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/>

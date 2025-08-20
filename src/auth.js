@@ -101,7 +101,6 @@ async function handleAuthError(error) {
       // Show notification for retry > 1
       if (retryCount > 1) {
         showPersistentErrorModal('Connection issue. Please check your internet connection.');
-        console.log(`Scheduling retry ${retryCount}/${MAX_RETRIES}`);
       }
       
       logAnalyticsEvent('auth_error_retry', {
@@ -118,7 +117,6 @@ async function handleAuthError(error) {
         }
       }, delay);
     } else {
-      console.log('Max retries reached - waiting for next capture cycle');
       showPersistentErrorModal('Connection issue. Please check your internet connection.');
       
       logAnalyticsEvent('auth_error_max_retries', {
@@ -219,6 +217,9 @@ onAuthStateChanged(auth, async (user) => {
       const token = await user.getIdToken();
       updateAuthState(true, token);
       ipcRenderer.send("login", token);
+      
+      // Create overlay window when user signs in
+      ipcRenderer.send("create-overlay-if-needed");
 
       // Set user properties for analytics
       setAnalyticsUserProperties({

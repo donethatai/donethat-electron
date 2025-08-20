@@ -218,6 +218,8 @@
   transform: none;
 }
 
+
+
 /* Linux installation section styling */
 #linuxInstallSection {
   @apply border rounded-lg p-4 mb-3 mt-4 w-full;

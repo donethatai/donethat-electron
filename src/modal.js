@@ -12,7 +12,7 @@ function showModal(message, options = {}) {
     persistent = false  // Whether the modal should persist (not auto-dismiss)
   } = options;
   
-  console.log(`Modal ${type}:`, message);
+
   
   // Check if we already have a modal element
   let modalElement = document.getElementById('dt-modal');

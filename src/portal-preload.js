@@ -14,14 +14,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Receive token updates
     ipcRenderer.on('auth:setToken', (_event, token) => {
-      try { console.log('[Preload] Received auth:setToken'); } catch (e) {}
+      try { } catch (e) {}
       sendToPage('auth:setToken', { token });
       desktopAuthState = 'token';
     });
 
     // Receive logout command
     ipcRenderer.on('auth:logout', () => {
-      try { console.log('[Preload] Received auth:logout'); } catch (e) {}
+      try { } catch (e) {}
       sendToPage('auth:logout');
       try { localStorage.clear(); } catch (e) {}
       try { sessionStorage.clear(); } catch (e) {}
@@ -32,7 +32,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('message', (event) => {
       if (!event?.data || typeof event.data !== 'object') return;
       if (event.data.type === 'auth:logout') {
-        try { console.log('[Preload] auth:logout from page'); } catch (e) {}
+        try { } catch (e) {}
         ipcRenderer.sendToHost('portal:logout');
       }
     });

@@ -113,7 +113,7 @@ async function restartAudioRecording() {
   if (!isRecording) return true;
   
   try {
-    console.log('Restarting audio recording due to device change');
+    
     
     // Stop the current recording cleanly
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
