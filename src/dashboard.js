@@ -148,7 +148,11 @@ function showSummaryGeneratedState() {
 
   // Reset to initial state
   function resetSummaryState() {
-    document.getElementById('generateSummaryBtn').classList.remove('hidden');
+    const generateSummaryBtn = document.getElementById('generateSummaryBtn');
+    if (generateSummaryBtn) {
+      generateSummaryBtn.textContent = 'Finish Day';
+      generateSummaryBtn.classList.remove('hidden');
+    }
     
     // Full reset of the submit button state
     const submitBtn = document.getElementById('submitSummaryBtn');

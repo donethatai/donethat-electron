@@ -541,4 +541,4 @@ signInForm.addEventListener("submit", (e) => {
     }
   }
 
-  export { initializeAuth, userIdToken, refreshAuthToken };
+  export { initializeAuth, userIdToken, refreshAuthToken, performFullLogout };

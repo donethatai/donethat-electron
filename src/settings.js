@@ -5,7 +5,7 @@ const { getFunctions, httpsCallable } = require("firebase/functions");
 const firebaseConfig = require("../firebase-config.js");
 const { logAnalyticsEvent } = require('./analytics.js');
 const { ipcRenderer } = require("electron");
-const { updateIsPublic } = require('./app-state.js');
+const { updateIsPublic, hasScreenCapturePermission } = require('./app-state.js');
 const { requestAudioPermission, requestKeystrokesPermission, requestWindowsPermission } = require('./permissions.js');
 const { refreshAuthToken } = require('./auth.js');
 const os = require('os');
@@ -91,13 +91,75 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupInputDataCheckboxListeners();
   // Set up permission result listener
   setupPermissionResultListener();
+  // Set up screen capture toggle behavior
+  setupScreenCheckboxBehavior();
   // Set up listener for disable-capture-features message
   setupDisableCaptureListener();
   // Set up work hours change listeners
   setupWorkhoursChangeListeners();
   // Set up Gemini API key listeners
   setupGeminiApiKeyListeners();
+  // Set up dependency: disable screenshots in meetings requires microphone enabled
+  setupMeetingScreenshotsDependency();
 }
+// Handle screen capture checkbox: disable when no permission; clicking opens system settings
+function setupScreenCheckboxBehavior() {
+  const checkbox = document.getElementById('screenCheckbox');
+  if (!checkbox) return;
+  const toggleLabel = checkbox.closest('.toggle');
+
+  const applyState = (hasPerm) => {
+    try {
+      // Show checked when we have permission; unchecked when not.
+      checkbox.checked = !!hasPerm;
+      
+      if (!hasPerm) {
+        // Permission missing: enable toggle and make it look clickable (like microphone when OFF)
+        checkbox.disabled = false;
+        if (toggleLabel) {
+          toggleLabel.style.opacity = '1';
+          toggleLabel.style.cursor = 'pointer';
+          toggleLabel.title = 'Grant screen recording permission';
+        }
+      } else {
+        // Permission granted: disable toggle and make it look active but disabled (like active applications when ON)
+        checkbox.disabled = true;
+        if (toggleLabel) {
+          toggleLabel.style.opacity = '0.7';
+          toggleLabel.style.cursor = 'not-allowed';
+          toggleLabel.title = 'Screen recording enabled (managed by system)';
+        }
+      }
+    } catch (_) {}
+  };
+
+  // Initial state based on current permission
+  applyState(hasScreenCapturePermission());
+
+  // When user clicks the toggle area, open system settings
+  if (toggleLabel) {
+    toggleLabel.addEventListener('click', (e) => {
+      if (!hasScreenCapturePermission()) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Log and request permission via system settings
+        logAnalyticsEvent('screen_capture_requested', {
+          status: 'requested',
+          platform: process.platform
+        });
+        ipcRenderer.send('requestScreenCapturePermission');
+      }
+      // When permission exists, the toggle is disabled so clicks are ignored
+    });
+  }
+
+  // React to permission updates from main process
+  ipcRenderer.on('screenCapturePermission', (_event, data) => {
+    const hasPerm = typeof data === 'object' ? !!data.hasPermission : !!data;
+    applyState(hasPerm);
+  });
+}
+
 
 // Set up listener for errors from main process
 function setupDisableCaptureListener() {
@@ -399,9 +461,16 @@ async function updateSettingsUI(settings) {
   const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
   const audioCheckbox = document.getElementById('audioCheckbox');
 
-  if (windowsCheckbox) windowsCheckbox.checked = inputData.windows; // Use windows key
+  if (windowsCheckbox) {
+    windowsCheckbox.checked = inputData.windows; // Use windows key
+    // Non-revokable when enabled: disable direct toggling once on
+    windowsCheckbox.disabled = !!inputData.windows;
+  }
   if (keystrokesCheckbox) keystrokesCheckbox.checked = inputData.keystrokes;
   if (audioCheckbox) audioCheckbox.checked = inputData.audio; // Keep disabled state from HTML
+
+  // Recompute dependency for meeting screenshots toggle now that audio state is applied
+  try { recomputeMeetingScreenshotsDependency(); } catch (_) {}
 
   // Handle workhours setting
   if (settings && settings.workhours) {
@@ -600,11 +669,15 @@ function setupInputDataCheckboxListeners() {
   };
 
   if (windowsCheckbox) {
-    windowsCheckbox.addEventListener('change', () => {
+    // Make windows (active applications) non-revokable via UI. Allow enabling through permission flow,
+    // but prevent turning off directly; will be turned off only if permission is lost.
+    windowsCheckbox.addEventListener('change', (e) => {
       if (windowsCheckbox.checked) {
         handleCheckboxChange('windowsCheckbox', 'windows', requestWindowsPermission);
       } else {
-        handleCheckboxChange('windowsCheckbox', 'windows', () => {});
+        // Prevent turning off via UI
+        e.preventDefault();
+        windowsCheckbox.checked = true;
       }
     });
   }
@@ -628,6 +701,36 @@ function setupInputDataCheckboxListeners() {
       }
     });
   }
+}
+
+// Disable "Disable screenshots in meetings" unless microphone is enabled
+function setupMeetingScreenshotsDependency() {
+  const audioCheckbox = document.getElementById('audioCheckbox');
+  const disableScreenshots = document.getElementById('disableScreenshotsInMeetings');
+  if (!disableScreenshots) return;
+
+  const applyState = () => {
+    const micOn = !!(audioCheckbox && audioCheckbox.checked);
+    disableScreenshots.disabled = !micOn;
+    if (!micOn) disableScreenshots.checked = false;
+  };
+
+  // Initial application
+  applyState();
+  // React to microphone toggle changes
+  if (audioCheckbox) {
+    audioCheckbox.addEventListener('change', applyState);
+  }
+}
+
+// Standalone recompute that can be called after async settings load
+function recomputeMeetingScreenshotsDependency() {
+  const audioCheckbox = document.getElementById('audioCheckbox');
+  const disableScreenshots = document.getElementById('disableScreenshotsInMeetings');
+  if (!disableScreenshots) return;
+  const micOn = !!(audioCheckbox && audioCheckbox.checked);
+  disableScreenshots.disabled = !micOn;
+  if (!micOn) disableScreenshots.checked = false;
 }
 
 // Set up listeners for workhours inputs

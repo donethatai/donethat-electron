@@ -38,8 +38,8 @@
         <button id="openSettingsViewBtn" class="btn-secondary topbar-btn" title="Permissions">Permissions</button>
       </div>
       <div class="topbar-actions">
+        <button id="generateSummaryBtn" class="btn-secondary topbar-btn">Finish Day</button>
         <button id="openChatBtn" class="btn-secondary topbar-btn">Chat</button>
-        <button id="generateSummaryBtn" class="btn-primary topbar-btn">Generate Summary</button>
         <button id="submitSummaryBtn" class="btn-primary topbar-btn hidden">Done That</button>
         <div class="recording-control">
           <button id="recordingStateBtn" class="topbar-btn btn-secondary" title="Recording">
@@ -55,6 +55,7 @@
           </div>
         </div>
       </div>
+      <div id="topbarBlocker" class="topbar-overlay hidden" aria-hidden="true"></div>
     </div>
     <!-- Visibility note area under topbar (shared across views) -->
     <div id="visibilityNoteContainer" class="topbar-note hidden"></div>
@@ -274,7 +275,7 @@
       <div class="dashboard-shell">
         <!-- Embedded web portal area -->
         <div class="dashboard-embed">
-          <webview id="portalView" src="https://app.donethat.ai" class="portal-frame" allowpopups partition="persist:donethat" preload="./portal-preload.js"></webview>
+          <webview id="portalView" src="https://app.donethat.ai" class="portal-frame" allowpopups partition="persist:donethat" preload="./portal-preload.js" webpreferences="contextIsolation=false"></webview>
         </div>
       </div>
 
@@ -283,51 +284,7 @@
       <div id="summaryLoadingSpinner" class="spinner-overlay hidden"><div class="spinner"></div></div>
     </div>
     
-    <!-- New Screen Recording Permission View -->
-    <div id="permissionView" class="view-container hidden">
-      <div class="form-container">
-        <h1 class="section-header">DoneThat</h1>
-        <div class="text-center">
-          <!-- Standard permission button (for macOS/Windows) -->
-          <div id="standardPermissionSection">
-            <p class="text-sm text-gray-600 mb-4">
-              DoneThat needs screen recording permission to track your activities.
-            </p>
-            <p class="text-sm text-gray-600 mb-4">
-              Your privacy is protected. Screenshots are encrypted and stored securely.
-            </p>
-            <button id="openSettingsBtn" class="btn-primary">
-              Open System Settings
-            </button>
-          </div>
-          
-          <!-- Linux-specific installation instructions (hidden by default) -->
-          <div id="linuxInstallSection" class="hidden">
-            <h3 class="linux-section-heading">Screenshot Tool Required</h3>
-            
-            <!-- Wayland instructions -->
-            <div id="waylandInstructions" class="hidden linux-install-instructions">
-              <p class="instruction-text font-medium">For Wayland, please install:</p>
-              <div class="code-block">
-                <input type="text" value="sudo apt install gnome-screenshot" readonly class="code-input" onclick="this.select()" />
-              </div>
-            </div>
-            
-            <!-- X11 instructions -->
-            <div id="x11Instructions" class="hidden linux-install-instructions">
-              <p class="instruction-text font-medium">For X11, please install:</p>
-              <div class="code-block">
-                <input type="text" value="sudo apt install scrot" readonly class="code-input" onclick="this.select()" />
-              </div>
-              <p class="instruction-text text-xs mt-2">Alternative:</p>
-              <div class="code-block">
-                <input type="text" value="sudo apt install maim" readonly class="code-input" onclick="this.select()" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+
     
     <!-- Settings View -->
     <div id="settingsView" class="view-container hidden">
@@ -338,7 +295,7 @@
             <p class="text-sm text-gray-600 mb-4">
               To understand your work, we need to see what you are working on. We never store any of the raw data requested here, all data is immediately deleted after processing, including screenshots shared in the chat.
             </p>
-            <h3 class="section-title text-left">Required</h3>
+            <div class="section-divider"><span class="section-divider-label">Required</span></div>
             <div class="space-y-5 mb-6">
               <div class="flex items-center justify-between">
                 <div>
@@ -354,6 +311,10 @@
                 </div>
                 <label class="toggle"><input type="checkbox" id="windowsCheckbox"><span class="slider"></span></label>
               </div>
+            </div>
+
+            <div class="section-divider"><span class="section-divider-label">Optional</span></div>
+            <div class="space-y-5">
               <div class="flex items-center justify-between">
                 <div>
                   <div class="text-base font-semibold text-gray-800">Microphone</div>
@@ -361,23 +322,19 @@
                 </div>
                 <label class="toggle"><input type="checkbox" id="audioCheckbox"><span class="slider"></span></label>
               </div>
-            </div>
-
-            <h3 class="section-title text-left">Optional</h3>
-            <div class="space-y-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-base font-semibold text-gray-800">Disable screenshots in meetings</div>
+                  <div class="text-xs text-gray-500">For data privacy reasons, you can disable screenshots when in meetings, so we don't process data of external people. Requires audio permission.</div>
+                </div>
+                <label class="toggle"><input type="checkbox" id="disableScreenshotsInMeetings"><span class="slider"></span></label>
+              </div>
               <div class="flex items-center justify-between">
                 <div>
                   <div class="text-base font-semibold text-gray-800">Keystrokes</div>
                   <div class="text-xs text-gray-500">Similar to your voice in meetings, understanding what you type helps us understand your work. This is especially useful to understand which shortcuts you use so we can coach you better.</div>
                 </div>
                 <label class="toggle"><input type="checkbox" id="keystrokesCheckbox"><span class="slider"></span></label>
-              </div>
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="text-base font-semibold text-gray-800">Disable screenshots in meetings</div>
-                  <div class="text-xs text-gray-500">For data privacy reasons, you can disable screenshots when in meetings, so we don't process data of external people.</div>
-                </div>
-                <label class="toggle"><input type="checkbox" id="disableScreenshotsInMeetings"><span class="slider"></span></label>
               </div>
             </div>
 

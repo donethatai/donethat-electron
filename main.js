@@ -54,13 +54,15 @@ app.on('second-instance', (event, commandLine, workingDirectory) => {
       mainWindow.focus();
     }
   }
-  // Also ensure overlay is shown
+  // Also ensure overlay is shown (only if authenticated)
   try {
-    if (!overlayWindow || overlayWindow.isDestroyed()) {
-      createOverlayWindow();
+    if (stateManager?.isAuthenticated()) {
+      if (!overlayWindow || overlayWindow.isDestroyed()) {
+        createOverlayWindow();
+      }
+      positionOverlayWindow();
+      overlayWindow.show();
     }
-    positionOverlayWindow();
-    overlayWindow.show();
   } catch (e) {}
 });
 
@@ -370,6 +372,8 @@ app.whenReady().then(async () => {
     navigateToView: navigateToView // for notifications
   });
 
+
+
   // Create application menu
   createApplicationMenu();
   
@@ -441,6 +445,11 @@ app.whenReady().then(async () => {
   try {
     const ok = globalShortcut.register('CommandOrControl+Shift+D', () => {
       try {
+        // Check if user is authenticated before showing overlay
+        if (!stateManager?.isAuthenticated()) {
+          return;
+        }
+        
         if (!overlayWindow || overlayWindow.isDestroyed()) {
           createOverlayWindow();
         }
@@ -616,6 +625,13 @@ ipcMain.on('overlay:show', () => {
 
 ipcMain.on('overlay:show-if-hidden', () => {
   try {
+    const isAuthenticated = stateManager?.isAuthenticated();
+    
+    // Check if user is authenticated before showing overlay
+    if (!isAuthenticated) {
+      return;
+    }
+    
     if (!overlayWindow || overlayWindow.isDestroyed()) {
       createOverlayWindow();
     }
@@ -894,7 +910,12 @@ function buildContextMenu() {
   }, 
   {
     label: `Open Chat (${process.platform === 'darwin' ? 'Cmd' : 'Ctrl'}+Shift+D)`,
+    enabled: isLoggedIn,
     click: () => {
+      // Only show overlay if authenticated
+      if (!stateManager?.isAuthenticated()) {
+        return;
+      }
       if (!overlayWindow || overlayWindow.isDestroyed()) {
         createOverlayWindow()
       }
@@ -1182,7 +1203,10 @@ function createOverlayWindow() {
 
     overlayWindow.once('ready-to-show', () => {
       positionOverlayWindow()
-      overlayWindow.showInactive()
+      // Only show overlay if authenticated
+      if (stateManager?.isAuthenticated()) {
+        overlayWindow.showInactive()
+      }
       sendOverlayState()
     })
 

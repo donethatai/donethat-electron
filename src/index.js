@@ -40,8 +40,13 @@ function updateSettingsToggleLabelGlobal() {
     const settingsToggleBtn = document.getElementById('openSettingsViewBtn');
     if (!settingsToggleBtn) return;
     const v = getCurrentView();
-    if (v === 'settings') settingsToggleBtn.textContent = 'Dashboard';
-    else settingsToggleBtn.textContent = 'Permissions';
+    if (v === 'settings') {
+      settingsToggleBtn.textContent = 'Dashboard';
+      settingsToggleBtn.className = 'btn-primary topbar-btn'; // Bright orange when on permissions
+    } else {
+      settingsToggleBtn.textContent = 'Permissions';
+      settingsToggleBtn.className = 'btn-secondary topbar-btn'; // Normal style otherwise
+    }
   } catch (_) {}
 }
 
@@ -79,10 +84,10 @@ const signInView = document.getElementById("signInView");
 const signUpView = document.getElementById("signUpView");
 const resetView = document.getElementById("resetView");
 const dashboardView = document.getElementById("dashboardView");
-const settingsView = document.getElementById("settingsView");
-const permissionView = document.getElementById("permissionView");
+  const settingsView = document.getElementById("settingsView");
 
-// Update the navigateToView function
+  
+  // Update the navigateToView function
 function navigateToView(viewName) {
   const currentView = getCurrentView();
 
@@ -99,7 +104,7 @@ function navigateToView(viewName) {
     if (!isAuthenticated()) {
       viewName = 'signin';
     } else if (!hasScreenCapturePermission()) {
-      viewName = 'permission';
+      viewName = 'settings';
     } else if (!hasValidAccess()) {
       viewName = 'subscription';
     } else {
@@ -121,8 +126,9 @@ function navigateToView(viewName) {
       viewToShow = document.getElementById('subscriptionView');
       break;
     case 'permission':
-      viewToShow = permissionView;
+      viewToShow = settingsView;
       break;
+
     case 'signin':
       viewToShow = signInView;
       break;
@@ -143,11 +149,13 @@ function navigateToView(viewName) {
     allViews.forEach(view => view.classList.add('hidden'));
     // Show the requested view
     viewToShow.classList.remove('hidden');
-    // Toggle shared topbar visibility (hide on auth screens)
+    // Single shared topbar visibility
     const appTopbar = document.getElementById('appTopbar');
     const isAuthScreen = (viewName === 'signin' || viewName === 'signup' || viewName === 'reset');
     if (appTopbar) {
-      if (isAuthScreen) appTopbar.classList.add('hidden');
+      // Hide the entire topbar on auth screens or when screen permission is missing
+      const shouldHideTopbar = isAuthScreen || !hasScreenCapturePermission();
+      if (shouldHideTopbar) appTopbar.classList.add('hidden');
       else appTopbar.classList.remove('hidden');
     }
     // If opening dashboard, proactively attempt login message to portal
@@ -157,11 +165,17 @@ function navigateToView(viewName) {
     // Update the current view state
     updateCurrentView(viewName);
 
-    // Update labels for settings button (global updater)
-    updateSettingsToggleLabelGlobal();
-    
-    // Track page view in analytics with all necessary details
-    trackPageView(viewName);
+      // Update labels for settings button (global updater)
+  updateSettingsToggleLabelGlobal();
+  
+  // Ensure topbar actions are visible by default (unless on settings without permission)
+  const topbarActionsElement = document.querySelector('.topbar-actions');
+  if (topbarActionsElement && viewName !== 'settings') {
+    topbarActionsElement.classList.remove('hidden');
+  }
+  
+  // Track page view in analytics with all necessary details
+  trackPageView(viewName);
   } else {
     console.error('View not found:', viewName);
   }
@@ -281,6 +295,10 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
     
     openChatBtn.addEventListener('click', () => {
+      // Only allow chat if authenticated
+      if (!isAuthenticated()) {
+        return;
+      }
       try { ipcRenderer.send('overlay:toggle'); } catch (e) {}
     });
   }
@@ -290,6 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (current === 'settings') {
         navigateToView('dashboard');
       } else {
+        // When not on settings, navigate to settings
         navigateToView('settings');
       }
     });
@@ -373,8 +392,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     updateRecordingMenuState(isPaused);
   }
-  // Reflect initial state (will be updated on next IPC) by assuming recording unless told otherwise
-  updateRecordingMenuState(false);
+  // Get initial recording state from main process
+  ipcRenderer.invoke('getInitialPauseState').then((isPaused) => {
+    setRecordingIcon(isPaused);
+  }).catch(() => {
+    // Fallback: assume recording unless told otherwise
+    setRecordingIcon(false);
+  });
 
   // Change settings button label on view change
   // use global updater
@@ -395,8 +419,24 @@ document.addEventListener('DOMContentLoaded', () => {
   if (portalView) {
     // When the webview is ready, optionally inject further config
     portalView.addEventListener('dom-ready', () => {
-      // Proactively send login token whenever portal becomes ready
+            // Proactively send login token whenever portal becomes ready
       sendPortalLoginIfPossible();
+      
+      // Inject the ipcRenderer bridge into the webapp's context
+      try {
+        portalView.executeJavaScript(`
+          window.__electronIpcRenderer = {
+            sendToHost: function(channel, data) {
+              if (channel === 'auth:logout' && window.__realIpcRenderer) {
+                window.__realIpcRenderer.sendToHost('portal:logout');
+              }
+            }
+          };
+        `);
+      } catch (e) {
+        console.error('[Portal] Failed to inject ipcRenderer:', e);
+      }
+      
       // Open devtools only when DEBUG flag is true
       (async () => {
         try {
@@ -424,10 +464,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (event.channel === 'portal:logout') {
         // Web app initiated logout -> perform desktop logout flow
         try {
-          const { auth } = require('./firebase.js');
-          const { signOut } = require('firebase/auth');
-          await signOut(auth);
-        } catch (e) {}
+          const { performFullLogout } = require('./auth.js');
+          await performFullLogout();
+        } catch (e) {
+          console.error('Error during portal-initiated logout:', e);
+        }
       }
     });
   }

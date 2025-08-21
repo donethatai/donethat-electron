@@ -1,5 +1,13 @@
 const { ipcRenderer } = require('electron');
 
+// Set up message listener for auth:logout messages
+window.addEventListener('message', (event) => {
+  if (event?.data && typeof event.data === 'object' && event.data.type === 'auth:logout') {
+    ipcRenderer.sendToHost('portal:logout');
+    return;
+  }
+});
+
 // Listen for auth messages from the host renderer
 window.addEventListener('DOMContentLoaded', () => {
   try {
@@ -28,14 +36,16 @@ window.addEventListener('DOMContentLoaded', () => {
       desktopAuthState = 'logout';
     });
 
-    // Allow the embedded page to request current auth state
-    window.addEventListener('message', (event) => {
-      if (!event?.data || typeof event.data !== 'object') return;
-      if (event.data.type === 'auth:logout') {
-        try { } catch (e) {}
-        ipcRenderer.sendToHost('portal:logout');
-      }
+    // Also listen for direct IPC messages from the webapp
+    ipcRenderer.on('auth:logout', () => {
+      ipcRenderer.sendToHost('portal:logout');
     });
+
+    // Expose the real ipcRenderer to the webapp
+    if (typeof window !== 'undefined') {
+      window.__realIpcRenderer = ipcRenderer;
+    }
+
   } catch (e) {}
 });
 

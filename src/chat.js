@@ -308,6 +308,12 @@ if (includeScreenBtn) {
   includeScreenBtn.addEventListener('click', (e) => {
     e.preventDefault()
     e.stopPropagation()
+    
+    // Don't toggle if button is disabled (no permission)
+    if (includeScreenBtn.disabled) {
+      return;
+    }
+    
     includeScreenOnNextMessage = !includeScreenOnNextMessage
     updateIncludeScreenBtn()
     try { input0.focus() } catch (err) {}
@@ -442,6 +448,8 @@ try {
     closeBtn.title = `Close chat (Esc, ${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`
   }
 } catch (e) {}
+
+
 
 // Initialize
 updateIncludeScreenBtn()

@@ -84,7 +84,7 @@
 
 /* Common view container */
 .view-container {
-  @apply w-full items-start justify-center pt-0;
+  @apply w-full justify-center pt-0;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -544,6 +544,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   padding: 48px 24px;
   background: linear-gradient(to bottom, #ffffff, #f9fafb);
   overflow-y: auto;
@@ -614,7 +615,9 @@ body {
   justify-content: space-between;
   padding: 8px 12px;
   border-bottom: 1px solid var(--color-neutral-200);
-  min-height: 44px;
+  height: 48px; /* Fixed height to ensure consistency */
+  min-height: 48px; /* Ensure minimum height */
+  position: relative;
 }
 
 .topbar-left {
@@ -657,33 +660,54 @@ body {
 
 /* Recording dropdown */
 .recording-control { position: relative; }
+.recording-control button {
+  height: 32px; /* Fixed height to match other buttons */
+  min-height: 32px; /* Ensure minimum height */
+  width: 32px; /* Fixed width to prevent size changes */
+  min-width: 32px; /* Ensure minimum width */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .recording-menu {
   position: absolute;
   right: 0;
   top: 34px;
   background: #fff;
-  border: 1px solid var(--color-neutral-200);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  padding: 4px;
   z-index: 30;
-  min-width: 220px;
+  width: 160px;
   font-size: 13px;
   line-height: 1.25rem;
 }
 .recording-menu-item {
-  display: block;
-  width: 100%;
+  display: block !important;
+  width: 100% !important;
   text-align: left;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: none !important;
+  background: transparent;
+  cursor: pointer;
+  color: #374151;
+  transition: background-color 0.15s ease;
+  box-sizing: border-box;
+  white-space: nowrap;
+  min-width: 100% !important;
+  max-width: none !important;
+  flex: none !important;
 }
-.recording-menu-item:hover { background: #f3f4f6; }
+.recording-menu-item:hover { 
+  background: #f3f4f6; 
+}
 .recording-menu-item.disabled {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+  color: #9ca3af;
 }
 
 /* Settings layout */
@@ -702,14 +726,41 @@ body {
   gap: 8px;
 }
 
+/* Ensure topbar actions don't affect layout when hidden */
+.topbar-actions.hidden {
+  display: none !important;
+}
+
 .topbar-btn {
   width: auto;
   padding-left: 12px;
   padding-right: 12px;
+  height: 32px; /* Fixed height to match recording button */
+  min-height: 32px; /* Ensure minimum height */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.recording-dot { color: #9ca3af; }
-.recording-dot.active { color: var(--color-primary); }
+/* Semi-transparent overlay to block interactions on topbar */
+.topbar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 0, 0, 0.3);
+  backdrop-filter: blur(1px);
+  z-index: 40;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
+.recording-dot { 
+  color: #9ca3af; 
+  letter-spacing: 1px; /* Small spacing for pause symbol */
+}
+.recording-dot.active { 
+  color: var(--color-primary); 
+  letter-spacing: 0; /* No spacing for dot */
+}
 
 .topbar-note {
   padding: 6px 12px;
@@ -841,7 +892,28 @@ body {
 #settingsView .auth-page {
   min-height: auto;
   justify-content: flex-start;
-  padding-top: 24px;
+  padding-top: 0;
   padding-bottom: 24px;
   width: 100%;
+}
+
+/* Section dividers under headings with line through and white label background */
+.section-divider {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+  margin: 16px 0 12px 0;
+}
+.section-divider::after {
+  content: "";
+  border-top: 1px solid var(--color-neutral-200);
+}
+.section-divider-label {
+  background: #fff;
+  padding: 0 8px 0 0; /* text left aligned, line starts right after label */
+  font-weight: 600;
+  font-size: 14px;
+  color: #111827;
+  line-height: 1;
 }
