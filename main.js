@@ -604,10 +604,18 @@ ipcMain.on('overlay:toggle', () => {
     if (!overlayWindow || overlayWindow.isDestroyed()) {
       createOverlayWindow();
     }
-    positionOverlayWindow();
-    overlayWindow.show();
-    overlayWindow.focus();
-    try { setTimeout(() => overlayWindow.webContents.send('overlay:focus-input'), 0) } catch (e) {}
+    
+    // Check if overlay is currently visible
+    if (overlayWindow.isVisible()) {
+      // Hide the overlay
+      overlayWindow.hide();
+    } else {
+      // Show the overlay
+      positionOverlayWindow();
+      overlayWindow.show();
+      overlayWindow.focus();
+      try { setTimeout(() => overlayWindow.webContents.send('overlay:focus-input'), 0) } catch (e) {}
+    }
   } catch (e) {}
 });
 
