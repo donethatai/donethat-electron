@@ -84,6 +84,55 @@
       </div>
     </div>
 
+    <!-- Summary Overlay Modal -->
+    <div id="summaryOverlay" class="summary-overlay hidden">
+      <div class="summary-overlay-content">
+        <div class="summary-subtitle">
+          <div class="summary-subtitle-header">
+            <h2 id="summaryHeadline" class="summary-headline">Today</h2>
+            <button id="summaryCloseBtn" class="summary-close-btn" aria-label="Close summary">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          <div id="summaryPeriod" class="summary-period-text hidden"></div>
+          <div class="summary-activities-note">Activities after this time will only be processed after this summary is submitted</div>
+        </div>
+        
+        <div class="summary-content">
+          <div class="summary-section">
+            <h3 class="summary-section-title">What you worked on</h3>
+            <div id="summaryBulletsContainer" class="summary-bullets-container">
+              <!-- AI-generated bullet points will be inserted here -->
+            </div>
+          </div>
+          
+          <div class="summary-section">
+            <h3 class="summary-section-title">Add work (optional)</h3>
+            <div id="summaryCustomBulletsContainer" class="summary-custom-bullets-container">
+              <!-- Custom bullets will be inserted here -->
+            </div>
+            <div class="summary-add-custom">
+              <input type="text" id="summaryCustomInput" class="summary-custom-input" placeholder="Add work..." />
+              <input type="number" id="summaryCustomTimeInput" class="summary-custom-time-input" placeholder="min" min="1" />
+              <button id="summaryAddCustomBtn" class="summary-add-custom-btn">Add</button>
+            </div>
+          </div>
+          
+          <div class="summary-comment-section">
+            <label for="summaryCommentInput" class="summary-comment-label">Comment (optional)</label>
+            <input type="text" id="summaryCommentInput" class="summary-comment-input" placeholder="What else would you like to share about your day?" />
+          </div>
+        </div>
+        
+        <div class="summary-actions">
+          <button id="summaryCancelBtn" class="summary-cancel-btn">Cancel</button>
+          <button id="summarySubmitBtn" class="summary-submit-btn">Submit</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Sign In View -->
     <div id="signInView" class="view-container">
       <div class="auth-page">

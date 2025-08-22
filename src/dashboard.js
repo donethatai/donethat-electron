@@ -18,12 +18,28 @@ const summaryContainer = document.getElementById("summaryContainer");
 let currentSummaryId = null;
 const summaryLoadingSpinner = document.getElementById("summaryLoadingSpinner");
 
+// Summary overlay elements
+const summaryOverlay = document.getElementById("summaryOverlay");
+const summaryHeadline = document.getElementById("summaryHeadline");
+const summaryPeriod = document.getElementById("summaryPeriod");
+const summaryBulletsContainer = document.getElementById("summaryBulletsContainer");
+const summaryCustomBulletsContainer = document.getElementById("summaryCustomBulletsContainer");
+const summaryCommentInput = document.getElementById("summaryCommentInput");
+const summaryCloseBtn = document.getElementById("summaryCloseBtn");
+const summaryCancelBtn = document.getElementById("summaryCancelBtn");
+const summarySubmitBtn = document.getElementById("summarySubmitBtn");
+const summaryCustomInput = document.getElementById("summaryCustomInput");
+const summaryAddCustomBtn = document.getElementById("summaryAddCustomBtn");
+
 let loadUserSettingsCallback;
 let navigateToView;
 let showSpinner;
 let hideSpinner;
 let currentPeriodEndTime = null;
-// Add an array to store custom bullets
+
+// Bullet point state management (matching FE pattern)
+let bulletPoints = []; // Array of BulletPoint objects: { text: string; duration?: number }
+let bulletPointsChecked = [];
 let customBullets = [];
 
 // Helper function to format date for headline
@@ -67,29 +83,34 @@ function formatHeadlineDate(timestamp) {
   return `${dateString} ${timeString}`; // Combine date and time
 }
 
-// Update visibility when summary is generated
-function showSummaryGeneratedState() {
-    document.getElementById('generateSummaryBtn').classList.add('hidden');
-    document.getElementById('submitSummaryBtn').classList.remove('hidden');
 
-    // Show visibility note
-    const visibilityNoteContainer = document.getElementById('visibilityNoteContainer');
-    if (visibilityNoteContainer) {
-      let visibilityText = 'Posting to your feed. You can always edit later in your ';
-      visibilityText += `<a href="#" class="settings-link">browser</a>.`;
-
-
-      visibilityNoteContainer.innerHTML = `<p class="text-xs text-gray-500 text-center">${visibilityText}</p>`;
-      visibilityNoteContainer.classList.remove('hidden');
-
-
-      // Re-add event listener for the link
-      visibilityNoteContainer.querySelector('.settings-link')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        shell.openExternal('https://app.donethat.ai/feed');
-      });
-    }
+// Helper function to format duration in minutes to readable format
+function formatDuration(minutes) {
+  if (!minutes || minutes === 0) return '';
+  
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${remainingMinutes}m`;
+  } else {
+    return `${minutes}m`;
   }
+}
+
+// Show summary overlay
+function showSummaryOverlay() {
+  if (summaryOverlay) {
+    summaryOverlay.classList.remove('hidden');
+  }
+}
+
+// Hide summary overlay
+function hideSummaryOverlay() {
+  if (summaryOverlay) {
+    summaryOverlay.classList.add('hidden');
+  }
+}
   
   // Function to handle all dashboard note operations
   function dashboardNote(extraNotes = []) {
@@ -148,20 +169,6 @@ function showSummaryGeneratedState() {
 
   // Reset to initial state
   function resetSummaryState() {
-    const generateSummaryBtn = document.getElementById('generateSummaryBtn');
-    if (generateSummaryBtn) {
-      generateSummaryBtn.textContent = 'Finish Day';
-      generateSummaryBtn.classList.remove('hidden');
-    }
-    
-    // Full reset of the submit button state
-    const submitBtn = document.getElementById('submitSummaryBtn');
-    submitBtn.classList.add('hidden');
-    submitBtn.textContent = "Done That"; // Reset text
-    submitBtn.disabled = false; // Reset disabled state
-    submitBtn.classList.remove('disabled-btn'); // Remove disabled styling
-    
-    document.getElementById('visibilityNoteContainer')?.classList.add('hidden'); // Hide note on reset
     document.getElementById('summaryLoadingSpinner').classList.add('hidden'); // Ensure spinner is hidden
     currentSummaryId = null;
     customBullets = []; // Reset custom bullets
@@ -172,6 +179,9 @@ function showSummaryGeneratedState() {
     if (headlineElement) {
       headlineElement.textContent = "Today";
     }
+    
+    // Hide summary overlay
+    hideSummaryOverlay();
     
     dashboardNote();
   }
@@ -184,93 +194,122 @@ function showSummaryGeneratedState() {
     navigateToView = viewNavigator;
   }
 
-  // Only add event listeners if elements exist
-if (submitSummaryBtn) {
-    submitSummaryBtn.addEventListener('click', () => {
-      summaryLoadingSpinner.classList.remove('hidden');
-  
-      const selectedBullets = [];
-      document.querySelectorAll('.bullet-item').forEach(item => {
-        const checkbox = item.querySelector('.bullet-checkbox');
-        const textElement = item.querySelector('.bullet-text');
-  
-        if (checkbox.checked) {
-          let bulletText = textElement.textContent.trim();
-          selectedBullets.push(bulletText);
-        }
+
+
+// Add event listeners for summary overlay buttons
+if (summaryCloseBtn) {
+  summaryCloseBtn.addEventListener('click', () => {
+    hideSummaryOverlay();
+  });
+}
+
+if (summaryCancelBtn) {
+  summaryCancelBtn.addEventListener('click', () => {
+    hideSummaryOverlay();
+  });
+}
+
+// Add event listener for custom bullet input
+if (summaryCustomInput && summaryAddCustomBtn) {
+  const addCustomBullet = () => {
+    const text = summaryCustomInput.value.trim();
+    const timeInput = document.getElementById('summaryCustomTimeInput');
+    const timeMinutes = timeInput && timeInput.value ? parseInt(timeInput.value) : null;
+    
+    if (text) {
+      customBullets.push({
+        text: text,
+        duration: timeMinutes // Store as minutes or null
       });
+      summaryCustomInput.value = '';
+      if (timeInput) timeInput.value = '';
+      renderCustomBullets();
+      summaryCustomInput.focus();
+    }
+  };
+
+  summaryAddCustomBtn.addEventListener('click', addCustomBullet);
   
-      // Get custom bullets
-      const filteredCustomBullets = [];
-      document.querySelectorAll('.custom-bullet').forEach(item => {
-        const textElement = item.querySelector('.bullet-text');
-        
-        if (textElement) {
-          let bulletText = textElement.textContent.trim();
-          filteredCustomBullets.push(bulletText);
-        }
-      });
-
-      const commentText = document.getElementById('commentInput').value.trim();
+  summaryCustomInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addCustomBullet();
+    }
+  });
   
-      saveFinalSummaryFunction({
-        summaryId: currentSummaryId,
-        selectedBullets: selectedBullets,
-        customBullets: filteredCustomBullets,
-        comment: commentText
-      }).then(() => {
-        summaryLoadingSpinner.classList.add('hidden');
-
-        const now = new Date();
-        const isRecentSummary = currentPeriodEndTime && (now.getTime() - currentPeriodEndTime < (60 * 60 * 1000));
-
-        const shouldPauseAndDelayReset = isRecentSummary;
-
-        // Clear summary content immediately
-        document.getElementById('summaryContainer').innerHTML = '<p class="empty-state-text"></p>';
-
-        // Send both the current timestamp and the period end time
-        ipcRenderer.send("summarySubmitted", {
-          timestamp: Date.now(),
-          lastSummaryPeriodEnd: currentPeriodEndTime
-        });
-
-        logAnalyticsEvent('summary_submitted', {
-            status: 'success',
-            bullet_points_count: selectedBullets.length,
-            has_comment: !!commentText
-        });
-
-        if (shouldPauseAndDelayReset) {
-            ipcRenderer.send("pauseUntilTomorrow");
-
-            submitSummaryBtn.textContent = "Well done!";
-            submitSummaryBtn.disabled = true;
-            submitSummaryBtn.classList.add('disabled-btn');
-            submitSummaryBtn.classList.remove('hidden'); // Ensure it stays visible
-
-            setTimeout(() => {
-                resetSummaryState(); // Resets UI including button state
-            }, 2000);
-        } else {
-            // New behavior: No pause, reset immediately
-            resetSummaryState(); // Resets UI including button state
-        }
-
-      }).catch((error) => {
-        summaryLoadingSpinner.classList.add('hidden');
-        console.error("Error submitting summary:", error);
-        showErrorModal(`Error submitting summary: ${error.message}`);
-        
-        // Log error in summary submission
-        logAnalyticsEvent('summary_submitted', {
-          status: 'error',
-          error_code: error.code,
-          error_message: error.message
-        });
-      });
+  // Add Enter key handling for time input
+  const timeInput = document.getElementById('summaryCustomTimeInput');
+  if (timeInput) {
+    timeInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addCustomBullet();
+      }
     });
   }
+}
+
+if (summarySubmitBtn) {
+  summarySubmitBtn.addEventListener('click', () => {
+    summaryLoadingSpinner.classList.remove('hidden');
+
+    // Filter to only include checked bullet points
+    const selectedBullets = bulletPoints.filter((_, index) => bulletPointsChecked[index]);
+
+    const commentText = summaryCommentInput.value.trim();
+
+    saveFinalSummaryFunction({
+      summaryId: currentSummaryId,
+      selectedBullets: selectedBullets,
+      customBullets: customBullets.map(bullet => bullet.text || bullet),
+      comment: commentText
+    }).then(() => {
+      summaryLoadingSpinner.classList.add('hidden');
+
+      const now = new Date();
+      const isRecentSummary = currentPeriodEndTime && (now.getTime() - currentPeriodEndTime < (60 * 60 * 1000));
+
+      const shouldPauseAndDelayReset = isRecentSummary;
+
+      // Send both the current timestamp and the period end time
+      ipcRenderer.send("summarySubmitted", {
+        timestamp: Date.now(),
+        lastSummaryPeriodEnd: currentPeriodEndTime
+      });
+
+      logAnalyticsEvent('summary_submitted', {
+          status: 'success',
+          bullet_points_count: selectedBullets.length,
+          has_comment: !!commentText
+      });
+
+      if (shouldPauseAndDelayReset) {
+          ipcRenderer.send("pauseUntilTomorrow");
+      }
+      
+      // Reload the webview after successful submission
+      const webview = document.getElementById('portalView');
+      if (webview) {
+        webview.reload();
+      }
+      
+      // Always reset immediately
+      resetSummaryState();
+
+    }).catch((error) => {
+      summaryLoadingSpinner.classList.add('hidden');
+      console.error("Error submitting summary:", error);
+      showErrorModal(`Error submitting summary: ${error.message}`);
+      
+      // Log error in summary submission
+      logAnalyticsEvent('summary_submitted', {
+        status: 'error',
+        error_code: error.code,
+        error_message: error.message
+      });
+    });
+  });
+}
   
   // Update the event listener for the generate summary button
   if (generateSummaryBtn) {
@@ -283,19 +322,29 @@ if (submitSummaryBtn) {
           summaryLoadingSpinner.classList.add('hidden');
   
           // Process the result from the cloud function
-          const bulletPoints = result.data.bulletPoints || [];
+          const bulletPointsData = result.data.bulletPoints || [];
+          const bulletTimesData = result.data.bulletTimes || [];
           currentSummaryId = result.data.summaryId;
           const period = result.data.period;
-          // Store the period end time (as a number/timestamp)
           currentPeriodEndTime = period?.end;
           
-          // Reset custom bullets when generating a new summary
+          // Convert to BulletPoint objects with time data
+          bulletPoints = bulletPointsData.map((text, index) => ({
+            text: text,
+            duration: Array.isArray(bulletTimesData) ? bulletTimesData[index] : undefined
+          }));
+          bulletPointsChecked = bulletPoints.map(() => true);
           customBullets = [];
 
           // Update headline
           const headlineElement = document.getElementById('dashboardHeadline');
           if (headlineElement) {
             headlineElement.textContent = formatHeadlineDate(period?.end);
+          }
+
+          // Update overlay headline
+          if (summaryHeadline) {
+            summaryHeadline.textContent = formatHeadlineDate(period?.end);
           }
 
           if (bulletPoints.length === 0) {
@@ -323,47 +372,58 @@ if (submitSummaryBtn) {
             });
           };
   
-          const periodHTML = period ? `
-            <div class="summary-period">
-              Activities from ${formatDateTime(period.start)} to ${formatDateTime(period.end)}
-            </div>
-          ` : '';
+          // Update overlay period
+          if (summaryPeriod) {
+            if (period) {
+              summaryPeriod.textContent = `Activities from ${formatDateTime(period.start)} to ${formatDateTime(period.end)}`;
+              summaryPeriod.classList.remove('hidden');
+            } else {
+              summaryPeriod.classList.add('hidden');
+            }
+          }
   
-          const bulletHTML = bulletPoints.map(point => `
-            <div class="bullet-item">
-              <input type="checkbox" class="bullet-checkbox" checked>
-              <span class="bullet-content bullet-text">${point}</span>
-            </div>
-          `).join('');
+          // Render bullet points with time information
+          const bulletHTML = bulletPoints.map((point, index) => {
+            const isChecked = bulletPointsChecked[index];
+            const timeInfo = point.duration && formatDuration(point.duration) ? `<span class="bullet-time-chip ${!isChecked ? 'bullet-time-chip-crossed' : ''}">${formatDuration(point.duration)}</span>` : '';
+            return `
+              <div class="bullet-item">
+                <input type="checkbox" class="bullet-checkbox" id="bullet-${index}" ${isChecked ? 'checked' : ''}>
+                <label for="bullet-${index}" class="bullet-text ${!isChecked ? 'bullet-text-crossed' : ''}">${point.text}</label>
+                ${timeInfo}
+              </div>
+            `;
+          }).join('');
+
+          // Populate overlay bullets
+          if (summaryBulletsContainer) {
+            summaryBulletsContainer.innerHTML = bulletHTML;
+          }
   
-          // Add custom bullets container
-          const customBulletsHTML = `
-            <div id="customBulletsContainer" class="custom-bullets-container"></div>
-          `;
-  
-          const commentHTML = `
-            <textarea id="commentInput" class="comment-input" placeholder="Add a comment here"></textarea>
-          `;
-  
-          summaryContainer.innerHTML = periodHTML + bulletHTML + customBulletsHTML + commentHTML;
-  
-          // Initialize custom bullets container
+          // Render custom bullets
           renderCustomBullets();
   
-          // Add event listeners for checkboxes
-          document.querySelectorAll('.bullet-checkbox').forEach(checkbox => {
+          // Add event listeners for overlay checkboxes
+          summaryBulletsContainer.querySelectorAll('.bullet-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', function () {
-              const textElement = this.nextElementSibling;
-  
+              const index = parseInt(this.id.replace('bullet-', ''));
+              bulletPointsChecked[index] = this.checked;
+              
+              const bulletItem = this.closest('.bullet-item');
+              const textLabel = bulletItem.querySelector('.bullet-text');
+              const timeChip = bulletItem.querySelector('.bullet-time-chip');
+              
               if (this.checked) {
-                textElement.classList.remove('bullet-text-crossed');
+                textLabel.classList.remove('bullet-text-crossed');
+                if (timeChip) timeChip.classList.remove('bullet-time-chip-crossed');
               } else {
-                textElement.classList.add('bullet-text-crossed');
+                textLabel.classList.add('bullet-text-crossed');
+                if (timeChip) timeChip.classList.add('bullet-time-chip-crossed');
               }
             });
           });
   
-          showSummaryGeneratedState();
+          showSummaryOverlay();
           
           // Log successful summary generation
           logAnalyticsEvent('summary_generated', {
@@ -409,85 +469,45 @@ function refreshDashboardNotes() {
 
 // Function to render existing custom bullets
 function renderCustomBullets() {
-  const customBulletsContainer = document.getElementById('customBulletsContainer');
-  if (!customBulletsContainer) return;
+  if (!summaryCustomBulletsContainer) return;
   
   // Clear existing bullets
-  customBulletsContainer.innerHTML = '';
+  summaryCustomBulletsContainer.innerHTML = '';
   
-  // Add each custom bullet as a non-editable item
+  // Add each custom bullet
   customBullets.forEach((bullet, index) => {
     const bulletItem = document.createElement('div');
     bulletItem.className = 'custom-bullet';
     
-    // Create delete icon
-    const deleteIcon = document.createElement('span');
-    deleteIcon.className = 'delete-icon';
-    deleteIcon.innerHTML = '×';
-    deleteIcon.addEventListener('click', () => {
+    // Create delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'custom-bullet-delete';
+    deleteBtn.innerHTML = '×';
+    deleteBtn.addEventListener('click', () => {
       customBullets.splice(index, 1);
       renderCustomBullets();
     });
     
     // Create text span for the bullet content
     const textSpan = document.createElement('span');
-    textSpan.className = 'bullet-content bullet-text custom-bullet-italic';
-    textSpan.textContent = bullet;
+    textSpan.className = 'custom-bullet-text';
+    textSpan.textContent = bullet.text || bullet;
     
     // Add elements to bullet item
-    bulletItem.appendChild(deleteIcon);
+    bulletItem.appendChild(deleteBtn);
     bulletItem.appendChild(textSpan);
     
-    customBulletsContainer.appendChild(bulletItem);
-  });
-  
-  // Add input field for new bullets with proper alignment
-  const inputRow = document.createElement('div');
-  inputRow.className = 'bullet-input-row';
-  inputRow.style.display = 'flex';
-  inputRow.style.alignItems = 'center';
-  
-  // Create plus icon
-  const plusIcon = document.createElement('span');
-  plusIcon.className = 'add-bullet-icon';
-  plusIcon.innerHTML = '+';
-  
-  // Create input field that spans full width
-  const inputField = document.createElement('input');
-  inputField.type = 'text';
-  inputField.className = 'custom-bullet-input';
-  inputField.placeholder = 'Add bullet points';
-  
-  // Function to add new bullet
-  const addNewBullet = () => {
-    const text = inputField.value.trim();
-    if (text) {
-      customBullets.push(text);
-      inputField.value = '';
-      renderCustomBullets();
-      // Focus the input field after adding a bullet
-      setTimeout(() => {
-        const newInputField = document.querySelector('.custom-bullet-input');
-        if (newInputField) newInputField.focus();
-      }, 0);
+    // Add time chip only if duration exists
+    if (bullet.duration) {
+      const timeChip = document.createElement('span');
+      timeChip.className = 'bullet-time-chip';
+      timeChip.textContent = formatDuration(bullet.duration);
+      bulletItem.appendChild(timeChip);
     }
-  };
-  
-  // Add event listeners
-  plusIcon.addEventListener('click', addNewBullet);
-  
-  inputField.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      addNewBullet();
-    }
+    
+    summaryCustomBulletsContainer.appendChild(bulletItem);
   });
-  
-  // Append elements to the input row
-  inputRow.appendChild(plusIcon);
-  inputRow.appendChild(inputField);
-  
-  // Add the input row to the container
-  customBulletsContainer.appendChild(inputRow);
 }
 
 module.exports = { initializeDashboard, resetSummaryState, refreshDashboardNotes };

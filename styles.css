@@ -744,13 +744,244 @@ body {
 
 /* Semi-transparent overlay to block interactions on topbar */
 .topbar-overlay {
+  @apply absolute inset-0 bg-white/50;
+  pointer-events: none;
+}
+
+/* Summary Overlay Modal */
+.summary-overlay {
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
+  backdrop-filter: blur(2px);
+}
+
+.summary-overlay-content {
+  @apply max-w-lg w-full mx-4 bg-white rounded-xl shadow-2xl;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.summary-subtitle-header {
+  @apply flex items-center justify-between;
+}
+
+.summary-close-btn {
+  @apply p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors;
+}
+
+.summary-subtitle {
+  @apply p-4 pb-3;
+}
+
+.summary-headline {
+  @apply text-lg font-semibold text-gray-900 mb-1;
+}
+
+.summary-period-text {
+  @apply text-sm text-gray-600 mb-2;
+}
+
+.summary-activities-note {
+  @apply text-xs text-gray-500;
+}
+
+.summary-content {
+  @apply px-4 pb-3;
+}
+
+.summary-section {
+  @apply mb-4;
+}
+
+.summary-section-title {
+  @apply text-sm font-semibold text-gray-900 mb-2;
+}
+
+.summary-bullets-container {
+  @apply space-y-2 mb-3;
+}
+
+.summary-custom-bullets-container {
+  @apply space-y-2 mb-3;
+}
+
+.summary-add-custom {
+  @apply flex gap-2;
+}
+
+.summary-custom-input {
+  @apply flex-1 p-2 border border-gray-300 rounded-lg text-sm;
+  font-family: inherit;
+}
+
+.summary-custom-input:focus {
+  @apply outline-none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-focus);
+}
+
+.summary-custom-time-input {
+  @apply w-16 p-2 border border-gray-300 rounded-lg text-sm text-center;
+  font-family: inherit;
+}
+
+.summary-custom-time-input:focus {
+  @apply outline-none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-focus);
+}
+
+.summary-add-custom-btn {
+  @apply px-3 py-2 text-white rounded-lg transition-colors text-sm;
+  background-color: var(--color-primary);
+}
+.summary-add-custom-btn:hover {
+  background-color: var(--color-primary-dark);
+}
+
+.summary-comment-section {
+  @apply space-y-2;
+}
+
+.summary-comment-label {
+  @apply block text-gray-700 font-semibold text-sm;
+}
+
+.summary-comment-input {
+  @apply w-full p-2 border border-gray-300 rounded-lg text-sm;
+  font-family: inherit;
+}
+
+.summary-comment-input:focus {
+  @apply outline-none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-focus);
+}
+
+.summary-actions {
+  @apply flex items-center justify-end gap-3 p-4;
+}
+
+.summary-cancel-btn {
+  @apply px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm;
+}
+
+.summary-submit-btn {
+  @apply px-6 py-2 text-white rounded-lg transition-colors text-sm;
+  background-color: var(--color-primary);
+}
+.summary-submit-btn:hover {
+  background-color: var(--color-primary-dark);
+}
+
+.summary-submit-btn:disabled {
+  @apply bg-gray-300 cursor-not-allowed;
+}
+
+.summary-note {
+  @apply px-6 pb-6;
+}
+
+.summary-note-text {
+  @apply text-xs text-gray-500 text-center;
+}
+
+/* Bullet point styles - matching FE design */
+.bullet-item {
+  @apply flex gap-3 items-center w-full;
+  min-height: 24px;
+  align-items: center;
+}
+
+.bullet-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background-color: white;
+  width: 16px;
+  height: 16px;
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin: 0;
+  align-self: center;
+}
+
+.bullet-checkbox:checked::after {
+  content: '';
+  display: block;
   position: absolute;
-  inset: 0;
-  background: rgba(255, 0, 0, 0.3);
-  backdrop-filter: blur(1px);
-  z-index: 40;
-  cursor: not-allowed;
-  pointer-events: auto;
+  top: 2px;
+  left: 5px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--color-primary);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.bullet-checkbox:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-focus);
+}
+
+.bullet-text {
+  @apply text-sm text-gray-700;
+  flex: 1;
+  cursor: pointer;
+  line-height: 1.4;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.bullet-text-crossed {
+  @apply text-gray-400 line-through;
+}
+
+.bullet-time {
+  @apply text-xs text-gray-500 ml-2;
+}
+
+/* Time chip styling */
+.bullet-time-chip {
+  @apply inline-block px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full;
+  font-family: monospace;
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0;
+}
+
+.bullet-time-chip-crossed {
+  @apply text-gray-400 line-through;
+}
+
+/* Custom bullet styles */
+.custom-bullet {
+  @apply flex gap-3 items-center w-full;
+  min-height: 24px;
+  align-items: center;
+}
+
+.custom-bullet-text {
+  @apply text-sm italic text-gray-600;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.custom-bullet-delete {
+  @apply text-gray-400 hover:text-gray-700 flex-shrink-0 cursor-pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+
+.custom-bullet-delete:hover {
+  @apply text-red-500;
 }
 
 .recording-dot { 
@@ -916,46 +1147,4 @@ body {
   font-size: 14px;
   color: #111827;
   line-height: 1;
-}
-
-/* Linux install instructions container */
-.linux-install-instructions {
-  @apply mb-3;
-}
-
-/* Code block styling for commands */
-.code-block {
-  @apply w-full p-2 rounded-lg text-xs font-mono break-all overflow-x-auto my-2;
-  border: 1px solid var(--color-neutral-300);
-  background-color: var(--color-neutral-200);
-}
-
-/* Section heading for Linux instructions */
-.linux-section-heading {
-  @apply font-medium mb-2;
-  color: var(--color-neutral-900);
-}
-
-/* Instruction text styling */
-.instruction-text {
-  @apply text-sm mb-2;
-  color: var(--color-neutral-700);
-}
-
-/* Selectable code input */
-.code-input {
-  width: 100%;
-  font-family: monospace;
-  padding: 8px;
-  background: #f1f1f1;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  cursor: text;
-  color: #333;
-  font-size: 14px;
-  text-align: center;
-}
-
-.code-input:focus {
-  outline: 2px solid var(--color-primary);
 }
