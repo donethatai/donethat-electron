@@ -26,6 +26,9 @@ let inputDataSettings = {
   windows: false
 };
 
+// Track disable screenshots in meetings setting
+let disableScreenshotsInMeetings = false;
+
 /**
  * Sets capture interval in minutes
  * @param {number} minutes Interval in minutes
@@ -228,6 +231,30 @@ function updateInputDataSettings(settings) {
 }
 
 /**
+ * Updates the disable screenshots in meetings setting
+ * @param {boolean} enabled Whether to disable screenshots during meetings
+ */
+function updateDisableScreenshotsInMeetings(enabled) {
+  disableScreenshotsInMeetings = !!enabled;
+}
+
+/**
+ * Check if screenshots should be disabled during meetings
+ * @returns {boolean} True if screenshots should be disabled
+ */
+function shouldDisableScreenshotsInMeetings() {
+  // First check if user has the setting enabled
+  if (!disableScreenshotsInMeetings) {
+    return false;
+  }
+  
+  // Only check audio state if the setting is enabled
+  const audioCapture = require('./captureAudio');
+  const audioStatus = audioCapture.getStatus();
+  return audioStatus.recording;
+}
+
+/**
  * Initializes capture functionality and registers all IPC handlers
  * @param {BrowserWindow} mainWindow Reference to the main window for sending IPC messages
  * @param {Function} onAuthError Callback for when authentication errors are detected
@@ -263,6 +290,11 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
   // Handler for updating input data settings
   ipcMain.on('updateInputDataSettings', (event, settings) => {
     updateInputDataSettings(settings);
+  });
+
+  // Handler for updating disable screenshots in meetings setting
+  ipcMain.on('updateDisableScreenshotsInMeetings', (event, enabled) => {
+    updateDisableScreenshotsInMeetings(enabled);
   });
 
   // Handler for getting audio capture status
@@ -744,12 +776,17 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
  */
 async function captureAndSend(idToken) {
   try {
-    // Capture screenshots
-    const screenshots = await captureScreenshot();
+    // Check if screenshots should be disabled during meetings
+    let screenshots = [];
+    if (!shouldDisableScreenshotsInMeetings()) {
+      // Capture screenshots
+      screenshots = await captureScreenshot();
+    } else {
+      log.info('Screenshots disabled during meeting');
+    }
 
     if (!screenshots || screenshots.length === 0) {
-        log.warn('No screenshots captured, skipping upload');
-        return false;
+        log.info('No screenshots captured, continuing with other data');
     }
 
     // Get input data while resetting buffers
@@ -761,6 +798,16 @@ async function captureAndSend(idToken) {
       // Pass the specific errors to the handler
       handleCaptureError(new Error('Capture module error detected'), 'module-specific', captureErrors);
       delete inputData.captureErrors; // Remove this property before sending
+    }
+    
+    // Check if we have any data to upload
+    const hasScreenshots = screenshots && screenshots.length > 0;
+    const hasAudioTranscript = inputData && inputData.audioTranscript;
+    const hasActivity = inputData && inputData.activity && inputData.activity.length > 0;
+    
+    if (!hasScreenshots && !hasAudioTranscript && !hasActivity) {
+      log.info('No data to upload, skipping');
+      return false;
     }
     
     // Send all collected data to the server
@@ -961,5 +1008,6 @@ module.exports = {
   stopCaptureInterval,
   isCapturing,
   setCaptureInterval,
-  initCapture
+  initCapture,
+  shouldDisableScreenshotsInMeetings
 }; 

@@ -320,6 +320,12 @@ async function saveUserSettings(type, value) {
         type: 'timezone',
         timezone: value
       });
+    } else if (type === 'disableScreenshotsInMeetings') {
+      settingsData.disableScreenshotsInMeetings = value;
+      logAnalyticsEvent('settings_updated', {
+        type: 'disableScreenshotsInMeetings',
+        enabled: value
+      });
     }
 
     // Check if we need to include OS info (only when saving other settings, not app)
@@ -414,6 +420,16 @@ async function updateSettingsUI(settings) {
 
   // Recompute dependency for meeting screenshots toggle now that audio state is applied
   try { recomputeMeetingScreenshotsDependency(); } catch (_) {}
+
+  // Handle disable screenshots in meetings setting
+  if (settings && typeof settings.disableScreenshotsInMeetings === 'boolean') {
+    const disableScreenshots = document.getElementById('disableScreenshotsInMeetings');
+    if (disableScreenshots) {
+      disableScreenshots.checked = settings.disableScreenshotsInMeetings;
+      // Send to main process
+      ipcRenderer.send('updateDisableScreenshotsInMeetings', settings.disableScreenshotsInMeetings);
+    }
+  }
 
   // Handle workhours setting
   if (settings && settings.workhours) {
@@ -655,7 +671,10 @@ function setupMeetingScreenshotsDependency() {
   const applyState = () => {
     const micOn = !!(audioCheckbox && audioCheckbox.checked);
     disableScreenshots.disabled = !micOn;
-    if (!micOn) disableScreenshots.checked = false;
+    if (!micOn) {
+      // Don't uncheck if we're just temporarily disabling due to no audio
+      // The setting will be restored when audio is re-enabled
+    }
   };
 
   // Initial application
@@ -664,6 +683,20 @@ function setupMeetingScreenshotsDependency() {
   if (audioCheckbox) {
     audioCheckbox.addEventListener('change', applyState);
   }
+
+  // Add event listener for the disable screenshots toggle
+  disableScreenshots.addEventListener('change', async () => {
+    const isChecked = disableScreenshots.checked;
+    try {
+      await saveUserSettings('disableScreenshotsInMeetings', isChecked);
+      // Send to main process
+      ipcRenderer.send('updateDisableScreenshotsInMeetings', isChecked);
+    } catch (error) {
+      // Revert on error
+      disableScreenshots.checked = !isChecked;
+      console.error('Error saving disable screenshots setting:', error);
+    }
+  });
 }
 
 // Standalone recompute that can be called after async settings load
@@ -673,7 +706,10 @@ function recomputeMeetingScreenshotsDependency() {
   if (!disableScreenshots) return;
   const micOn = !!(audioCheckbox && audioCheckbox.checked);
   disableScreenshots.disabled = !micOn;
-  if (!micOn) disableScreenshots.checked = false;
+  if (!micOn) {
+    // Don't uncheck if we're just temporarily disabling due to no audio
+    // The setting will be restored when audio is re-enabled
+  }
 }
 
 // Set up listeners for workhours inputs
