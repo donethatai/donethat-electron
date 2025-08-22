@@ -1,11 +1,15 @@
 const { initializeApp } = require("firebase/app");
-const { getAuth } = require("firebase/auth");
+const { getAuth, setPersistence, browserLocalPersistence } = require("firebase/auth");
 const { getFunctions } = require("firebase/functions");
 const firebaseConfig = require("../firebase-config.js");
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
+
+// Configure persistence to ensure auth state persists across app restarts
+setPersistence(auth, browserLocalPersistence);
+
 const functions = getFunctions(firebaseApp, "europe-west1");
 
 module.exports = { auth, firebaseApp, functions }; 
