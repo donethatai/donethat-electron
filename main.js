@@ -706,6 +706,7 @@ function updateTrayIcon(isActuallyRecording) {
   const loggedIn = stateManager?.isAuthenticated() ?? false;
   const isPaused = stateManager?.isPaused() ?? false;
   const hasPermission = stateManager?.hasScreenCapturePermission() ?? false;
+  const hasValidAccess = stateManager?.hasValidAccess() ?? false;
 
   if (isActuallyRecording) {
     iconPath = iconRecordingPath;
@@ -716,6 +717,9 @@ function updateTrayIcon(isActuallyRecording) {
   } else if (!loggedIn) {
     iconPath = iconErrorPath;
     tooltip = 'DoneThat - Not Logged In';
+  } else if (!hasValidAccess) {
+    iconPath = iconErrorPath;
+    tooltip = 'DoneThat - No Valid Subscription';
   } else if (isPaused) {
     iconPath = iconPausedPath;
     tooltip = 'DoneThat - Paused';
@@ -1017,8 +1021,9 @@ function checkAndAdjustRecording() {
     // Determine if we should be recording based on current conditions
     const isAuthenticated = stateManager?.isAuthenticated();
     const hasPermission = stateManager?.hasScreenCapturePermission();
+    const hasValidAccess = stateManager?.hasValidAccess();
     const isPaused = stateManager?.isPaused();
-    const shouldBeRecording = isAuthenticated && hasPermission && !isPaused;
+    const shouldBeRecording = isAuthenticated && hasPermission && hasValidAccess && !isPaused;
 
     // to capture some cases where auth is loaded later
     // but not recording it's not triggering above function because

@@ -19,6 +19,8 @@ let idToken = null; // User authentication token
 let workPeriodCheckTimeoutId = null; // For scheduling next workday/workhours check
 let autoSubmit = false;
 let hasShownStorageError = false; // Flag to prevent multiple error alerts
+let subscriptionStatus = null; // User subscription status
+let hasActiveTeam = false; // Whether user has active team membership
 
 // Function references that will be set by main.js
 let checkAndAdjustRecording = null;
@@ -118,11 +120,13 @@ async function initState(options = {}) {
       pauseUntilNextWorkPeriod,
       updateWaylandStatus,
       updateScreenCapturePermission,
+      updateSubscriptionState,
       getUserWorkdays: () => userWorkdays,
       getUserWorkhours: () => userWorkhours,
       hasScreenCapturePermission: () => hasScreenCapturePermission,
       isWaylandSession: () => isWaylandSession,
       isAuthenticated: () => Boolean(idToken),
+      hasValidAccess: () => hasActiveTeam || subscriptionStatus === 'trialing' || subscriptionStatus === 'active',
       getIdToken: () => {
         return idToken;
       },
@@ -578,6 +582,17 @@ function updateScreenCapturePermission(permission) {
   hasScreenCapturePermission = permission;
 }
 
+// Update subscription state
+function updateSubscriptionState(newSubscriptionStatus, activeTeam) {
+  subscriptionStatus = newSubscriptionStatus;
+  hasActiveTeam = activeTeam;
+  
+  // Trigger recording state check when subscription state changes
+  if (checkAndAdjustRecording) {
+    checkAndAdjustRecording();
+  }
+}
+
 // Set up IPC handlers for state management
 function setupIPCHandlers() {
   // Auth handlers - single source of truth for login/logout events
@@ -726,6 +741,11 @@ function setupIPCHandlers() {
     } else {
       log.warn('No period end time received with summary submission');
     }
+  });
+
+  // Add IPC handler for subscription state updates
+  ipcMain.on('updateSubscriptionState', (event, subscriptionStatus, activeTeam) => {
+    updateSubscriptionState(subscriptionStatus, activeTeam);
   });
 
   // Add IPC handler for auto submit setting

@@ -200,7 +200,7 @@ class Analytics {
     if (!hasValidAccess()) return 'none';
     
     // Check the different types of access
-    if (appState.teamStatus === 'active') return 'team';
+    if (appState.hasActiveTeam) return 'team';
     if (appState.subscriptionStatus === 'trialing') return 'trial';
     if (appState.subscriptionStatus === 'active') return 'paid';
     

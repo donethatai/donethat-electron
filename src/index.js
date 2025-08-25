@@ -6,7 +6,7 @@ const { ipcRenderer } = require('electron');
 const { shell } = require('electron');
 
 const { auth } = require('./firebase.js');
-const { subscriptionInitialize, subscriptionUpdateUI } = require('./subscription.js');
+
 const { initializeSettings, loadUserSettings } = require('./settings.js');
 const { initializeAuth } = require('./auth.js');
 const { initializeDashboard, resetSummaryState, refreshDashboardNotes } = require('./dashboard.js');
@@ -105,8 +105,6 @@ function navigateToView(viewName) {
       viewName = 'signin';
     } else if (!hasScreenCapturePermission()) {
       viewName = 'settings';
-    } else if (!hasValidAccess()) {
-      viewName = 'subscription';
     } else {
       viewName = 'dashboard';
     }
@@ -122,9 +120,7 @@ function navigateToView(viewName) {
       resetSummaryState();
       viewToShow = settingsView;
       break;
-    case 'subscription':
-      viewToShow = document.getElementById('subscriptionView');
-      break;
+
     case 'permission':
       viewToShow = settingsView;
       break;
@@ -196,25 +192,15 @@ async function loadUserSettingsCallback() {
     // Use lowercase team status
     const hasActiveTeam = Object.values(teams).some(team => 
       team.status === 'active');
-    
-    const hasActiveSubscription = result.data?.subscription?.status === 'trialing' || result.data?.subscription?.status === 'active';
 
     // Update all relevant state
     updateSubscriptionState(result.data?.subscription?.status, hasActiveTeam);
     updateStoreScreenshots(result.data?.storeScreenshots || false);
     updateDateCreated(result.data?.analytics?.createdAt);
 
-    // Update subscription UI with current data and wait for it to complete
-    await subscriptionUpdateUI({
-      active: hasActiveSubscription || hasActiveTeam,
-      source: hasActiveTeam ? 'team' : 'individual',
-      status: hasActiveTeam ? 'active' : result.data?.subscription?.status || null,
-      trialActive: result.data?.subscription?.status === 'trialing',
-      trialDaysRemaining: result.data?.subscription?.trialDaysRemaining,
-      trialEndsAt: result.data?.subscription?.trialEndsAt,
-      paidActive: result.data?.subscription?.status === 'active',
-      currentPeriodEnd: result.data?.subscription?.currentPeriodEnd
-    });
+    // Send subscription state to main process
+    const { ipcRenderer } = require('electron');
+    ipcRenderer.send('updateSubscriptionState', result.data?.subscription?.status, hasActiveTeam);
 
     // Fetch initial pause state from main process
     const initialIsPaused = await ipcRenderer.invoke('getInitialPauseState');
@@ -244,7 +230,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize all modules
   initializeAuth(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeDashboard(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
-  subscriptionInitialize(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeSettings(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializePermissions(navigateToView, getCurrentView);
   initializeAnalytics();
@@ -254,39 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const openChatBtn = document.getElementById('openChatBtn');
   const openSettingsViewBtn = document.getElementById('openSettingsViewBtn');
   
-  function activateSettingsSection(targetId) {
-    const sections = [
-      'section-recording',
-      'section-schedule',
-      'section-subscription',
-      'section-advanced',
-      'section-about'
-    ];
-    // Hide all
-    sections.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.classList.add('hidden');
-    });
-    // Show target
-    const target = document.getElementById(targetId);
-    if (target) target.classList.remove('hidden');
-    // Update active tab
-    document.querySelectorAll('.settings-tab').forEach(tab => {
-      tab.classList.remove('active');
-      const href = (tab.getAttribute('href') || '').replace('#','');
-      if (href === targetId) tab.classList.add('active');
-    });
-  }
-  
-  function setupSettingsNav() {
-    document.querySelectorAll('.settings-tab').forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        e.preventDefault();
-        const href = (tab.getAttribute('href') || '').replace('#','');
-        if (href) activateSettingsSection(href);
-      });
-    });
-  }
+
   if (openChatBtn) {
     try {
       const isMac = process.platform === 'darwin';

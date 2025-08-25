@@ -163,34 +163,9 @@
   @apply absolute inset-0 bg-white/80 flex items-center justify-center z-10;
 }
 
-/* Subscription-specific styles */
-/* Target subscription price specifically in the bullet list context */
-.text-gray-600 .subscription-price,
-.text-gray-600 .subscription-period {
-  font-size: inherit;
-  font-weight: inherit;
-  text-align: inherit;
-  margin-top: 0;
-  color: var(--color-neutral-700);
-}
 
-/* Override any other styling that might be applied */
-.text-left .subscription-price,
-.text-left .subscription-period {
-  color: var(--color-neutral-700) !important;
-}
 
-/* Special classes for subscription price in bullet points - no inline styles needed */
-.subscription-bullet-price,
-.subscription-bullet-period {
-  font-size: inherit;
-  font-weight: normal;
-  text-align: left;
-  margin-top: 0;
-  color: var(--color-neutral-700) !important;
-}
-
-/* Add email button (used for subscription action button as well) */
+/* Add email button */
 .add-email-btn {
   @apply absolute right-1.5 top-1/2 transform -translate-y-1/2 text-white rounded-full w-4 h-4 flex items-center justify-center transition-colors;
   background-color: var(--color-primary);
