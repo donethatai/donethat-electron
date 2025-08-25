@@ -213,8 +213,31 @@ onAuthStateChanged(auth, async (user) => {
         return;
       }
       
-      // User is signed in
-      const token = await user.getIdToken();
+      // User is signed in - add retry mechanism for token retrieval
+      let token = null;
+      let tokenRetries = 0;
+      const maxTokenRetries = 3;
+      
+      while (!token && tokenRetries < maxTokenRetries) {
+        try {
+          token = await user.getIdToken();
+          if (token) break;
+        } catch (error) {
+          tokenRetries++;
+          if (tokenRetries < maxTokenRetries) {
+            // Wait before retry (1s, 2s, 4s)
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, tokenRetries - 1)));
+          }
+        }
+      }
+      
+      if (!token) {
+        console.error('Failed to get token after retries');
+        // Don't logout immediately - let the user try again
+        hideSpinner();
+        return;
+      }
+      
       updateAuthState(true, token);
       ipcRenderer.send("login", token);
       
