@@ -41,7 +41,17 @@ window.addEventListener('DOMContentLoaded', () => {
       ipcRenderer.sendToHost('portal:logout');
     });
 
-    // Expose the real ipcRenderer to the webapp
+    // Expose a minimal safe API for opening links
+    if (typeof window !== 'undefined') {
+      window.Donethat = window.Donethat || {};
+      window.Donethat.openLink = function(url) {
+        try {
+          ipcRenderer.sendToHost('portal:open-link', url);
+        } catch (e) {}
+      };
+    }
+
+    // Expose the real ipcRenderer to the webapp (needed for auth logout)
     if (typeof window !== 'undefined') {
       window.__realIpcRenderer = ipcRenderer;
     }

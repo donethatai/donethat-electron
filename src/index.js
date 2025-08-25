@@ -12,9 +12,9 @@ const { initializeAuth } = require('./auth.js');
 const { initializeDashboard, resetSummaryState, refreshDashboardNotes } = require('./dashboard.js');
 const { initializePermissions } = require('./permissions.js');
 const { initializeAnalytics, trackPageView } = require('./analytics.js');
+const { routeLink } = require('./link-router.js');
 const { 
   hasScreenCapturePermission,
-  hasValidAccess,
   updateSubscriptionState,
   updateStoreScreenshots,
   updateCurrentView,
@@ -27,7 +27,7 @@ const {
 
 require('./audio-recorder');
 
-const coreViews = ['settings', 'dashboard'];
+
 
 // Reference to embedded portal webview
 let portalView = null;
@@ -40,7 +40,7 @@ function updateSettingsToggleLabelGlobal() {
     const settingsToggleBtn = document.getElementById('openSettingsViewBtn');
     if (!settingsToggleBtn) return;
     const v = getCurrentView();
-    if (v === 'settings') {
+    if (v === 'settings' || v === 'permissions') {
       settingsToggleBtn.textContent = 'Dashboard';
       settingsToggleBtn.className = 'btn-primary topbar-btn'; // Bright orange when on permissions
     } else {
@@ -91,12 +91,7 @@ const dashboardView = document.getElementById("dashboardView");
 function navigateToView(viewName) {
   const currentView = getCurrentView();
 
-  
-  // Only navigate to a core view if the current view is a core view
-  // Eg prevent navigating to settings when signup not complete
-  if (coreViews.includes(viewName) && !coreViews.includes(currentView)) {
-    viewName = currentView;
-  }
+
 
   // Handle 'signup-next' parameter
   if (viewName === 'signup-next') {
@@ -122,6 +117,7 @@ function navigateToView(viewName) {
       break;
 
     case 'permission':
+    case 'permissions':
       viewToShow = settingsView;
       break;
 
@@ -360,9 +356,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setRecordingIcon(isPaused);
   });
 
-  // Initialize settings nav handlers
-  setupSettingsNav();
-
   // Sync initial labels
   updateSettingsToggleLabelGlobal();
 
@@ -370,12 +363,12 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSettingsIcon();
 
   if (portalView) {
-    // When the webview is ready, optionally inject further config
+    // When the webview is ready, send login token and optionally open devtools
     portalView.addEventListener('dom-ready', () => {
-            // Proactively send login token whenever portal becomes ready
+      // Proactively send login token whenever portal becomes ready
       sendPortalLoginIfPossible();
       
-      // Inject the ipcRenderer bridge into the webapp's context
+      // Inject the ipcRenderer bridge and link processing into the webapp's context
       try {
         portalView.executeJavaScript(`
           window.__electronIpcRenderer = {
@@ -385,9 +378,22 @@ document.addEventListener('DOMContentLoaded', () => {
               }
             }
           };
+          
+          // Add link processing API
+          window.Donethat = window.Donethat || {};
+          window.Donethat.openLink = function(url) {
+            console.log('[WEBVIEW] openLink called with URL:', url);
+            try {
+              if (window.__realIpcRenderer) {
+                window.__realIpcRenderer.sendToHost('portal:open-link', url);
+              }
+            } catch (e) {
+              console.error('[WEBVIEW] Error sending portal:open-link:', e);
+            }
+          };
         `);
       } catch (e) {
-        console.error('[Portal] Failed to inject ipcRenderer:', e);
+        console.error('[Portal] Failed to inject ipcRenderer and link processing:', e);
       }
       
       // Open devtools only when DEBUG flag is true
@@ -412,7 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     } catch (e) {}
 
-    // Handle portal-initiated logout only; we broadcast auth state proactively
+    // Handle messages from webview (logout and link routing)
     portalView.addEventListener('ipc-message', async (event) => {
       if (event.channel === 'portal:logout') {
         // Web app initiated logout -> perform desktop logout flow
@@ -421,6 +427,11 @@ document.addEventListener('DOMContentLoaded', () => {
           await performFullLogout();
         } catch (e) {
           console.error('Error during portal-initiated logout:', e);
+        }
+      } else if (event.channel === 'portal:open-link') {
+        const url = event.args[0];
+        if (url) {
+          routeLink(url, { source: 'webview' });
         }
       }
     });
@@ -431,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (appSettingsLink) {
     appSettingsLink.addEventListener('click', (e) => {
       e.preventDefault();
-      shell.openExternal('https://app.donethat.ai/settings');
+      routeLink('https://app.donethat.ai/settings', { source: 'index' });
     });
   }
 
@@ -440,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (supportLink) {
     supportLink.addEventListener('click', (e) => {
       e.preventDefault();
-      shell.openExternal('https://donethat.ai/support');
+      routeLink('https://donethat.ai/support', { source: 'index' });
     });
   }
 });
@@ -513,6 +524,15 @@ ipcRenderer.on('navigate', (event, viewName) => {
 // Add pause state handler
 ipcRenderer.on('pauseStateChanged', (event, isPaused) => {
   updatePauseState(isPaused);
+});
+
+// Handle donethat:// forwarded from main as internal navigation
+ipcRenderer.on('router:open-link', (event, url) => {
+  try {
+    if (url) {
+      routeLink(url, { source: 'main' });
+    }
+  } catch (e) {}
 });
 
 // Initialize centralized chat (state-managed)

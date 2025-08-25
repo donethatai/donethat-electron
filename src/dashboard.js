@@ -161,7 +161,8 @@ function hideSummaryOverlay() {
       document.querySelectorAll('.settings-link').forEach(link => {
         link.addEventListener('click', (e) => {
           e.preventDefault();
-          shell.openExternal('https://app.donethat.ai/feed');
+          const { routeLink } = require('./link-router.js');
+          routeLink('https://app.donethat.ai/feed', { source: 'dashboard' });
         });
       });
     }

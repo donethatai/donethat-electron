@@ -1,6 +1,7 @@
 
 
 const { ipcRenderer } = require('electron')
+const { routeLink } = require('./link-router.js')
 
 const input0 = document.getElementById('chatInput')
 const includeScreenBtn = document.getElementById('includeScreenBtn')
@@ -8,6 +9,17 @@ const openAppBtn = document.getElementById('openAppBtn')
 const closeOverlayBtn = document.getElementById('closeOverlayBtn')
 const clearBtn = document.getElementById('clearBtn')
 const chatContainer = document.getElementById('chatContainer')
+
+// Event delegation for chat links - handle all link clicks at container level
+chatContainer.addEventListener('click', (e) => {
+  if (e.target.classList.contains('chat-link')) {
+    e.preventDefault()
+    const url = e.target.getAttribute('data-url')
+    if (url) {
+      routeLink(url, { source: 'chat' })
+    }
+  }
+})
 
 let messages = []
 let chatVisible = false
@@ -52,7 +64,7 @@ function applyScrollAndClamp(desired) {
   chatContainer.scrollTop = chatContainer.scrollHeight
 }
 
-// Simple markdown parser for chat bubbles (supports bold, italic, code, lists)
+// Enhanced markdown parser for chat bubbles (supports bold, italic, code, lists, and links)
 function parseMarkdown(text) {
   if (!text) return ''
 
@@ -85,6 +97,10 @@ function parseMarkdown(text) {
       .replace(/(^|[^_])_(.*?)_(?!_)/g, '$1<em>$2</em>')
       // Code: `text`
       .replace(/`([^`]+)`/g, '<code>$1</code>')
+      // Markdown links: [text](url)
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="chat-link" data-url="$2">$1</a>')
+      // Plain URLs (including donethat://)
+      .replace(/(https?:\/\/[^\s]+|donethat:\/\/[^\s]+)/g, '<a href="$1" class="chat-link" data-url="$1">$1</a>')
   }
 
   for (const rawLine of lines) {
@@ -179,6 +195,8 @@ function renderChat() {
 
   // Hide the message container when empty so the input is visually centered
   chatContainer.style.display = toRender.length > 0 ? '' : 'none'
+
+  // Event delegation for chat links - handled once at container level
 
   requestAnimationFrame(() => {
     const desired = computeDesiredHeight()

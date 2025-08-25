@@ -74,7 +74,7 @@ app.on('activate', () => {
 });
 
 // To show dev tools next to main window
-let DEBUG = false
+let DEBUG = true
 
 // Update screenshot interval logic
 let SCREENSHOT_INTERVAL_MINUTES = 5; // Default to 5 minutes for release
@@ -297,6 +297,13 @@ ipcMain.on('firebase-custom-token', (event, token) => {
   }
 });
 
+// Add IPC handler for processing external URLs
+ipcMain.on('process-external-url', (event, urlString) => {
+  if (mainWindow) {
+    mainWindow.webContents.send('process-external-url', urlString);
+  }
+});
+
 // Add IPC handler to focus app window
 ipcMain.on('focus-app-window', (event) => {
   if (mainWindow) {
@@ -486,14 +493,18 @@ app.whenReady().then(async () => {
   // Add daily auth check
   scheduleDailyAuthCheck();
 
-  // Handle custom URL scheme for Google SSO
+  // Handle custom URL scheme for Google SSO and internal navigation
   app.on('open-url', (event, urlString) => {
     event.preventDefault();
     const url = new URL(urlString);
     const token = url.searchParams.get('token');
+    
     if (token && mainWindow) {
       // Send the token to the window so it can sign in
       mainWindow.webContents.send('firebase-custom-token', token);
+    } else if (mainWindow) {
+      // Forward other donethat:// URLs for internal navigation
+      mainWindow.webContents.send('router:open-link', urlString);
     }
   });
 
@@ -505,6 +516,9 @@ app.whenReady().then(async () => {
       const token = urlObj.searchParams.get('token');
       if (token && mainWindow) {
         mainWindow.webContents.send('firebase-custom-token', token);
+      } else if (mainWindow) {
+        // Forward other donethat:// URLs for internal navigation
+        mainWindow.webContents.send('router:open-link', url);
       }
     } catch (error) {
       log.error('Error parsing URL in app launch:', error);
