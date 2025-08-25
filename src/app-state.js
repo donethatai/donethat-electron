@@ -3,7 +3,7 @@ const { ipcRenderer } = require('electron');
 const { onAuthStateChanged } = require('firebase/auth');
 const { firebaseApp, functions, auth } = require('./firebase.js');
 const { getFirestore } = require('firebase/firestore');
-const { collection, query, where, orderBy, onSnapshot } = require('@firebase/firestore');
+const { collection, query, orderBy, onSnapshot } = require('@firebase/firestore');
 const { httpsCallable } = require('firebase/functions');
 const state = {
   // Authentication state
@@ -145,7 +145,7 @@ function subscribeToMessages(chatId) {
   }
 
   const db = getFirestore(firebaseApp, 'europe-west1');
-  const q = query(collection(db, `chats/${chatId}/messages`), orderBy('createdAt', 'asc'));
+  const q = query(collection(db, `chats/${auth.currentUser.uid}/chats/${chatId}/messages`), orderBy('createdAt', 'asc'));
 
   state.stopMessageListener = onSnapshot(q, (snap) => {
     const messages = snap.docs.map((d) => {
@@ -167,8 +167,7 @@ function startChatListeners() {
   if (!auth?.currentUser) return;
   const db = getFirestore(firebaseApp, 'europe-west1');
   const q = query(
-    collection(db, 'chats'),
-    where('userId', '==', auth.currentUser.uid),
+    collection(db, `chats/${auth.currentUser.uid}/chats`),
     orderBy('updatedAt', 'desc')
   );
 

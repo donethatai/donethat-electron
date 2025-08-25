@@ -74,7 +74,7 @@ app.on('activate', () => {
 });
 
 // To show dev tools next to main window
-let DEBUG = true
+let DEBUG = false
 
 // Update screenshot interval logic
 let SCREENSHOT_INTERVAL_MINUTES = 5; // Default to 5 minutes for release
