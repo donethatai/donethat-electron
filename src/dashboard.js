@@ -3,7 +3,7 @@ const { firebaseApp } = require('./firebase.js');
 const { ipcRenderer, shell } = require('electron');
 const { logAnalyticsEvent } = require('./analytics.js');
 const { getIsPaused } = require('./app-state.js');
-const { showErrorModal } = require('./modal.js');
+const { showBanner } = require('./notify.js');
 
 const functions = getFunctions(firebaseApp, "europe-west1");
 
@@ -306,7 +306,7 @@ if (summarySubmitBtn) {
       summarySubmitBtn.disabled = false;
       summarySubmitBtn.textContent = 'Submit';
       console.error("Error submitting summary:", error);
-      showErrorModal(`Error submitting summary: ${error.message}`);
+      showBanner(`Error submitting summary: ${error.message}`, { title: 'Summary', sticky: true });
       
       // Log error in summary submission
       logAnalyticsEvent('summary_submitted', {

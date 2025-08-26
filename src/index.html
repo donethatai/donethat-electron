@@ -57,8 +57,28 @@
       </div>
       <div id="topbarBlocker" class="topbar-overlay hidden" aria-hidden="true"></div>
     </div>
-    <!-- Visibility note area under topbar (shared across views) -->
-    <div id="visibilityNoteContainer" class="topbar-note hidden"></div>
+    <!-- In-app Notification Banner (generic, with optional action) -->
+    <div id="inappNotification" class="auth-error-notification hidden">
+      <div class="auth-error-content">
+        <div class="flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          <div class="flex flex-col">
+            <span id="inappNotificationTitle" class="font-semibold"></span>
+            <span id="inappNotificationMessage"></span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="inappNotificationAction" class="btn-primary topbar-btn hidden"></button>
+          <button id="inappNotificationClose" class="auth-error-close" aria-label="Close notification">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
     <!-- Auth Error Notification Banner -->
     <div id="authErrorNotification" class="auth-error-notification hidden">
       <div class="auth-error-content">
@@ -188,14 +208,19 @@
                 <label for="signInPassword" class="form-label">
                   Password
                 </label>
-                <input
-                  type="password"
-                  id="signInPassword"
-                  name="password"
-                  autocomplete="current-password"
-                  required
-                  class="form-input rounded-xl py-2.5"
-                />
+                <div class="relative w-full">
+                  <input
+                    type="password"
+                    id="signInPassword"
+                    name="password"
+                    autocomplete="current-password"
+                    required
+                    class="form-input rounded-xl py-2.5 pr-10"
+                  />
+                  <button type="button" id="toggleSignInPasswordBtn" class="icon-toggle-btn cursor-pointer" aria-label="Toggle password visibility">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                </div>
               </div>
               <div>
                 <button
@@ -250,14 +275,19 @@
                 <label for="signUpPassword" class="form-label">
                   Password
                 </label>
-                <input
-                  type="password"
-                  id="signUpPassword"
-                  name="password"
-                  autocomplete="new-password"
-                  required
-                  class="form-input rounded-xl py-2.5"
-                />
+                <div class="relative w-full">
+                  <input
+                    type="password"
+                    id="signUpPassword"
+                    name="password"
+                    autocomplete="new-password"
+                    required
+                    class="form-input rounded-xl py-2.5 pr-10"
+                  />
+                  <button type="button" id="toggleSignUpPasswordBtn" class="icon-toggle-btn cursor-pointer" aria-label="Toggle password visibility">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                </div>
               </div>
               <div>
                 <button

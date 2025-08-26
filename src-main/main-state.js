@@ -49,14 +49,19 @@ function showStorageError(error) {
     } catch (dialogError) {
       // Fallback to notification if dialog fails
       try {
-        new Notification({
-          title: 'Storage Permission Error',
-          body: 'Could not store configuration. Please check your antivirus software.',
-          silent: false,
-          urgency: 'critical'
-        }).show();
+        const { BrowserWindow } = require('electron');
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win) {
+          try { win.show(); win.focus(); } catch (e) {}
+          win.webContents.send('inapp:notify', {
+            id: 'storage-permission-error',
+            title: 'Storage Permission Error',
+            message: 'Could not store configuration. Please check your antivirus software.',
+            sticky: true
+          });
+        }
       } catch (notificationError) {
-        log.error('Failed to show storage error notification:', notificationError);
+        log.error('Failed to send in-app storage error notification:', notificationError);
       }
     }
   }
@@ -289,22 +294,19 @@ function _checkWorkdayEndNotification() {
 
   if (lastSummaryTimestamp && (Date.now() - lastSummaryTimestamp > threeHoursInMillis)) {
     // Create notification with same options structure as start notification
-    const notification = new Notification({
-      title: "Workday Ended",
-      body: "Remember to generate your summary in DoneThat!",
-      silent: false,
-      hasReply: false,
-      urgency: 'critical'
-    });
-
-    notification.on('click', () => {
-      if (navigateToView) {
-        navigateToView('signup-next');
+    try {
+      const { BrowserWindow } = require('electron');
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) {
+        try { win.show(); win.focus(); } catch (e) {}
+        win.webContents.send('inapp:notify', {
+          id: 'workday-ended',
+          title: 'Workday Ended',
+          message: 'Remember to generate your summary in DoneThat!',
+          sticky: true
+        });
       }
-    });
-
-    // Show notification
-    notification.show();
+    } catch (e) {}
   }
 }
 
@@ -907,6 +909,9 @@ function _scheduleNextWorkEndCheck() {
   // Ensure msUntilCheck is positive
   const positiveMsUntilCheck = Math.max(msUntilCheck, 60000); // Minimum 1 minute wait
     
+  // Capture the intended fire time to avoid late (post-sleep) notifications
+  const intendedFireTs = nextWorkEndTime.getTime();
+
   // Set timeout for next check - when work period ends, pause until next work period
   workPeriodCheckTimeoutId = setTimeout(() => {
     // Create a bridge to mainWindow
@@ -918,8 +923,15 @@ function _scheduleNextWorkEndCheck() {
       log.error('Failed to get mainWindow for pauseUntilNextWorkPeriod:', error);
     }
     
+    // If this timer fires significantly late (e.g., device resumed next day),
+    // avoid showing a stale end-of-day notification
+    const now = Date.now();
+    const LATE_GRACE_MS = 30 * 60 * 1000; // 30 minutes
+    const firedLate = now - intendedFireTs > LATE_GRACE_MS;
+
     // When work period ends, pause until next work period
-    pauseUntilNextWorkPeriod(mainWindow);
+    // Use silent=true when firing late to suppress the banner
+    pauseUntilNextWorkPeriod(mainWindow, firedLate === true);
   }, positiveMsUntilCheck);
   
   return positiveMsUntilCheck;
@@ -970,19 +982,7 @@ function setIdToken(token) {
  */
 function clearIdToken() {
   idToken = null;
-  
-  // Show notification about logout
-  try {
-    const { Notification } = require('electron');
-    new Notification({
-      title: 'DoneThat Logged Out',
-      body: 'You have been logged out. Please log in again to continue tracking your work.',
-      silent: false,
-      urgency: 'critical'
-    }).show();
-  } catch (error) {
-    log.error('Failed to show logout notification:', error);
-  }
+
 }
 
 /**

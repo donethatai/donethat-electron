@@ -101,28 +101,6 @@ let saveOverlayPositionDebounce = null
 let overlayPositionUserSet = false
 
 if (DEBUG) {
-  // Add custom notification transport for warnings and errors
-  log.hooks.push((message, transport) => {
-    if (transport !== log.transports.console) return message;
-
-    if (message.level === 'warn' || message.level === 'error') {
-      // Only send notifications after app is ready
-      if (app.isReady()) {
-        try {
-          new Notification({
-            title: `DoneThat ${message.level.toUpperCase()}`,
-            body: message.data.join(' ').substring(0, 100) + (message.data.join(' ').length > 100 ? '...' : ''),
-            silent: false
-          }).show();
-        } catch (err) {
-          console.error('Failed to show notification:', err);
-        }
-      }
-    }
-
-    return message;
-  });
-
   // For debugging, replace console with more verbose electron-log
   const originalConsole = { ...console };
   console.log = (...args) => { log.info(...args); originalConsole.log(...args); };
@@ -152,6 +130,29 @@ if (app.isPackaged) {
   log.transports.file.level = 'silly'
 }
 
+// Global hook: surface ERROR logs as non-sticky in-app notifications (dev + prod)
+try {
+  log.hooks.push((message) => {
+    if (!message || message.level !== 'error') return message;
+    if (!app.isReady() || !mainWindow) return message;
+    try {
+      const data = Array.isArray(message.data) ? message.data : [message.data];
+      const text = data.filter(Boolean).map(String).join(' ');
+      const body = text.substring(0, 160) + (text.length > 160 ? '…' : '');
+      try { if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) overlayWindow.hide(); } catch (e) {}
+      try { mainWindow.show(); } catch (e) {}
+      try { mainWindow.focus(); } catch (e) {}
+      mainWindow.webContents.send('inapp:notify', {
+        id: 'log-error-' + Date.now(),
+        title: 'DoneThat Error',
+        message: body,
+        sticky: false
+      });
+    } catch (_) {}
+    return message;
+  });
+} catch (_) {}
+
 ////// AUTOUPDATER /////
 
 // Configure autoUpdater
@@ -179,18 +180,19 @@ function setupAutoUpdater() {
         log.info('Windows platform: using notification-based update');
         
         // Show notification for user to manually install
-        const notification = new Notification({
-          title: 'DoneThat Update',
-          body: 'An update is ready. Click to install now. You may see a windows prompt to confirm.',
-          silent: false
-        });
-        
-        notification.on('click', () => {
-          log.info('Update notification clicked, installing update');
-          autoUpdater.quitAndInstall(false, true);
-        });
-        
-        notification.show();
+        try {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('inapp:notify', {
+              id: 'update-available',
+              title: 'DoneThat Update',
+              message: 'An update is ready. Click to install now. You may see a Windows prompt to confirm.',
+              sticky: true,
+              action: { label: 'Install Update', channel: 'update:install', payload: { forceRunAfter: true } }
+            });
+          }
+        } catch (e) { log.warn('Failed to send in-app update notify:', e); }
         
         // Force update after 30 minutes if notification was missed/disabled
         const currentVersion = app.getVersion();
@@ -205,33 +207,35 @@ function setupAutoUpdater() {
         // Linux - show dialog, never silent install
         log.info('Linux platform: using dialog-based update');
         
-        const { dialog } = require('electron');
-        dialog.showMessageBox({
-          type: 'info',
-          title: 'DoneThat Update Available',
-          message: `A new version (${info.version}) is available and has been downloaded.`,
-          detail: 'You will need to manually restart DoneThat after the update is installed.',
-          buttons: ['Cancel', 'Install Update'],
-          cancelId: 0,
-          defaultId: 1
-        }).then(({ response }) => {
-          if (response === 1) { // Install Update
-            log.info('Update dialog approved, installing update');
-            autoUpdater.quitAndInstall(false, false);
-          } else {
-            log.info('Update dialog canceled by user');
+        try {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('inapp:notify', {
+              id: 'update-available',
+              title: 'DoneThat Update Available',
+              message: `A new version (${info.version}) is available and has been downloaded.`,
+              sticky: true,
+              action: { label: 'Install Update', channel: 'update:install', payload: { forceRunAfter: false } }
+            });
           }
-        }).catch(err => {
-          log.error('Error showing update dialog:', err);
-        });
+        } catch (e) { log.warn('Failed to send in-app update notify (linux):', e); }
       } else {
         // macOS - use the original silent install approach
         log.info('macOS platform: using silent update');
-        setTimeout(() => {
-          log.info('Executing quitAndInstall() for macOS');
-          app.isQuitting = true; // Explicitly set this flag to prevent event.preventDefault in close handlers
-          autoUpdater.quitAndInstall();
-        }, 1000); // 1 second delay
+        try {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('inapp:notify', {
+              id: 'update-available',
+              title: 'DoneThat Update',
+              message: 'An update is ready. It will install on quit. Click to install now.',
+              sticky: true,
+              action: { label: 'Install Now', channel: 'update:install', payload: { forceRunAfter: true } }
+            });
+          }
+        } catch (e) { log.warn('Failed to send in-app update notify (mac):', e); }
       }
     } else {
       log.info('Development mode: skipping update installation');
@@ -290,6 +294,27 @@ ipcMain.on('logout-request', () => {
   }
 });
 
+// Ensure UI reacts on logout: hide overlay, show main window, and notify
+ipcMain.on('logout', () => {
+  try {
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+      overlayWindow.hide();
+    }
+  } catch (e) {}
+  if (mainWindow) {
+    try { mainWindow.show(); } catch (e) {}
+    try { mainWindow.focus(); } catch (e) {}
+    try {
+      mainWindow.webContents.send('inapp:notify', {
+        id: 'logged-out',
+        title: 'DoneThat Logged Out',
+        message: 'You have been logged out. Please sign in again to continue.',
+        sticky: true
+      });
+    } catch (e) {}
+  }
+});
+
 // Add IPC handler for custom token
 ipcMain.on('firebase-custom-token', (event, token) => {
   if (mainWindow) {
@@ -306,9 +331,14 @@ ipcMain.on('process-external-url', (event, urlString) => {
 
 // Add IPC handler to focus app window
 ipcMain.on('focus-app-window', (event) => {
+  try {
+    if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+      overlayWindow.hide();
+    }
+  } catch (e) {}
   if (mainWindow) {
-    mainWindow.focus();
-    mainWindow.show();
+    try { mainWindow.show(); } catch (e) {}
+    try { mainWindow.focus(); } catch (e) {}
   }
 });
 
@@ -389,6 +419,16 @@ app.whenReady().then(async () => {
     createApplicationMenu(); // Update menu on auth state change
   });
 
+  // Allow renderer modules to trigger in-app notifications centrally
+  ipcMain.on('inapp:notify', (_event, payload) => {
+    try { if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) overlayWindow.hide(); } catch (e) {}
+    if (mainWindow) {
+      try { mainWindow.show(); } catch (e) {}
+      try { mainWindow.focus(); } catch (e) {}
+      try { mainWindow.webContents.send('inapp:notify', payload); } catch (e) {}
+    }
+  });
+
   // Create tray with initial error icon
   let trayIcon = nativeImage.createFromPath(iconErrorPath)
 
@@ -435,6 +475,19 @@ app.whenReady().then(async () => {
 
   // Create window but don't show it yet
   createWindow()
+  // IPC to install update from in-app notification
+  ipcMain.on('update:install', (_event, payload) => {
+    try {
+      const runAfter = payload && payload.forceRunAfter === true;
+      // Windows: silent flag true for runAfter
+      if (process.platform === 'win32') {
+        autoUpdater.quitAndInstall(false, runAfter);
+      } else {
+        app.isQuitting = true;
+        autoUpdater.quitAndInstall();
+      }
+    } catch (e) { log.error('Failed to install update from banner:', e); }
+  });
 
   // Create overlay window (hidden initially)
   createOverlayWindow()
@@ -1557,12 +1610,18 @@ function scheduleDailyAuthCheck() {
   setTimeout(() => {
     // Check if user is not authenticated
     if (!stateManager?.isAuthenticated()) {
-      new Notification({
-        title: 'DoneThat Not Logged In',
-        body: 'You are not logged in to DoneThat. Please log in to continue tracking your work.',
-        silent: false,
-        urgency: 'critical'
-      }).show();
+      try {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+          mainWindow.webContents.send('inapp:notify', {
+            id: 'not-logged-in',
+            title: 'DoneThat Not Logged In',
+            message: 'You are not logged in. Please log in to continue tracking your work.',
+            sticky: true
+          });
+        }
+      } catch (e) {}
     }
     
     // Schedule next check

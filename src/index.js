@@ -454,6 +454,58 @@ document.addEventListener('DOMContentLoaded', () => {
       routeLink('https://donethat.ai/support', { source: 'index' });
     });
   }
+
+  // In-app notification wiring
+  const inappEl = document.getElementById('inappNotification');
+  const inTitle = document.getElementById('inappNotificationTitle');
+  const inMsg = document.getElementById('inappNotificationMessage');
+  const inAction = document.getElementById('inappNotificationAction');
+  const inClose = document.getElementById('inappNotificationClose');
+  let inappTimer = null;
+  let inappCurrent = null; // { id, sticky, action }
+
+  function hideInappNotification() {
+    if (inappTimer) { clearTimeout(inappTimer); inappTimer = null; }
+    if (inappEl) inappEl.classList.add('hidden');
+    inappCurrent = null;
+  }
+
+  function showInappNotification(opts) {
+    if (!inappEl || !inTitle || !inMsg || !inClose || !inAction) return;
+    const { id, title, message, sticky, action } = opts || {};
+    inappCurrent = { id, sticky: !!sticky, action: action || null };
+
+    inTitle.textContent = title || '';
+    inMsg.textContent = message || '';
+
+    if (action && action.label && action.channel) {
+      inAction.textContent = action.label;
+      inAction.classList.remove('hidden');
+      inAction.onclick = () => {
+        try { ipcRenderer.send(action.channel, action.payload || null); } catch (e) {}
+        if (!sticky && action.autoClose !== false) hideInappNotification();
+      };
+    } else {
+      inAction.classList.add('hidden');
+      inAction.onclick = null;
+    }
+
+    inClose.onclick = () => hideInappNotification();
+    inappEl.classList.remove('hidden');
+    if (!sticky) {
+      inappTimer = setTimeout(() => hideInappNotification(), 8000);
+    }
+  }
+
+  ipcRenderer.on('inapp:notify', (_event, payload) => {
+    try { ipcRenderer.send('focus-app-window'); } catch (e) {}
+    showInappNotification(payload);
+  });
+
+  // Allow programmatic hide from other modules
+  ipcRenderer.on('inapp:hide', () => {
+    hideInappNotification();
+  });
 });
 
 // Keep portal session in sync with desktop auth

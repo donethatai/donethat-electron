@@ -10,7 +10,7 @@ const { requestAudioPermission, requestKeystrokesPermission, requestWindowsPermi
 const { refreshAuthToken } = require('./auth.js');
 const os = require('os');
 const packageInfo = require('../package.json');
-const { showErrorModal } = require('./modal.js');
+const { showBanner } = require('./notify.js');
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -376,7 +376,7 @@ async function saveUserSettings(type, value) {
       error_message: error.message
     });
     console.error("Error saving settings:", error);
-    showErrorModal(`Error saving settings: ${error.message}`);
+    showBanner(`Error saving settings: ${error.message}`, { title: 'Settings', sticky: true });
     throw error; // Re-throw error so UI can react (e.g., revert input)
   } finally {
     // Hide spinner
@@ -827,7 +827,7 @@ function setupGeminiApiKeyListeners() {
         }
       } catch (error) {
         console.error('Error saving Gemini API key:', error);
-        showErrorModal(`Error saving API key: ${error.message}`);
+        showBanner(`Error saving API key: ${error.message}`, { title: 'Settings', sticky: true });
       }
     });
   }
@@ -885,7 +885,7 @@ function setupGeminiApiKeyListeners() {
         });
       } catch (error) {
         console.error('Error clearing Gemini API key:', error);
-        showErrorModal(`Error clearing API key: ${error.message}`);
+        showBanner(`Error clearing API key: ${error.message}`, { title: 'Settings', sticky: true });
       }
     });
   }

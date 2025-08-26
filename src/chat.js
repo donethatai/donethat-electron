@@ -582,6 +582,22 @@ ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
     pendingMessages = []
   }
   
+  // If the assistant explicitly requests screen data for the next reply,
+  // honor that by toggling the screenshot include state.
+  // Uses `requestScreen` on assistant messages; missing is treated as false.
+  let requested = null
+  for (let i = newMessages.length - 1; i >= 0; i--) {
+    const m = newMessages[i]
+    if (m && m.role === 'assistant' && typeof m.requestScreen === 'boolean') {
+      requested = m.requestScreen
+      break
+    }
+  }
+  if (requested !== null) {
+    includeScreenOnNextMessage = !!requested
+    updateIncludeScreenBtn()
+  }
+  
   renderChat()
   
   // Auto-show and expand if new messages arrive
