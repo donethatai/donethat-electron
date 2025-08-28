@@ -155,6 +155,16 @@ try {
   });
 } catch (_) {}
 
+// Utility: hide main window only if app is not active (no focused window)
+function hideMainWindowIfVisible() {
+  try {
+    const hasFocusedWindow = !!BrowserWindow.getFocusedWindow();
+    if (!hasFocusedWindow && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+      mainWindow.hide();
+    }
+  } catch (e) {}
+}
+
 ////// AUTOUPDATER /////
 
 // Configure autoUpdater
@@ -715,6 +725,7 @@ ipcMain.on('overlay:show-if-hidden', () => {
     
     // Only show if the window is currently hidden
     if (!overlayWindow.isVisible()) {
+      hideMainWindowIfVisible();
       positionOverlayWindow();
       if (process.platform === 'darwin') {
         // macOS Spaces quirk: a window is associated with the Space/desktop it was last
