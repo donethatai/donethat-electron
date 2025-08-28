@@ -11,7 +11,6 @@ const saveFinalSummaryFunction = httpsCallable(functions, "saveFinalSummary");
 
 // Reference to permission-related elements 
 const generateSummaryBtn = document.getElementById("generateSummaryBtn");
-const submitSummaryBtn = document.getElementById("submitSummaryBtn");
 const summaryContainer = document.getElementById("summaryContainer");
 let currentSummaryId = null;
 const summaryLoadingSpinner = document.getElementById("summaryLoadingSpinner");
