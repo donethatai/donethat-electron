@@ -6,8 +6,6 @@ const { promisify } = require('util');
 
 const execAsync = promisify(exec);
 
-// --- macOS FFI removed; Swift micstatus helper is used instead ---
-
 class AudioSessionManager {
   constructor() {
     this.activeMicrophone = null;
@@ -21,8 +19,6 @@ class AudioSessionManager {
 
   initialize(options = 1000) {
     const intervalMs = typeof options === 'number' ? options : (options && options.checkIntervalMs ? options.checkIntervalMs : 1000);
-    
-    log.info(`Initializing audio session detector for platform: ${this.platform}, interval: ${intervalMs}ms`);
     
     if (this.sessionCheckInterval) {
       clearInterval(this.sessionCheckInterval);
@@ -49,9 +45,7 @@ class AudioSessionManager {
 
       switch (this.platform) {
         case 'win32':
-          log.debug('Checking Windows microphone usage...');
           currentlyActiveMic = await this.detectWindowsMicrophoneUsage();
-          log.debug('Windows microphone check result:', currentlyActiveMic);
           break;
         case 'darwin':
           currentlyActiveMic = await this.detectMacOSMicrophoneUsage();
@@ -67,13 +61,10 @@ class AudioSessionManager {
       this.activeMicrophone = currentlyActiveMic;
 
       if (this.activeMicrophone && !previouslyActiveMic) {
-        log.info('Microphone session started:', this.activeMicrophone);
         if (this.onSessionStartCallback) this.onSessionStartCallback(this.activeMicrophone);
       } else if (this.activeMicrophone && previouslyActiveMic && this.activeMicrophone !== previouslyActiveMic) {
-        log.info('Microphone device switched:', this.activeMicrophone);
         if (this.onDeviceSwitchCallback) this.onDeviceSwitchCallback(this.activeMicrophone);
       } else if (!this.activeMicrophone && previouslyActiveMic) {
-        log.info('Microphone session ended');
         if (this.onSessionEndCallback) this.onSessionEndCallback();
       }
     } catch (error) {
@@ -132,11 +123,10 @@ class AudioSessionManager {
       try {
         const { stdout } = await execAsync(registryCommand);
         if (stdout.trim().length > 0) {
-          log.debug('Windows microphone detected via registry method');
           return "Active Windows Device (Registry)";
         }
       } catch (registryError) {
-        log.debug('Registry method failed:', registryError.message);
+        // Registry method failed, continue to fallback
       }
 
       // Method 2: Check for active audio sessions using a different registry path (fallback)
@@ -145,14 +135,11 @@ class AudioSessionManager {
       try {
         const { stdout } = await execAsync(audioSessionRegistryCommand);
         if (stdout.trim().length > 0) {
-          log.debug('Windows microphone detected via non-packaged registry method');
           return "Active Windows Device (NonPackaged)";
         }
       } catch (nonPackagedError) {
-        log.debug('Non-packaged registry method failed:', nonPackagedError.message);
+        // Non-packaged registry method failed
       }
-
-      log.debug('No Windows microphone activity detected');
       return null;
       
     } catch (error) {

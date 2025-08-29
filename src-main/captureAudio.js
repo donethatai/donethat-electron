@@ -35,8 +35,6 @@ function initialize(window, config = {}) {
     throw new Error('Audio capture initialization failed: bufferDurationMs is required and must be a positive number');
   }
   
-  log.info(`Initializing audio capture module on platform: ${process.platform}, buffer duration: ${config.bufferDurationMs}ms`);
-  
   mainWindow = window;
   
   // Set up IPC handlers
@@ -46,7 +44,7 @@ function initialize(window, config = {}) {
   
   // Listen for audio device changes from renderer
   ipcMain.on('audio-device-changed', (event, info) => {
-    log.debug('Audio device changed:', info);
+    // Audio device changed
   });
   
   // Low-audio IPC not needed; periodic checks suffice
@@ -70,8 +68,6 @@ function initialize(window, config = {}) {
  */
 function initializeSessionDetection(config) {
   try {
-    log.info('Initializing audio session detection...');
-    
     // Initialize the session detector
     const initialized = audioSessionDetector.initialize({ checkIntervalMs: 1000 });
     if (!initialized) {
@@ -79,12 +75,8 @@ function initializeSessionDetection(config) {
       return;
     }
     
-    log.info('Audio session detector initialized successfully');
-    
     // Set up callbacks
     audioSessionDetector.onSessionStart(async (deviceId) => {
-      log.info('Audio session detected, checking permissions...');
-      
       // Check permission before starting recording
       const hasPermission = await checkPermission();
       if (!hasPermission) {
@@ -92,7 +84,6 @@ function initializeSessionDetection(config) {
         return;
       }
       
-      log.info('Starting recording after session detection');
       startRecordingInternal().catch(error => {
         log.error('Failed to start recording after session detection:', error);
       });
@@ -100,14 +91,12 @@ function initializeSessionDetection(config) {
     
     
     audioSessionDetector.onSessionEnd(() => {
-      log.info('Audio session ended, stopping recording');
       stopRecordingInternal().catch(error => {
         log.error('Failed to stop recording after session detection:', error);
       });
     });
     
     audioSessionDetector.onDeviceSwitch((deviceInfo) => {
-      log.info('Audio device switched:', deviceInfo);
       handleDeviceSwitch(deviceInfo).catch(error => {
         log.error('Failed to handle device switch:', error);
       });
@@ -121,8 +110,6 @@ function initializeSessionDetection(config) {
         mainWindow.webContents.send('linux-pactl-missing-notice');
       }
     });
-    
-    log.info('Audio session detection callbacks configured successfully');
     
   } catch (error) {
     log.error('Failed to initialize audio session detection:', error);
@@ -478,13 +465,11 @@ async function startRecordingInternal() {
         if (audioData) {
           const result = await processAudioFromRenderer(audioData)
           if (!result) {
-            // Log warning but don't throw - this is expected sometimes
-            log.debug('Periodic transcription returned no result, continuing...')
+            // No result from periodic transcription, continuing...
           }
         }
       } catch (e) {
-        // Log but don't throw - periodic transcription failures shouldn't stop recording
-        log.debug('Periodic transcription error (continuing):', e.message)
+        // Periodic transcription error, continuing...
       }
     }, TRANSCRIPTION_INTERVAL_MS)
     
@@ -557,7 +542,6 @@ async function startAudioTracking(config) {
     return false;
   }
   
-  log.info('Audio tracking started with session detection');
   return true;
 }
 

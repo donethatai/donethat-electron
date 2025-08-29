@@ -806,12 +806,10 @@ async function captureAndSend(idToken) {
     if (!shouldDisableScreenshotsInMeetings()) {
       // Capture screenshots
       screenshots = await captureScreenshot();
-    } else {
-      log.info('Screenshots disabled during meeting');
     }
 
     if (!screenshots || screenshots.length === 0) {
-        log.info('No screenshots captured, continuing with other data');
+        // No screenshots captured, continuing with other data
     }
 
     // Get input data while resetting buffers
@@ -831,7 +829,6 @@ async function captureAndSend(idToken) {
     const hasActivity = inputData && inputData.activity && inputData.activity.length > 0;
     
     if (!hasScreenshots && !hasAudioTranscript && !hasActivity) {
-      log.info('No data to upload, skipping');
       return false;
     }
     
