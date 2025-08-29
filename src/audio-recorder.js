@@ -16,6 +16,10 @@ function getBestSupportedMimeType() {
   return 'audio/webm;codecs=opus';
 }
 
+
+
+
+
 /**
  * Initialize audio recorder
  * @param {Object} config Configuration
@@ -230,20 +234,94 @@ window.stopAudioRecording = async function() {
       return null;
     }
     
+    // Decode WebM/Opus to PCM using Web Audio API
     return new Promise((resolve) => {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = () => {
-        resolve({
-          base64Data: reader.result,
-          mimeType: mimeType,
-          timeMs: duration
-        });
+      
+      reader.onloadend = async () => {
+        try {
+          // Decode the audio data
+          const arrayBuffer = reader.result;
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          
+          // Convert to 16kHz mono PCM
+          const sampleRate = 16000;
+          const numSamples = Math.floor(audioBuffer.duration * sampleRate);
+          
+          // Get the source data (mix to mono if stereo)
+          let sourceData;
+          if (audioBuffer.numberOfChannels === 1) {
+            sourceData = audioBuffer.getChannelData(0);
+          } else {
+            // Mix stereo to mono
+            const left = audioBuffer.getChannelData(0);
+            const right = audioBuffer.getChannelData(1);
+            sourceData = new Float32Array(left.length);
+            for (let i = 0; i < left.length; i++) {
+              sourceData[i] = (left[i] + right[i]) / 2;
+            }
+          }
+          
+          // Resample to 16kHz using linear interpolation
+          const resampledData = new Float32Array(numSamples);
+          const sourceSampleRate = audioBuffer.sampleRate;
+          const ratio = sourceSampleRate / sampleRate;
+          
+          for (let i = 0; i < numSamples; i++) {
+            const sourceIndex = i * ratio;
+            const sourceIndexFloor = Math.floor(sourceIndex);
+            const sourceIndexCeil = Math.min(sourceIndexFloor + 1, sourceData.length - 1);
+            const fraction = sourceIndex - sourceIndexFloor;
+            
+            const sample1 = sourceData[sourceIndexFloor] || 0;
+            const sample2 = sourceData[sourceIndexCeil] || 0;
+            resampledData[i] = sample1 + (sample2 - sample1) * fraction;
+          }
+          
+          // Convert to 16-bit PCM
+          const pcmBuffer = new ArrayBuffer(numSamples * 2);
+          const pcmView = new DataView(pcmBuffer);
+          
+          for (let i = 0; i < numSamples; i++) {
+            const sample = Math.max(-1, Math.min(1, resampledData[i]));
+            const int16 = Math.round(sample * 32767);
+            pcmView.setInt16(i * 2, int16, true); // little-endian
+          }
+          
+          // Convert to base64 using a more reliable method
+          const uint8Array = new Uint8Array(pcmBuffer);
+          let binary = '';
+          for (let i = 0; i < uint8Array.length; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+          }
+          const base64 = btoa(binary);
+          
+          resolve({
+            base64Data: `data:audio/pcm;base64,${base64}`,
+            mimeType: 'audio/pcm',
+            timeMs: duration
+          });
+          
+        } catch (error) {
+          console.error('Error decoding audio:', error);
+          // Fallback to raw WebM if decoding fails
+          resolve({
+            base64Data: reader.result,
+            mimeType: mimeType,
+            timeMs: duration
+          });
+        } finally {
+          audioContext.close();
+        }
       };
+      
       reader.onerror = () => {
         console.error('Error reading audio blob');
         resolve(null);
       };
+      
+      reader.readAsArrayBuffer(blob);
     });
   } catch (error) {
     console.error('Error getting audio buffer:', error);

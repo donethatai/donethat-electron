@@ -1,110 +1,9 @@
 const log = require('electron-log')
 const os = require('os')
 const stream = require('stream')
-const { spawn } = require('child_process')
 
 let pipeline = null
 let isInitialized = false
-
-// Audio converter state
-let ffmpegPath = null
-let useFfmpeg = false
-
-/**
- * Initialize audio converter
- */
-function initializeAudioConverter() {
-  try {
-    // Try to use ffmpeg-static if available
-    const ffmpegStatic = require('ffmpeg-static')
-    if (ffmpegStatic) {
-      ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked')
-      useFfmpeg = true
-      log.info('Using ffmpeg-static for audio conversion')
-    }
-  } catch (error) {
-    log.warn('ffmpeg-static not available, trying system ffmpeg')
-    // Try to find system ffmpeg
-    try {
-      const { execSync } = require('child_process')
-      execSync('ffmpeg -version', { stdio: 'ignore' })
-      ffmpegPath = 'ffmpeg'
-      useFfmpeg = true
-      log.info('Using system ffmpeg for audio conversion')
-    } catch (systemError) {
-      log.warn('System ffmpeg not available, audio conversion will be limited')
-    }
-  }
-}
-
-/**
- * Convert audio buffer using ffmpeg
- * @param {Buffer} inputBuffer 
- * @returns {Promise<Buffer>}
- */
-function convertWithFfmpeg(inputBuffer) {
-  return new Promise((resolve, reject) => {
-    const chunks = []
-    const outputStream = new stream.Writable({
-      write(chunk, encoding, callback) {
-        chunks.push(chunk)
-        callback()
-      }
-    })
-
-    const inputStream = new stream.PassThrough()
-    inputStream.end(inputBuffer)
-
-    const ffmpeg = spawn(ffmpegPath, [
-      '-f', 'webm',
-      '-i', 'pipe:0',
-      '-acodec', 'pcm_s16le',
-      '-ar', '16000',
-      '-ac', '1',
-      '-f', 's16le',
-      'pipe:1'
-    ], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
-
-    ffmpeg.stderr.on('data', (data) => {
-      // FFmpeg writes progress to stderr, this is normal
-    })
-
-    ffmpeg.on('error', (error) => {
-      reject(new Error(`FFmpeg error: ${error.message}`))
-    })
-
-    ffmpeg.on('close', (code) => {
-      if (code === 0) {
-        const outputBuffer = Buffer.concat(chunks)
-        resolve(outputBuffer)
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}`))
-      }
-    })
-
-    inputStream.pipe(ffmpeg.stdin)
-    ffmpeg.stdout.pipe(outputStream)
-  })
-}
-
-/**
- * Create a minimal silence buffer as fallback
- * @returns {Buffer}
- */
-function createSilenceBuffer() {
-  // Create 1 second of silence at 16kHz mono 16-bit PCM
-  const sampleRate = 16000
-  const duration = 1
-  const samples = sampleRate * duration
-  const pcmBuffer = Buffer.alloc(samples * 2) // 16-bit samples
-  
-  // Fill with silence (0 values)
-  pcmBuffer.fill(0)
-  
-  return pcmBuffer
-}
 
 /**
  * Get system capabilities and select appropriate Whisper model
@@ -124,9 +23,6 @@ async function initialize() {
   }
 
   try {
-    // Initialize audio converter
-    initializeAudioConverter()
-    
     // Dynamic import to avoid issues in main process
     const { pipeline: whisperPipeline } = await import('@xenova/transformers')
     
@@ -144,9 +40,12 @@ async function initialize() {
   }
 }
 
+
+
+
+
 /**
- * Converts an audio buffer from a compressed format (like WebM/Opus)
- * to a raw 16-bit PCM audio buffer that Whisper can process.
+ * Converts an audio buffer from PCM to PCM (already in correct format from Web Audio API)
  * @param {Buffer} inputBuffer The audio buffer to convert.
  * @returns {Promise<Buffer>} A promise that resolves with the raw PCM audio buffer.
  */
@@ -155,19 +54,37 @@ async function convertAudioBuffer(inputBuffer) {
     throw new Error('Empty audio buffer')
   }
 
-  // Try ffmpeg first if available
-  if (useFfmpeg) {
-    try {
-      return await convertWithFfmpeg(inputBuffer)
-    } catch (error) {
-      log.warn('FFmpeg conversion failed:', error.message)
+  try {
+    // Input is already 16kHz mono PCM from Web Audio API
+    // Just validate and return as-is
+    
+    // Validate it's 16-bit PCM (even number of bytes)
+    if (inputBuffer.length % 2 !== 0) {
+      throw new Error('Invalid PCM buffer size (must be even)')
     }
+    
+    return inputBuffer
+  } catch (error) {
+    log.error('Audio conversion failed:', error.message)
+    throw error
   }
+}
 
-  // Fallback: return a minimal PCM buffer (silence)
-  // This ensures the app doesn't crash even without audio conversion
-  log.warn('No audio conversion available, returning silence')
-  return createSilenceBuffer()
+/**
+ * Create a minimal silence buffer as fallback
+ * @returns {Buffer}
+ */
+function createSilenceBuffer() {
+  // Create 1 second of silence at 16kHz mono 16-bit PCM
+  const sampleRate = 16000
+  const duration = 1
+  const samples = sampleRate * duration
+  const pcmBuffer = Buffer.alloc(samples * 2) // 16-bit samples
+  
+  // Fill with silence (0 values)
+  pcmBuffer.fill(0)
+  
+  return pcmBuffer
 }
 
 /**
@@ -192,15 +109,48 @@ async function transcribeAudioBuffer(audioBuffer) {
     
     // 1. Decode the WebM/Opus buffer into a raw PCM buffer
     const rawPcmBuffer = await convertAudioBuffer(audioBuffer)
+    
+    // Debug: Log buffer info
+    log.info(`Audio buffer: ${audioBuffer.length} bytes, PCM buffer: ${rawPcmBuffer.length} bytes`)
+    
+    // Validate PCM buffer
+    if (rawPcmBuffer.length < 100) {
+      log.warn('PCM buffer too small, likely invalid audio data')
+      return 'No audio transcript available'
+    }
+    
+    // Check if buffer contains mostly zeros (silence)
+    let nonZeroCount = 0
+    for (let i = 0; i < Math.min(1000, rawPcmBuffer.length); i += 2) {
+      if (rawPcmBuffer.readInt16LE(i) !== 0) {
+        nonZeroCount++
+      }
+    }
+    const silenceRatio = 1 - (nonZeroCount / Math.min(500, rawPcmBuffer.length / 2))
+    log.info(`Silence ratio: ${silenceRatio.toFixed(2)} (${nonZeroCount} non-zero samples)`)
+    
+    if (silenceRatio > 0.95) {
+      log.warn('Audio buffer is mostly silence')
+      return 'No speech detected'
+    }
 
     // 2. Convert the 16-bit PCM buffer to a Float32Array
     // The Whisper pipeline expects audio as a Float32Array normalized between -1 and 1.
-    const audioData = new Float32Array(rawPcmBuffer.length / 2)
-    for (let i = 0; i < rawPcmBuffer.length / 2; i++) {
-      // Read a 16-bit signed integer from the buffer
-      const int16 = rawPcmBuffer.readInt16LE(i * 2)
-      // Normalize to the range [-1.0, 1.0]
-      audioData[i] = int16 / 32768.0
+    const numSamples = Math.floor(rawPcmBuffer.length / 2)
+    const audioData = new Float32Array(numSamples)
+    
+    for (let i = 0; i < numSamples; i++) {
+      const offset = i * 2
+      // Check bounds before reading
+      if (offset + 1 < rawPcmBuffer.length) {
+        // Read a 16-bit signed integer from the buffer
+        const int16 = rawPcmBuffer.readInt16LE(offset)
+        // Normalize to the range [-1.0, 1.0]
+        audioData[i] = int16 / 32768.0
+      } else {
+        // Pad with zeros if buffer is incomplete
+        audioData[i] = 0
+      }
     }
     
     // 3. Use Whisper pipeline with the converted Float32Array
@@ -254,6 +204,7 @@ async function transcribeAudioBuffer(audioBuffer) {
     }
     
     log.error('Error transcribing audio buffer:', error)
+    log.error('Error stack:', error.stack)
     return 'No audio transcript available'
   }
 }
