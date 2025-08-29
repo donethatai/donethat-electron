@@ -32,6 +32,8 @@ function initialize(window, config = {}) {
     throw new Error('Audio capture initialization failed: bufferDurationMs is required and must be a positive number');
   }
   
+  log.info(`Initializing audio capture module on platform: ${process.platform}, buffer duration: ${config.bufferDurationMs}ms`);
+  
   mainWindow = window;
   
   // Set up IPC handlers
@@ -40,7 +42,9 @@ function initialize(window, config = {}) {
   });
   
   // Listen for audio device changes from renderer
-  ipcMain.on('audio-device-changed', (event, info) => {});
+  ipcMain.on('audio-device-changed', (event, info) => {
+    log.debug('Audio device changed:', info);
+  });
   
   // Low-audio IPC not needed; periodic checks suffice
   
@@ -64,18 +68,29 @@ function initialize(window, config = {}) {
  */
 function initializeSessionDetection(config) {
   try {
+    log.info('Initializing audio session detection...');
+    
     // Initialize the session detector
-    audioSessionDetector.initialize({ checkIntervalMs: 1000 });
+    const initialized = audioSessionDetector.initialize({ checkIntervalMs: 1000 });
+    if (!initialized) {
+      log.error('Failed to initialize audio session detector');
+      return;
+    }
+    
+    log.info('Audio session detector initialized successfully');
     
     // Set up callbacks
     audioSessionDetector.onSessionStart(async (deviceId) => {
+      log.info('Audio session detected, checking permissions...');
       
       // Check permission before starting recording
       const hasPermission = await checkPermission();
       if (!hasPermission) {
+        log.warn('No microphone permission, skipping recording start');
         return;
       }
       
+      log.info('Starting recording after session detection');
       startRecordingInternal().catch(error => {
         log.error('Failed to start recording after session detection:', error);
       });
@@ -96,20 +111,24 @@ function initializeSessionDetection(config) {
     }, 30000);
     
     audioSessionDetector.onSessionEnd(() => {
+      log.info('Audio session ended, stopping recording');
       stopRecordingInternal().catch(error => {
         log.error('Failed to stop recording after session detection:', error);
       });
     });
     
     audioSessionDetector.onDeviceSwitch((deviceInfo) => {
+      log.info('Audio device switched:', deviceInfo);
       handleDeviceSwitch(deviceInfo).catch(error => {
         log.error('Failed to handle device switch:', error);
       });
     });
     
+    log.info('Audio session detection callbacks configured successfully');
     
   } catch (error) {
     log.error('Failed to initialize audio session detection:', error);
+    log.error('Error stack:', error.stack);
     // Continue without session detection - manual recording will still work
   }
 }
