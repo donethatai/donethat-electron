@@ -54,8 +54,6 @@ try {
   if (typeof window !== 'undefined') { 
     window.getAppCheckToken = () => getAppCheckToken(); 
     
-
-    
     // Add a function to check AppCheck status
     window.getAppCheckStatus = () => ({
       hasExternalToken: !!externalAppCheckToken,

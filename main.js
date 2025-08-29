@@ -1219,7 +1219,7 @@ function createWindow() {
       });
       
       // Initialize capture with auth error handler
-      // On-demand App Check token fetch from renderer (single attempt)
+      // On-demand App Check token fetch from renderer
       const getAppCheckToken = async () => {
         try {
           const script = 'window.getAppCheckToken ? window.getAppCheckToken() : null';
@@ -1250,6 +1250,8 @@ function createWindow() {
         // Ensure taskbar presence on Windows/Linux
         try { mainWindow.setSkipTaskbar(false); } catch (e) {}
       }
+      // Notify renderer to reload the embedded webview when app window is shown/unhidden
+      try { mainWindow.webContents.send('webview:reload'); } catch (e) {}
     });
 
     // Hide Dock icon when main window is hidden (macOS)

@@ -117,16 +117,27 @@ async function invokeWithFallback(messages) {
     throw new Error('No LLM models available');
   }
 
+  const maxAttemptsPerModel = 3; // initial + 2 retries
+
   for (const llm of llmModels) {
-    try {
-      const response = await llm.invoke(messages);
-      return response;
-    } catch (error) {
-      log.error(`LLM ${llm.constructor.name} failed:`, error);
-      continue;
+    let attempt = 0;
+    while (attempt < maxAttemptsPerModel) {
+      try {
+        const response = await llm.invoke(messages);
+        return response;
+      } catch (error) {
+        attempt += 1;
+        const remaining = maxAttemptsPerModel - attempt;
+        log.warn(`LLM ${llm.constructor.name} attempt ${attempt} failed${remaining > 0 ? `, retrying (${remaining} left)` : ''}:`, error);
+        if (attempt >= maxAttemptsPerModel) {
+          break;
+        }
+      }
     }
   }
-  throw new Error("All LLMs failed");
+
+  log.warn('All LLMs failed after retries; will skip this round.');
+  return null;
 }
 
 /**
@@ -196,10 +207,16 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
 
-    // Call LLM with fallback
+    // Call LLM with fallback and retries
     const response = await invokeWithFallback([
       new HumanMessage({ content: blocks })
     ]);
+
+    // If all LLMs failed, skip this round
+    if (!response) {
+      log.warn('Skipping analysis this round due to repeated LLM failures.');
+      return null;
+    }
 
     // Structured object is returned directly by withStructuredOutput
     return response;
@@ -297,6 +314,12 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
       application_activity: applicationActivity || '',
       audio_transcript: audioTranscript || ''
     };
+
+    // If no structured result (LLM failed after retries), skip submission this round
+    if (!structured) {
+      log.warn('No structured output available; skipping result submission this round.');
+      return { success: false, skipped: true };
+    }
 
     // Submit results to Firebase using current time
     const originalTs = Date.now();

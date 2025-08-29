@@ -25,36 +25,42 @@
   --color-warning: #f59e0b;
 }
 
-/* Auth Error Notification Styles */
-.auth-error-notification {
+/* Unified Notification Banner Styles */
+.banner-notification {
   @apply fixed top-0 left-0 right-0 z-50;
   background-color: var(--color-primary);
   color: white;
-  padding: 0.3rem 0.75rem;
+  /* Match dashboard topbar height */
+  height: 48px;
+  min-height: 48px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
   font-size: 0.75rem;
   transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
   transform: translateY(0);
   box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
-.auth-error-notification.hidden {
+.banner-notification.hidden {
   transform: translateY(-100%);
   opacity: 0;
 }
 
-.auth-error-content {
+.banner-content {
   @apply flex justify-between items-center max-w-screen-lg mx-auto;
 }
 
 /* Style for the warning icon only - even larger now */
-.auth-error-content > svg:first-child,
-.auth-error-content > span:first-child > svg,
-.auth-error-content > *:first-child > svg {
+.banner-content > svg:first-child,
+.banner-content > span:first-child > svg,
+.banner-content > *:first-child > svg {
   width: 2rem !important;
   height: 2rem !important;
 }
 
-.auth-error-close {
+.banner-close {
   @apply ml-3;
   background-color: rgba(255,255,255,0.3);
   transition: background-color 0.2s;
@@ -73,7 +79,7 @@
   box-sizing: border-box;
 }
 
-.auth-error-close:hover {
+.banner-close:hover {
   background-color: rgba(255,255,255,0.3);
 }
 
