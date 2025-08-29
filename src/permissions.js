@@ -246,15 +246,17 @@ function updateScreenCaptureCheckbox(hasPermission) {
       // Permission missing: enable toggle and make it look clickable
       checkbox.disabled = false;
       if (toggleLabel) {
-        toggleLabel.style.opacity = '1';
+        // Rely on CSS for visuals; reset any inline styles from prior state
+        toggleLabel.style.opacity = '';
         toggleLabel.style.cursor = 'pointer';
         toggleLabel.title = 'Grant screen recording permission';
       }
     } else {
-      // Permission granted: disable toggle and make it look active but disabled
+      // Permission granted: disable toggle and use CSS-driven disabled visuals
       checkbox.disabled = true;
       if (toggleLabel) {
-        toggleLabel.style.opacity = '0.7';
+        // Reset inline opacity to ensure consistent color with other toggles
+        toggleLabel.style.opacity = '';
         toggleLabel.style.cursor = 'not-allowed';
         toggleLabel.title = 'Screen recording enabled (managed by system)';
       }
