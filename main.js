@@ -239,19 +239,11 @@ function setupAutoUpdater() {
       } else {
         // macOS - use the original silent install approach
         log.info('macOS platform: using silent update');
-        try {
-          if (mainWindow) {
-            mainWindow.show();
-            mainWindow.focus();
-            mainWindow.webContents.send('inapp:notify', {
-              id: 'update-available',
-              title: 'DoneThat Update',
-              message: 'An update is ready. It will install on quit. Click to install now.',
-              sticky: true,
-              action: { label: 'Install Now', channel: 'update:install', payload: { forceRunAfter: true } }
-            });
-          }
-        } catch (e) { log.warn('Failed to send in-app update notify (mac):', e); }
+        setTimeout(() => {
+          log.info('Executing quitAndInstall() for macOS');
+          app.isQuitting = true; // Explicitly set this flag to prevent event.preventDefault in close handlers
+          autoUpdater.quitAndInstall();
+        }, 1000); // 1 second delay
       }
     } else {
       log.info('Development mode: skipping update installation');
