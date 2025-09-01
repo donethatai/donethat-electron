@@ -616,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
       inAction.classList.remove('hidden');
       inAction.onclick = () => {
         try { ipcRenderer.send(action.channel, action.payload || null); } catch (e) {}
-        if (!sticky && action.autoClose !== false) hideInappNotification();
+        hideInappNotification();
       };
     } else {
       inAction.classList.add('hidden');

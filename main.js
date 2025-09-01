@@ -320,14 +320,6 @@ ipcMain.on('logout', () => {
   if (mainWindow) {
     try { mainWindow.show(); } catch (e) {}
     try { mainWindow.focus(); } catch (e) {}
-    try {
-      mainWindow.webContents.send('inapp:notify', {
-        id: 'logged-out',
-        title: 'DoneThat Logged Out',
-        message: 'You have been logged out. Please sign in again to continue.',
-        sticky: true
-      });
-    } catch (e) {}
   }
 });
 

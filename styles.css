@@ -122,6 +122,15 @@
   background-color: var(--color-primary-dark);
 }
 
+/* Action button - dark gray without shadow */
+.btn-primary.topbar-btn {
+  background-color: var(--color-neutral-700);
+  box-shadow: none;
+}
+.btn-primary.topbar-btn:hover {
+  background-color: var(--color-neutral-900);
+}
+
 /* Secondary button (for consistency) */
 .btn-secondary {
   @apply w-full p-1.5 rounded text-sm cursor-pointer transition duration-200 shadow-sm;
