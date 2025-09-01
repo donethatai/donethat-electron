@@ -33,7 +33,7 @@ async function isLocalProcessingAvailable() {
 /**
  * Get configuration from Firebase with caching
  */
-async function getConfig(idToken, appCheckToken = null) {
+async function getConfig(idToken) {
   const now = Date.now();
   
   // Return cached config if still valid
@@ -48,9 +48,6 @@ async function getConfig(idToken, appCheckToken = null) {
     const headers = {
       'Authorization': `Bearer ${idToken}`
     };
-    if (appCheckToken) {
-      headers['X-Firebase-AppCheck'] = appCheckToken;
-    }
     const response = await fetch(FIREBASE_CONFIG_URL, {
       method: 'GET',
       headers
@@ -81,9 +78,9 @@ async function getConfig(idToken, appCheckToken = null) {
 /**
  * Initialize LLM models with structured output
  */
-async function initializeLLM(idToken, appCheckToken = null) {
+async function initializeLLM(idToken) {
   try {
-    const config = await getConfig(idToken, appCheckToken);
+    const config = await getConfig(idToken);
     
     // Get Gemini API key
     const geminiResult = await getGeminiApiKey();
@@ -180,7 +177,7 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
 /**
  * Analyze screenshots using local LLM processing
  */
-async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioTranscript, idToken, appCheckToken = null) {
+async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioTranscript, idToken) {
   try {
     // Validate current screenshots - this is critical
     if (!screenshots || screenshots.length === 0) {
@@ -196,11 +193,11 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
 
     // Initialize LLM if not already done
     if (!llmModels) {
-      await initializeLLM(idToken, appCheckToken);
+      await initializeLLM(idToken);
     }
     
     // Ensure we have up-to-date config
-    const config = latestConfig || await getConfig(idToken, appCheckToken);
+    const config = latestConfig || await getConfig(idToken);
     // Build content blocks using spec
     const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioTranscript);
 
@@ -231,7 +228,7 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
 /**
  * Submit processed results to Firebase
  */
-async function submitResults(idToken, timestamp, structured, parameters, appCheckToken = null) {
+async function submitResults(idToken, timestamp, structured, parameters) {
   try {
     const fetch = await import('node-fetch').then(module => module.default);
     
@@ -246,9 +243,6 @@ async function submitResults(idToken, timestamp, structured, parameters, appChec
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${idToken}`
     };
-    if (appCheckToken) {
-      headers['X-Firebase-AppCheck'] = appCheckToken;
-    }
     const response = await fetch(FIREBASE_PROCESS_URL, {
       method: 'POST',
       headers,
@@ -275,7 +269,7 @@ async function submitResults(idToken, timestamp, structured, parameters, appChec
 /**
  * Main function to process data locally
  */
-async function processDataLocally(idToken, screenshots, previousScreenshots, inputData, appCheckToken = null) {
+async function processDataLocally(idToken, screenshots, previousScreenshots, inputData) {
   try {
     // Check if local processing is available
     if (!await isLocalProcessingAvailable()) {
@@ -302,12 +296,11 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
       previousScreenshots,
       applicationActivity,
       audioTranscript,
-      idToken,
-      appCheckToken
+      idToken
     );
 
     // Build parameters to send (based on config.parameters)
-    const config = latestConfig || await getConfig(idToken, appCheckToken);
+    const config = latestConfig || await getConfig(idToken);
     const baseParams = config.parameters || {};
     const paramsToSend = {
       ...baseParams,
@@ -327,8 +320,7 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
       idToken,
       originalTs,
       structured,
-      paramsToSend,
-      appCheckToken
+      paramsToSend
     );
 
     return result;

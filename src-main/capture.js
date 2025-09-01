@@ -17,7 +17,7 @@ let captureIntervalMinutes; // Set in main
 let reauthenticateCallback = null; // Store reauthenticate callback function
 let mainWindowRef = null; // Store mainWindow reference
 let getIdTokenFunction = null; // Store the getIdToken function reference
-let getAppCheckTokenFunction = null; // Store the getAppCheckToken function reference
+
 
 // Track input data settings
 let inputDataSettings = {
@@ -267,7 +267,7 @@ function shouldDisableScreenshotsInMeetings() {
  * @param {Function} getIdToken Function to get the current ID token
  * @throws {Error} If mainWindow is not provided or capture interval is not set
  */
-function initCapture(mainWindow, onAuthError, getIdToken, getAppCheckToken) {
+function initCapture(mainWindow, onAuthError, getIdToken) {
   if (!mainWindow) {
     throw new Error('Main window must be provided to initialize capture');
   }
@@ -283,9 +283,7 @@ function initCapture(mainWindow, onAuthError, getIdToken, getAppCheckToken) {
       throw new Error('getIdToken function must be provided to initialize capture');
   }
   getIdTokenFunction = getIdToken;
-  if (typeof getAppCheckToken === 'function') {
-    getAppCheckTokenFunction = getAppCheckToken;
-  }
+
   // Store mainWindow reference
   mainWindowRef = mainWindow;
   
@@ -669,21 +667,12 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
       // Get the previous screenshots scaled down to the configured scale factor
       const previousScreenshotData = getPreviousScreenshots(captureIntervalMinutes);
       
-      // Optionally include App Check token similar to cloud path
-      let appCheckToken = null;
-      try { 
-        appCheckToken = getAppCheckTokenFunction ? await getAppCheckTokenFunction() : null; 
-      } catch (error) { 
-        appCheckToken = null; 
-      }
-
       // Process data locally
       const result = await processDataLocally(
         idToken,
         screenshots,
         previousScreenshotData,
-        inputData,
-        appCheckToken
+        inputData
       );
       
       return result;
@@ -731,21 +720,10 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
       }
        
       // Send data to Firebase
-      // Optionally include App Check token if available
-      let appCheckToken = null;
-      try { 
-        appCheckToken = getAppCheckTokenFunction ? await getAppCheckTokenFunction() : null; 
-      } catch (error) { 
-        appCheckToken = null; 
-      }
-
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${idToken}`
       };
-      if (appCheckToken) {
-        headers['X-Firebase-AppCheck'] = appCheckToken;
-      }
 
       const response = await fetch(FIREBASE_CAPTURE_URL, {
         method: 'POST',

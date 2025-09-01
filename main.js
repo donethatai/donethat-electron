@@ -432,17 +432,6 @@ app.whenReady().then(async () => {
     createApplicationMenu(); // Update menu on auth state change
   });
 
-  // Handle AppCheck token generation via webview
-  ipcMain.handle('generate-appcheck-token', async () => {
-    try {
-      const { generateAppCheckTokenViaWebview } = require('./src-main/appcheck-token.js');
-      const token = await generateAppCheckTokenViaWebview();
-      return token;
-    } catch (error) {
-      return null;
-    }
-  });
-
   // Allow renderer modules to trigger in-app notifications centrally
   ipcMain.on('inapp:notify', (_event, payload) => {
     try { if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) overlayWindow.hide(); } catch (e) {}
@@ -1217,14 +1206,7 @@ function createWindow() {
       });
       
       // Initialize capture with auth error handler
-      // On-demand App Check token fetch from renderer
-      const getAppCheckToken = async () => {
-        try {
-          const script = 'window.getAppCheckToken ? window.getAppCheckToken() : null';
-          return await mainWindow.webContents.executeJavaScript(script, true);
-        } catch (_) { return null; }
-      };
-      initCapture(mainWindow, handleCaptureAuthErrors, stateManager.getIdToken, getAppCheckToken);
+      initCapture(mainWindow, handleCaptureAuthErrors, stateManager.getIdToken);
     })
 
     // Remove macOS-specific auto-hide on blur to behave like a normal window

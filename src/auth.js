@@ -10,8 +10,8 @@ const {
 
 const { ipcRenderer } = require("electron");
 
-// Import auth instance and AppCheck helper
-const { auth, getAppCheckToken } = require('./firebase.js');
+// Import auth instance from firebase.js and analytics functions directly
+const { auth } = require('./firebase.js');
 const { logAnalyticsEvent, setAnalyticsUserProperties } = require('./analytics.js');
 const { updateAuthState } = require('./app-state.js');
 const { resetSummaryState } = require('./dashboard.js');
@@ -155,7 +155,7 @@ ipcRenderer.on('auth-error', (event, error) => {
   handleAuthError(error || { code: 'unknown', message: 'Unknown auth error' });
 });
 
-// Function to refresh Firebase auth token and AppCheck token
+// Function to refresh Firebase auth token
 async function refreshAuthToken() {
   if (retryCount > 0) {
     console.log('=== Token Refresh ===');
@@ -176,10 +176,6 @@ async function refreshAuthToken() {
       }
       updateAuthState(true, newToken);
       ipcRenderer.send('token-refreshed', newToken);
-      
-      // Also refresh AppCheck token (silent)
-      try { await getAppCheckToken({ forceRefresh: true }); } catch {}
-      
       // Reset retry count on successful refresh
       retryCount = 0;
       return newToken;
@@ -261,7 +257,7 @@ onAuthStateChanged(auth, async (user) => {
         email_verified: user.emailVerified
       });
 
-      // Set up a token refresh interval (both auth and AppCheck tokens)
+      // Set up a token refresh interval
       const refreshInterval = setInterval(async () => {
         if (auth.currentUser) {
           await refreshAuthToken();

@@ -5,7 +5,7 @@ const {
 const { ipcRenderer } = require('electron');
 const { shell } = require('electron');
 
-const { auth, getAppCheckToken } = require('./firebase.js');
+const { auth } = require('./firebase.js');
 
 const { initializeSettings, loadUserSettings } = require('./settings.js');
 const { initializeAuth } = require('./auth.js');
@@ -545,22 +545,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Reload portal webview when main window is shown/unhidden
-  ipcRenderer.on('webview:reload', () => {
-    try {
-      if (portalView) {
-        // Prefer ignoring cache to ensure fresh content/session
-        if (typeof portalView.reloadIgnoringCache === 'function') {
-          portalView.reloadIgnoringCache();
-        } else {
-          portalView.reload();
-        }
-      }
-    } catch (e) {
-      console.error('[Webview] Error reloading on window show:', e);
-    }
-  });
-
   // Add event listener for app settings link
   const appSettingsLink = document.querySelector('.app-settings-link');
   if (appSettingsLink) {
@@ -665,9 +649,6 @@ onIdTokenChanged(auth, async (user) => {
       lastPortalTokenTs = Date.now();
       lastPortalAuthResponseType = 'token';
       lastPortalAuthResponseTs = Date.now();
-      
-      // Also refresh AppCheck token when ID token changes (with concise error)
-      try { await getAppCheckToken({ forceRefresh: true }); } catch (e) { console.error('AppCheck: refresh failed on ID token change', e?.code || '', e?.message || e); }
     } catch (e) {}
   }
 });
