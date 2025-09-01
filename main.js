@@ -1152,8 +1152,8 @@ ipcMain.on('resumeRecording', (event) => {
 function createWindow() {
   if (!mainWindow) {
     // Use a standard, larger default size for all platforms
-    const windowWidth = 1024;
-    const windowHeight = 720;
+    const windowWidth = 1200; // Increased from 1024
+    const windowHeight = 750; // Increased from 720
     
     mainWindow = new BrowserWindow({
       width: windowWidth,
@@ -1161,14 +1161,16 @@ function createWindow() {
       // Use a standard framed window on all platforms
       frame: true,
       resizable: true,
-      minWidth: 800,
-      minHeight: 560,
+      minWidth: 900, // Increased from 800
+      minHeight: 580, // Increased from 560
       // Make window movable on all platforms
       movable: true,
       show: false,
       // Show in taskbar/dock so it's a normal app window
       skipTaskbar: false,
       fullscreenable: false, // Prevent full screen toggle
+      // Enable high DPI scaling on all platforms
+      enableHighDpiScaling: true,
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
