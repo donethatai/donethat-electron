@@ -4,7 +4,6 @@ const { httpsCallable } = require("firebase/functions");
 const { firebaseApp, functions } = require("./firebase.js");
 const { logAnalyticsEvent } = require('./analytics.js');
 const { ipcRenderer } = require("electron");
-const { updateIsPublic } = require('./app-state.js');
 
 const { refreshAuthToken } = require('./auth.js');
 const os = require('os');
@@ -414,8 +413,6 @@ async function updateSettingsUI(settings) {
     workhours = { start: "09:00", end: "17:00" };
   }
   
-
-  
   // Send workhours to main process
   ipcRenderer.send('updateWorkhours', workhours);
   
@@ -461,11 +458,6 @@ async function updateSettingsUI(settings) {
 
   // Send initial workdays to main process
   ipcRenderer.send('updateWorkdays', workdays);
-
-  // Handle isPublic setting
-  if (typeof settings?.isPublic === 'boolean') {
-    updateIsPublic(settings.isPublic);
-  }
 }
 
 // Disable "Disable screenshots in meetings" unless microphone is enabled
