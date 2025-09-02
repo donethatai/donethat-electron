@@ -13,12 +13,23 @@ const BACKOFF_MULTIPLIER = 2 // Exponential backoff multiplier
 let consecutiveFailures = 0 // Track consecutive failures for backoff
 let lastBackoffTime = 0 // Track when we last applied backoff
 let processingRecordWindow = false // Flag to prevent overlapping calls
-let stopInProgress = false
-let startInProgress = false
 
 // References to communicate permission/state changes without prompting the OS
 let stateManagerRef = null
 let mainWindowRef = null
+
+// Helper: call activeWindow with a hard timeout to avoid hangs/crashes
+async function safeActiveWindow(timeoutMs = 300) {
+  try {
+    const result = await Promise.race([
+      activeWindow(),
+      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs))
+    ])
+    return result
+  } catch (_) {
+    return null
+  }
+}
 
 /**
  * Checks if the application has permission to access window information
@@ -37,7 +48,7 @@ async function checkPermissions() {
     }
 
     // Other platforms: best effort probe
-    const result = await activeWindow()
+    const result = await safeActiveWindow(300)
     return result !== null
   } catch (error) {
     // Treat probe failures as transient errors unless we know permission is denied
@@ -101,17 +112,15 @@ function resetBackoff() {
  * @returns {Promise<boolean>} True if tracking started successfully, false if permission denied or error occurred
  */
 async function startTracking() {
-  if (isTracking || startInProgress) {
+  if (isTracking) {
     return true
   }
-  startInProgress = true
   
   // First check if we have permission
   const hasPermission = await checkPermissions()
   if (!hasPermission) {
     const message = 'Permission denied for window tracking. Please grant accessibility permissions in system settings.'
     log.warn('Failed to start window tracking:', message)
-    startInProgress = false
     return false
   }
   
@@ -129,7 +138,6 @@ async function startTracking() {
     trackingInterval = setInterval(recordCurrentWindow, currentTrackingIntervalMs)
     
     isTracking = true
-    startInProgress = false
     return true
   } catch (error) {
     log.error('Error during window tracking start:', error)
@@ -137,7 +145,6 @@ async function startTracking() {
       clearInterval(trackingInterval)
       trackingInterval = null
     }
-    startInProgress = false
     return false
   }
 }
@@ -162,21 +169,11 @@ async function recordCurrentWindow() {
       // Permission not available: propagate and stop tracking without prompting OS settings
       try { stateManagerRef?.updateWindowsPermission(false) } catch (_) {}
       try { if (mainWindowRef) mainWindowRef.webContents.send('windowsPermission', false) } catch (_) {}
-      if (!stopInProgress) {
-        stopInProgress = true
-        try {
-          setImmediate(() => {
-            try { stopTracking() } catch (e) { log.warn('Deferred stopTracking failed:', e?.message || e) }
-            stopInProgress = false
-          })
-        } catch (e) {
-          stopInProgress = false
-        }
-      }
+      // Don't stop tracking here; let the renderer's settings flow disable it via updateInputDataSettings
       processingRecordWindow = false
       return
     }
-    const activeWindowInfo = await activeWindow()
+    const activeWindowInfo = await safeActiveWindow(300)
     
     if (!activeWindowInfo) {
       // Still record the timestamp but with empty data

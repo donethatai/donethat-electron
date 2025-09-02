@@ -69,7 +69,7 @@
     "electron-store": "^10.0.1",
     "electron-updater": "^6.6.2",
     "firebase": "^11.7.3",
-    "get-windows": "^9.2.0",
+    "get-windows": "^9.2.3",
     "node-fetch": "^3.3.2",
     "node-global-key-listener": "^0.3.0",
     "sharp": "^0.34.3",
