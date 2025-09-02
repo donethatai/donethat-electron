@@ -56,7 +56,18 @@ async function getConfig(idToken) {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch config: ${response.status}`);
+      let errorBody = null;
+      try {
+        errorBody = await response.json();
+      } catch (e) {}
+      const err = new Error(`Failed to fetch config: ${response.status}`);
+      err.status = response.status;
+      if (response.status === 401 && errorBody && errorBody.error === 'token_expired') {
+        err.code = 'TOKEN_EXPIRED';
+      } else if (response.status === 401 || response.status === 403) {
+        err.code = 'AUTH_ERROR';
+      }
+      throw err;
     }
 
     const config = await response.json();
@@ -359,7 +370,18 @@ async function submitResults(idToken, timestamp, structured, parameters) {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to submit results: ${response.status}`);
+      let errorBody = null;
+      try {
+        errorBody = await response.json();
+      } catch (e) {}
+      const err = new Error(`Failed to submit results: ${response.status}`);
+      err.status = response.status;
+      if (response.status === 401 && errorBody && errorBody.error === 'token_expired') {
+        err.code = 'TOKEN_EXPIRED';
+      } else if (response.status === 401 || response.status === 403) {
+        err.code = 'AUTH_ERROR';
+      }
+      throw err;
     }
 
     const result = await response.json();

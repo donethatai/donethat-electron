@@ -631,14 +631,38 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
       const previousScreenshotData = getPreviousScreenshots(captureIntervalMinutes);
       
       // Process data locally
-      const result = await processDataLocally(
-        idToken,
-        screenshots,
-        previousScreenshotData,
-        inputData
-      );
-      
-      return result;
+      try {
+        const result = await processDataLocally(
+          idToken,
+          screenshots,
+          previousScreenshotData,
+          inputData
+        );
+        return result;
+      } catch (error) {
+        // Handle local processing auth errors consistently with cloud path
+        const isTokenExpired = error && error.code === 'TOKEN_EXPIRED';
+        const isAuthError = error && (error.code === 'AUTH_ERROR' || error.status === 401 || error.status === 403);
+        
+        if (isTokenExpired) {
+          if (reauthenticateCallback) {
+            log.warn('_sendToServer(local): Calling reauthenticate callback with tokenExpired.');
+            reauthenticateCallback({ tokenExpired: true });
+          }
+          return { tokenExpired: true };
+        }
+        
+        if (isAuthError) {
+          if (reauthenticateCallback) {
+            log.warn('_sendToServer(local): Calling reauthenticate callback with authError.');
+            reauthenticateCallback({ authError: true });
+          }
+          return { authError: true };
+        }
+        
+        // Non-auth errors fall through to outer catch
+        throw error;
+      }
     } else {      
       // Fall back to cloud processing
       const fetch = await import('node-fetch').then(module => module.default);
@@ -700,10 +724,8 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
 
         // Check specifically for token expiration
         if (response.status === 401 && errorData.error === 'token_expired') {
-          log.warn('_sendToServer: Token expired error detected.'); // Keep this
-          // Call the reauthenticate callback if available
           if (reauthenticateCallback) {
-            log.warn('_sendToServer: Calling reauthenticate callback with tokenExpired.'); // Keep this
+            log.warn('_sendToServer: Calling reauthenticate callback with tokenExpired.');
             reauthenticateCallback({ tokenExpired: true });
           }
           return { tokenExpired: true };
@@ -714,10 +736,8 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
 
         // For unauthorized errors (not token expired), return auth error
         if (response.status === 401 || response.status === 403) {
-          log.warn('_sendToServer: Unauthorized error detected (not token expired).');
-          // Call the reauthenticate callback if available
           if (reauthenticateCallback) {
-            log.warn('_sendToServer: Calling reauthenticate callback with authError.'); // Keep this
+            log.warn('_sendToServer: Calling reauthenticate callback with authError.');
             reauthenticateCallback({ authError: true });
           }
           return { authError: true };
