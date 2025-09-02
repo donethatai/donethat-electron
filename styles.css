@@ -171,6 +171,7 @@
   @apply w-4 h-4 border-2 rounded-full animate-spin inline-block mr-2;
   border-color: rgba(255, 255, 255, 0.3);
   border-top-color: white;
+  vertical-align: middle;
 }
 
 /* Spinner overlay */
@@ -659,6 +660,9 @@ body {
 .summary-submit-btn {
   @apply px-6 py-2 text-white rounded-lg transition-colors text-sm;
   background-color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .summary-submit-btn:hover {
   background-color: var(--color-primary-dark);
