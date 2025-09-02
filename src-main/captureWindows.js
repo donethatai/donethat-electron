@@ -13,6 +13,12 @@ const BACKOFF_MULTIPLIER = 2 // Exponential backoff multiplier
 let consecutiveFailures = 0 // Track consecutive failures for backoff
 let lastBackoffTime = 0 // Track when we last applied backoff
 let processingRecordWindow = false // Flag to prevent overlapping calls
+let stopInProgress = false
+let startInProgress = false
+
+// References to communicate permission/state changes without prompting the OS
+let stateManagerRef = null
+let mainWindowRef = null
 
 /**
  * Checks if the application has permission to access window information
@@ -95,15 +101,17 @@ function resetBackoff() {
  * @returns {Promise<boolean>} True if tracking started successfully, false if permission denied or error occurred
  */
 async function startTracking() {
-  if (isTracking) {
+  if (isTracking || startInProgress) {
     return true
   }
+  startInProgress = true
   
   // First check if we have permission
   const hasPermission = await checkPermissions()
   if (!hasPermission) {
     const message = 'Permission denied for window tracking. Please grant accessibility permissions in system settings.'
-    log.error('Failed to start window tracking:', message)
+    log.warn('Failed to start window tracking:', message)
+    startInProgress = false
     return false
   }
   
@@ -121,6 +129,7 @@ async function startTracking() {
     trackingInterval = setInterval(recordCurrentWindow, currentTrackingIntervalMs)
     
     isTracking = true
+    startInProgress = false
     return true
   } catch (error) {
     log.error('Error during window tracking start:', error)
@@ -128,6 +137,7 @@ async function startTracking() {
       clearInterval(trackingInterval)
       trackingInterval = null
     }
+    startInProgress = false
     return false
   }
 }
@@ -146,6 +156,26 @@ async function recordCurrentWindow() {
   processingRecordWindow = true
   
   try {
+    // Generic passive permission gate before probing window info
+    const hasPerm = await checkPermissions()
+    if (!hasPerm) {
+      // Permission not available: propagate and stop tracking without prompting OS settings
+      try { stateManagerRef?.updateWindowsPermission(false) } catch (_) {}
+      try { if (mainWindowRef) mainWindowRef.webContents.send('windowsPermission', false) } catch (_) {}
+      if (!stopInProgress) {
+        stopInProgress = true
+        try {
+          setImmediate(() => {
+            try { stopTracking() } catch (e) { log.warn('Deferred stopTracking failed:', e?.message || e) }
+            stopInProgress = false
+          })
+        } catch (e) {
+          stopInProgress = false
+        }
+      }
+      processingRecordWindow = false
+      return
+    }
     const activeWindowInfo = await activeWindow()
     
     if (!activeWindowInfo) {
@@ -181,7 +211,7 @@ async function recordCurrentWindow() {
     resetBackoff()
     
   } catch (error) {
-    log.error('Error tracking window:', error)
+    log.warn('Error tracking window (treated as transient):', error?.message || error)
     
     // Record the error in the timeline
     windowTimeline.push({
@@ -326,9 +356,12 @@ function getCurrentInterval() {
 
 // Initialize Windows permission handling
 function initWindowsPermissionHandling(mainWindow, stateManager, checkAndAdjustRecording, sendOverlayState) {
+  // Store refs for permission state propagation from tracking loop
+  mainWindowRef = mainWindow
+  stateManagerRef = stateManager
   ipcMain.on('requestWindowsPermission', async (event, shouldOpenSettings = true) => {
     // Only open system settings if explicitly requested (user clicked toggle)
-    if (shouldOpenSettings) {
+    if (shouldOpenSettings === true) {
       if (process.platform === 'darwin') {
         // macOS
         shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')
@@ -338,25 +371,17 @@ function initWindowsPermissionHandling(mainWindow, stateManager, checkAndAdjustR
       } else {
         // Linux or other platforms
       }
-
-      // After opening settings, we should check permission again when app regains focus
+      // After opening settings, re-check permission exactly once when the app regains focus
       const focusListener = async () => {
-        // Remove listener immediately to prevent multiple triggers
         app.removeListener('browser-window-focus', focusListener);
-
-        const oldPermission = stateManager?.hasWindowsPermission();
-        const hasPermission = await checkPermissions();
-        stateManager?.updateWindowsPermission(hasPermission);
-
-        if (stateManager?.hasWindowsPermission() !== oldPermission && mainWindow) { // Check if permission *changed*
-          mainWindow.webContents.send('windowsPermission', hasPermission);
-
-          // Re-evaluate recording state based on permission change
-          if (checkAndAdjustRecording) checkAndAdjustRecording();
-          if (sendOverlayState) sendOverlayState();
-        }
+        try {
+          const hasPermission = await checkPermissions();
+          stateManager?.updateWindowsPermission(hasPermission);
+          if (mainWindow) {
+            mainWindow.webContents.send('windowsPermission', hasPermission);
+          }
+        } catch (e) {}
       };
-      
       app.on('browser-window-focus', focusListener);
     } else {
       // Just check permission without opening settings

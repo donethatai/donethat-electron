@@ -391,44 +391,7 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     app.on('browser-window-focus', focusListener);
   });
 
-  ipcMain.on('requestWindowsPermission', async (event) => {
-    const { shell } = require('electron');
-    const { checkPermissions } = require('./captureWindows');
-    
-    const hasPermission = await checkPermissions();
-    
-    if (hasPermission) {
-      if (mainWindow) {
-        mainWindow.webContents.send('windowsPermission', true);
-      }
-      return;
-    }
-    
-    // Open system settings based on platform
-    if (process.platform === 'darwin') {
-      shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
-    } else if (process.platform === 'win32') {
-      shell.openExternal('ms-settings:privacy');
-    } else if (process.platform === 'linux') {
-      if (mainWindow) {
-        mainWindow.webContents.send('linux-windows-permission-notice');
-      }
-    }
-    
-    // Check permission on focus
-    const app = require('electron').app;
-    const focusListener = async () => {
-      app.removeListener('browser-window-focus', focusListener);
-      
-      const newHasPermission = await checkPermissions();
-      
-      if (mainWindow) {
-        mainWindow.webContents.send('windowsPermission', newHasPermission);
-      }
-    };
-    
-    app.on('browser-window-focus', focusListener);
-  });
+  // Windows permission IPC is handled in captureWindows.js to centralize logic
 }
 
 /**
@@ -884,17 +847,20 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
   // Update settings
   inputDataSettings = updatedSettings;
 
-  // Notify renderer
+  // Notify renderer (non-blocking; avoid repeated alert dialogs by not showing dialog here)
   if (mainWindowRef) {
-    mainWindowRef.webContents.send('disable-capture-features', updatedSettings);
+    try { mainWindowRef.webContents.send('disable-capture-features', updatedSettings); } catch (e) {}
   } else {
     log.warn('mainWindowRef is not available, cannot send disable-capture-features event.');
   }
   
-  // Show dialog if options are set
+  // Suppress system dialogs for permission-denied cases to avoid alert noise during revocation
   if (dialogOptions && mainWindowRef) {
-    const { dialog } = require('electron');
-    dialog.showMessageBox(mainWindowRef, dialogOptions);
+    const isPermissionCase = /permission denied/i.test(dialogOptions.message || '')
+    if (!isPermissionCase) {
+      const { dialog } = require('electron');
+      dialog.showMessageBox(mainWindowRef, dialogOptions);
+    }
   }
 }
 

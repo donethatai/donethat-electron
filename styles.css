@@ -915,7 +915,7 @@ body {
   grid-template-columns: auto 1fr;
   align-items: center;
   column-gap: 8px;
-  margin: 16px 0 12px 0;
+  margin: 46px 0 16px 0; /* More vertical space before/after divider */
 }
 .section-divider::after {
   content: "";

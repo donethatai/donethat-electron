@@ -145,6 +145,13 @@ ipcRenderer.on('screenCapturePermission', (event, data) => {
     // Update topbar visibility
     if (updateTopbarVisibility) updateTopbarVisibility();
     
+    // If screen recording permission is missing, ensure app window is shown
+    try {
+      if (!hasPermission) {
+        ipcRenderer.send('focus-app-window');
+      }
+    } catch (_) {}
+    
     // Only navigate if we're not already on settings view
     const currentView = getCurrentView ? getCurrentView() : null;
     if (currentView !== 'settings') {
@@ -195,6 +202,13 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
   // Update topbar visibility
   if (updateTopbarVisibility) updateTopbarVisibility();
   
+  // If windows permission is missing, ensure app window is shown
+  try {
+    if (!hasPermission) {
+      ipcRenderer.send('focus-app-window');
+    }
+  } catch (_) {}
+
   // Only navigate if we're not already on settings view
   const currentView = getCurrentView ? getCurrentView() : null;
   if (currentView !== 'settings') {

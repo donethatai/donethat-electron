@@ -377,15 +377,10 @@ async function updateSettingsUI(settings) {
   // Send current input data settings to main process
   ipcRenderer.send('updateInputDataSettings', inputData);
 
-  const windowsCheckbox = document.getElementById('windowsCheckbox'); // Updated ID
   const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
   const audioCheckbox = document.getElementById('audioCheckbox');
 
-  if (windowsCheckbox) {
-    windowsCheckbox.checked = inputData.windows; // Use windows key
-    // Non-revokable when enabled: disable direct toggling once on
-    windowsCheckbox.disabled = !!inputData.windows;
-  }
+  // Do not set windowsCheckbox state here; permissions.js updates checked/disabled based on system permission
   if (keystrokesCheckbox) keystrokesCheckbox.checked = inputData.keystrokes;
   if (audioCheckbox) audioCheckbox.checked = inputData.audio; // Keep disabled state from HTML
 

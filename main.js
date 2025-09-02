@@ -544,6 +544,16 @@ app.whenReady().then(async () => {
         isWaylandSession: stateManager?.isWaylandSession()
       });
     }
+
+    // Re-check Windows (active apps) permission passively and notify renderer
+    try {
+      const winPerm = await checkWindowsPermission();
+      const prev = stateManager?.hasWindowsPermission();
+      stateManager?.updateWindowsPermission(winPerm);
+      if (mainWindow && winPerm !== prev) {
+        mainWindow.webContents.send('windowsPermission', winPerm);
+      }
+    } catch (e) {}
   });
 
   // Add daily auth check
@@ -1211,7 +1221,7 @@ function createWindow() {
     }
 
     // Position the window once it's ready.
-    mainWindow.once('ready-to-show', () => {
+    mainWindow.once('ready-to-show', async () => {
       mainWindow.webContents.send('screenCapturePermission', {
         hasPermission: stateManager?.hasScreenCapturePermission(),
         isWaylandSession: stateManager?.isWaylandSession()
@@ -1223,6 +1233,15 @@ function createWindow() {
       // Initialize permission handlers
       initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndAdjustRecording, sendOverlayState);
       initWindowsPermissionHandling(mainWindow, stateManager, checkAndAdjustRecording, sendOverlayState);
+
+      // Passive initial check for Windows (active apps) permission and notify renderer
+      try {
+        const winPerm = await checkWindowsPermission();
+        stateManager?.updateWindowsPermission(winPerm);
+        try { mainWindow.webContents.send('windowsPermission', winPerm); } catch (e) {}
+      } catch (e) {}
+
+      // Renderer will handle opening the window if a permission is missing based on emitted events
     })
 
     // Remove macOS-specific auto-hide on blur to behave like a normal window
