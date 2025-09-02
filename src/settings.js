@@ -34,6 +34,22 @@ let inputData = {
   audio: false
 };
 
+// Helper: force-disable and persist "Disable screenshots in meetings"
+async function forceDisableScreenshotsInMeetings() {
+  try {
+    const el = document.getElementById('disableScreenshotsInMeetings');
+    if (!el) return;
+    if (el.checked) {
+      el.checked = false;
+      await saveUserSettings('disableScreenshotsInMeetings', false);
+      ipcRenderer.send('updateDisableScreenshotsInMeetings', false);
+    }
+  } catch (error) {
+    console.error('Error forcing disable of meeting screenshots:', error);
+  }
+}
+
+
 // Function to check and update app version
 async function checkAndUpdateAppVersion() {
   const currentVersion = packageInfo.version;
@@ -107,6 +123,8 @@ function setupDisableCaptureListener() {
         // Update local state
         inputData.audio = false;
       }
+      // Also disable "Disable screenshots in meetings" if mic is off
+      await forceDisableScreenshotsInMeetings();
     }
     
     if (disabledSettings.keystrokes === false) {
@@ -159,6 +177,10 @@ function setupPermissionResultListener() {
     // Keep Active applications non-revokable once enabled
     if (type === 'windows') {
       checkbox.disabled = !!hasPermission;
+    }
+    // If audio permission was revoked, also disable meeting screenshots and persist
+    if (type === 'audio' && !hasPermission) {
+      await forceDisableScreenshotsInMeetings();
     }
     
     // Save to server
@@ -394,6 +416,14 @@ async function updateSettingsUI(settings) {
       disableScreenshots.checked = settings.disableScreenshotsInMeetings;
       // Send to main process
       ipcRenderer.send('updateDisableScreenshotsInMeetings', settings.disableScreenshotsInMeetings);
+      // If audio is off, force-disable this setting and persist
+      try {
+        const audioCheckboxEl = document.getElementById('audioCheckbox');
+        const micOn = !!(audioCheckboxEl && audioCheckboxEl.checked);
+        if (!micOn) await forceDisableScreenshotsInMeetings();
+      } catch (error) {
+        console.error('Error ensuring meeting screenshots consistency with audio:', error);
+      }
     }
   }
 
@@ -461,13 +491,10 @@ function setupMeetingScreenshotsDependency() {
   const disableScreenshots = document.getElementById('disableScreenshotsInMeetings');
   if (!disableScreenshots) return;
 
-  const applyState = () => {
+  const applyState = async () => {
     const micOn = !!(audioCheckbox && audioCheckbox.checked);
+    if (!micOn && disableScreenshots.checked) await forceDisableScreenshotsInMeetings();
     disableScreenshots.disabled = !micOn;
-    if (!micOn) {
-      // Don't uncheck if we're just temporarily disabling due to no audio
-      // The setting will be restored when audio is re-enabled
-    }
   };
 
   // Initial application
@@ -500,8 +527,10 @@ function recomputeMeetingScreenshotsDependency() {
   const micOn = !!(audioCheckbox && audioCheckbox.checked);
   disableScreenshots.disabled = !micOn;
   if (!micOn) {
-    // Don't uncheck if we're just temporarily disabling due to no audio
-    // The setting will be restored when audio is re-enabled
+    // Ensure it is unchecked and persisted when audio is off
+    if (disableScreenshots.checked) {
+      forceDisableScreenshotsInMeetings();
+    }
   }
 }
 
