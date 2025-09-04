@@ -408,16 +408,16 @@ function resumeRecording() {
 }
 
 // Add pause state change listener
-ipcRenderer.on('pauseStateChanged', () => {
+ipcRenderer.on('pauseStateChanged', (_event, isPaused) => {
   // Add a small delay back to ensure app state is updated first
   setTimeout(() => {
-    // Check if app is paused and show notification if so
+    // Only show when event indicates paused and state still reflects paused
     if (getIsPaused()) {
-             showBanner('DoneThat is paused and not recording your work', {
-         title: 'Recording Paused',
-         sticky: true,
-         action: { label: 'Resume Recording', channel: 'resumeRecording' }
-       });
+      showBanner('DoneThat is paused and not recording your work', {
+        title: 'Recording Paused',
+        sticky: false,
+        action: { label: 'Resume Recording', channel: 'resumeRecording' }
+      });
     }
   }, 100);
 });
