@@ -64,8 +64,7 @@ app.on('second-instance', (event, commandLine, workingDirectory) => {
       if (!overlayWindow || overlayWindow.isDestroyed()) {
         createOverlayWindow();
       }
-      positionOverlayWindow();
-      overlayWindow.show();
+      showOverlayOnCurrentSpace();
     }
   } catch (e) {}
 });
@@ -120,9 +119,7 @@ function registerGlobalShortcut() {
         if (overlayWindow.isVisible()) {
           overlayWindow.hide();
         } else {
-          positionOverlayWindow();
-          overlayWindow.show();
-          overlayWindow.focus();
+          showOverlayOnCurrentSpace();
         }
       } catch (e) {}
     });
@@ -754,10 +751,8 @@ ipcMain.on('overlay:toggle', () => {
       // Hide the overlay
       overlayWindow.hide();
     } else {
-      // Show the overlay
-      positionOverlayWindow();
-      overlayWindow.show();
-      overlayWindow.focus();
+      // Show the overlay (ensure current Space on macOS)
+      showOverlayOnCurrentSpace();
     }
   } catch (e) {}
 });
@@ -767,9 +762,7 @@ ipcMain.on('overlay:show', () => {
     if (!overlayWindow || overlayWindow.isDestroyed()) {
       createOverlayWindow();
     }
-    positionOverlayWindow();
-    overlayWindow.show();
-    overlayWindow.focus();
+    showOverlayOnCurrentSpace();
   } catch (e) {}
 });
 
@@ -793,24 +786,7 @@ ipcMain.on('overlay:show-if-hidden', () => {
     // Only show if the window is currently hidden
     if (!overlayWindow.isVisible()) {
       hideMainWindowIfVisible();
-      positionOverlayWindow();
-      if (process.platform === 'darwin') {
-        // macOS Spaces quirk: a window is associated with the Space/desktop it was last
-        // visible on. If we only reposition and call show(), macOS may switch the user to
-        // the window's previous Space instead of revealing it on the current Space.
-        //
-        // Workaround: temporarily enable visibility across all workspaces so showing the
-        // window binds it to the currently active Space/display, then immediately revert
-        // to normal behavior. This avoids Desktop switching while still respecting our
-        // positioning on the display under the current cursor.
-        try { overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (e) {}
-        try { overlayWindow.show(); } catch (e) {}
-        try { overlayWindow.focus(); } catch (e) {}
-        try { overlayWindow.setVisibleOnAllWorkspaces(false); } catch (e) {}
-      } else {
-        overlayWindow.show();
-        overlayWindow.focus();
-      }
+      showOverlayOnCurrentSpace();
     }
   } catch (e) {
     console.error('[MAIN] Error in overlay:show-if-hidden:', e)
@@ -1039,12 +1015,7 @@ function createApplicationMenu() {
         accelerator: getHotkeyAccelerator(),
         click: () => {
           try {
-            if (!overlayWindow || overlayWindow.isDestroyed()) {
-              createOverlayWindow();
-            }
-            positionOverlayWindow();
-            overlayWindow.show();
-            overlayWindow.focus();
+            showOverlayOnCurrentSpace();
           } catch (e) {}
         }
       },
@@ -1105,12 +1076,7 @@ function buildContextMenu() {
         if (!stateManager?.hasValidAccess()) {
           return;
         }
-        if (!overlayWindow || overlayWindow.isDestroyed()) {
-          createOverlayWindow()
-        }
-        positionOverlayWindow()
-        try { overlayWindow.show() } catch (e) { }
-        try { overlayWindow.focus() } catch (e) { }
+        try { showOverlayOnCurrentSpace() } catch (e) { }
       }
     },
     { type: 'separator' },
@@ -1531,6 +1497,25 @@ function positionOverlayWindow() {
   }
 
   try { overlayWindow.setPosition(x, y, false) } catch (e) {}
+}
+
+// Helper: Show overlay on the current Space (macOS) without switching Spaces
+function showOverlayOnCurrentSpace() {
+  try {
+    if (!overlayWindow || overlayWindow.isDestroyed()) {
+      createOverlayWindow();
+    }
+    positionOverlayWindow();
+    if (process.platform === 'darwin') {
+      try { overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (e) {}
+      try { overlayWindow.show(); } catch (e) {}
+      try { overlayWindow.focus(); } catch (e) {}
+      try { overlayWindow.setVisibleOnAllWorkspaces(false); } catch (e) {}
+    } else {
+      try { overlayWindow.show(); } catch (e) {}
+      try { overlayWindow.focus(); } catch (e) {}
+    }
+  } catch (e) {}
 }
 
 function sendOverlayState() {
