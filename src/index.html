@@ -463,6 +463,23 @@
                   </ul>
                 </div>
               </div>
+
+              <!-- Hotkey setting (placed below other optional controls) -->
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="text-base font-semibold text-gray-800">Open Chat hotkey</div>
+                  <div class="text-xs text-gray-500">Always uses Cmd/Ctrl + Shift. Choose the final letter (A–Z).</div>
+                </div>
+                <div class="flex items-center gap-1 mt-6" title="Open Chat hotkey">
+                  <span id="hotkeyCmdCap" class="inline-flex items-center justify-center h-7 px-3 text-xs bg-gray-50 border border-gray-200 rounded-md shadow-inner text-gray-500 select-none pointer-events-none" aria-disabled="true" title="Fixed modifier">Ctrl</span>
+                  <span class="text-gray-300 select-none">+</span>
+                  <span id="hotkeyShiftCap" class="inline-flex items-center justify-center h-7 px-3 text-xs bg-gray-50 border border-gray-200 rounded-md shadow-inner text-gray-500 select-none pointer-events-none" aria-disabled="true" title="Fixed modifier">Shift</span>
+                  <span class="text-gray-300 select-none">+</span>
+                  <span class="inline-flex items-center justify-center h-7 px-0 bg-white border border-gray-300 rounded-md shadow-inner cursor-text" title="Click to change final letter">
+                    <input type="text" id="hotkeyLetterInput" maxlength="1" class="w-6 h-full text-center text-xs bg-transparent outline-none font-semibold text-gray-900 focus:ring-2 focus:ring-indigo-400 rounded-sm" placeholder="D" aria-label="Hotkey letter" />
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div class="mt-6">

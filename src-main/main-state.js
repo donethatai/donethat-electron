@@ -808,25 +808,12 @@ function setupIPCHandlers() {
   });
 
   ipcMain.handle('get-gemini-api-key', async (event) => {
+    // Delegate to the internal getter to ensure consistent error handling
     try {
-      const encryptedKey = safeStoreOperation(() => {
-        if (store) {
-          return store.get('geminiApiKey');
-        } else {
-          return null;
-        }
-      }, 'get encrypted Gemini API key');
-
-      if (!encryptedKey) {
-        return { success: true, apiKey: null };
-      }
-
-      // Decrypt the API key
-      const decryptedKey = decryptData(encryptedKey);
-      
-      return { success: true, apiKey: decryptedKey };
+      const result = await getGeminiApiKey();
+      return result;
     } catch (error) {
-      log.error('Error retrieving Gemini API key:', error);
+      log.error('Error retrieving Gemini API key (ipc):', error);
       return { success: false, error: error.message };
     }
   });
@@ -1020,6 +1007,37 @@ async function getGeminiApiKey() {
     return { success: true, apiKey: decryptedKey };
   } catch (error) {
     log.error('Error retrieving Gemini API key:', error);
+    // If decryption failed, clear the key and notify the user to re-enter
+    if (error && typeof error.message === 'string' && error.message.includes('Failed to decrypt data')) {
+      try {
+        // Clear the stored key
+        safeStoreOperation(() => {
+          if (store) {
+            store.delete('geminiApiKey');
+          }
+        }, 'delete corrupted Gemini API key');
+      } catch (e) {
+        log.warn('Failed to clear corrupted Gemini API key:', e);
+      }
+      // Send a sticky in-app notification to prompt user
+      try {
+        const { BrowserWindow } = require('electron');
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win) {
+          try { win.show(); win.focus(); } catch (e) {}
+          win.webContents.send('inapp:notify', {
+            id: 'gemini-key-decrypt-failed',
+            title: 'Settings',
+            message: "We couldn't read your Gemini API key. Please set it again in Settings. For now we'll use cloud processing.",
+            sticky: true
+          });
+        }
+      } catch (notifyErr) {
+        log.warn('Failed to send in-app notification for Gemini key reset:', notifyErr);
+      }
+      // Return success with null apiKey to fall back to cloud processing
+      return { success: true, apiKey: null };
+    }
     return { success: false, error: error.message };
   }
 }

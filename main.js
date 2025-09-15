@@ -80,6 +80,62 @@ app.on('activate', () => {
 // To show dev tools next to main window
 let DEBUG = false
 
+// Global hotkey configuration (suffix only, final character)
+let HOTKEY_SUFFIX = 'D' // default
+let lastRegisteredAccelerator = null;
+
+function getHotkeyAccelerator() {
+  const suffix = String(HOTKEY_SUFFIX || 'D').trim().slice(-1).toUpperCase();
+  return `CommandOrControl+Shift+${suffix}`;
+}
+
+function getHotkeyLabelPrefix() {
+  return process.platform === 'darwin' ? 'Cmd' : 'Ctrl';
+}
+
+function getHotkeyLabel() {
+  const suffix = String(HOTKEY_SUFFIX || 'D').trim().slice(-1).toUpperCase();
+  return `${getHotkeyLabelPrefix()}+Shift+${suffix}`;
+}
+
+function registerGlobalShortcut() {
+  try {
+    const accel = getHotkeyAccelerator();
+    if (lastRegisteredAccelerator) {
+      try { globalShortcut.unregister(lastRegisteredAccelerator); } catch (_) {}
+    }
+    const ok = globalShortcut.register(accel, () => {
+      try {
+        // Check if user is authenticated and has valid access before showing overlay
+        if (!stateManager?.isAuthenticated()) {
+          return;
+        }
+        if (!stateManager?.hasValidAccess()) {
+          return;
+        }
+        
+        if (!overlayWindow || overlayWindow.isDestroyed()) {
+          createOverlayWindow();
+        }
+        if (overlayWindow.isVisible()) {
+          overlayWindow.hide();
+        } else {
+          positionOverlayWindow();
+          overlayWindow.show();
+          overlayWindow.focus();
+        }
+      } catch (e) {}
+    });
+    if (!ok) {
+      log.warn('Failed to register global shortcut for Open Chat with', accel);
+    } else {
+      lastRegisteredAccelerator = accel;
+    }
+  } catch (e) {
+    log.error('Error registering global shortcut:', e);
+  }
+}
+
 // Update screenshot interval logic
 let SCREENSHOT_INTERVAL_MINUTES = 5; // Default to 5 minutes for release
 // Set interval based on whether it's development or production
@@ -386,6 +442,12 @@ app.whenReady().then(async () => {
     const { default: Store } = await import('electron-store');
     overlayStore = new Store({ name: 'donethat-config' });
     try {
+      // Load persisted hotkey suffix if available
+      const persistedSuffix = overlayStore.get('hotkeySuffix');
+      if (typeof persistedSuffix === 'string' && persistedSuffix.length > 0) {
+        HOTKEY_SUFFIX = String(persistedSuffix).trim().slice(-1).toUpperCase();
+      }
+
       savedOverlayPosition = overlayStore.get('overlayPosition') || null;
       if (savedOverlayPosition && Number.isFinite(savedOverlayPosition.x) && (Number.isFinite(savedOverlayPosition.y) || Number.isFinite(savedOverlayPosition.bottom))) {
         overlayPositionUserSet = true;
@@ -489,6 +551,36 @@ app.whenReady().then(async () => {
     } catch (e) { log.error('Failed to install update from banner:', e); }
   });
 
+  // Hotkey IPC
+  ipcMain.handle('hotkey:get', async () => {
+    try {
+      const suffix = String(HOTKEY_SUFFIX || 'D').trim().slice(-1).toUpperCase();
+      return { success: true, suffix, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel() };
+    } catch (e) {
+      return { success: false, error: String(e && e.message || e) };
+    }
+  });
+
+  ipcMain.handle('hotkey:set', async (_event, payload) => {
+    try {
+      const raw = (payload && payload.suffix) || '';
+      const clean = String(raw).trim();
+      if (!clean || !/^[a-zA-Z]$/.test(clean.slice(-1))) {
+        return { success: false, error: 'Suffix must be a single A-Z character.' };
+      }
+      HOTKEY_SUFFIX = clean.slice(-1).toUpperCase();
+      try { overlayStore?.set('hotkeySuffix', HOTKEY_SUFFIX); } catch (_) {}
+      registerGlobalShortcut();
+      // Refresh menus so accelerators/labels update
+      createApplicationMenu();
+      const payloadOut = { success: true, suffix: HOTKEY_SUFFIX, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel() };
+      try { mainWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
+      return payloadOut;
+    } catch (e) {
+      return { success: false, error: String(e && e.message || e) };
+    }
+  });
+
   // Create overlay window (hidden initially)
   createOverlayWindow()
 
@@ -501,36 +593,8 @@ app.whenReady().then(async () => {
     log.error('Error setting up updater:', error);
   }
 
-  // Register global shortcut for Open Chat
-  try {
-    const ok = globalShortcut.register('CommandOrControl+Shift+D', () => {
-      try {
-        // Check if user is authenticated and has valid access before showing overlay
-        if (!stateManager?.isAuthenticated()) {
-          return;
-        }
-        if (!stateManager?.hasValidAccess()) {
-          return;
-        }
-        
-        if (!overlayWindow || overlayWindow.isDestroyed()) {
-          createOverlayWindow();
-        }
-        if (overlayWindow.isVisible()) {
-          overlayWindow.hide();
-        } else {
-          positionOverlayWindow();
-          overlayWindow.show();
-          overlayWindow.focus();
-        }
-      } catch (e) {}
-    });
-    if (!ok) {
-      log.warn('Failed to register global shortcut for Open Chat');
-    }
-  } catch (e) {
-    log.error('Error registering global shortcut:', e);
-  }
+  // Register global shortcut for Open Chat (configurable suffix)
+  try { registerGlobalShortcut(); } catch (e) { log.error('Error registering global shortcut:', e); }
 
   // Also check permissions when the app is activated
   app.on('activate', async () => {
@@ -971,8 +1035,8 @@ function createApplicationMenu() {
     label: 'Help',
     submenu: [
       {
-        label: `Open Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`,
-        accelerator: 'CmdOrCtrl+Shift+D',
+        label: `Open Chat (${getHotkeyLabel()})`,
+        accelerator: getHotkeyAccelerator(),
         click: () => {
           try {
             if (!overlayWindow || overlayWindow.isDestroyed()) {
@@ -1031,7 +1095,7 @@ function buildContextMenu() {
     click: () => navigateToView('signup-next')
   },
     {
-      label: `Open Chat (${process.platform === 'darwin' ? 'Cmd' : 'Ctrl'}+Shift+D)`,
+      label: `Open Chat (${getHotkeyLabel()})`,
       enabled: isLoggedIn && hasValidAccess,
       click: () => {
         // Only show overlay if authenticated and has valid access

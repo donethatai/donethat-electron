@@ -105,6 +105,8 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
 
   // Set up Gemini API key listeners
   setupGeminiApiKeyListeners();
+  // Set up hotkey configuration UI
+  setupHotkeyConfiguration();
   // Set up dependency: disable screenshots in meetings requires microphone enabled
   setupMeetingScreenshotsDependency();
 }
@@ -680,3 +682,52 @@ module.exports = {
   loadUserSettings,
   saveUserSettings
 };
+
+// --- Hotkey configuration ---
+function setupHotkeyConfiguration() {
+  const input = document.getElementById('hotkeyLetterInput');
+  const cmdCap = document.getElementById('hotkeyCmdCap');
+  const shiftCap = document.getElementById('hotkeyShiftCap');
+  if (!input || !cmdCap || !shiftCap) return;
+
+  // Load current from main
+  ipcRenderer.invoke('hotkey:get').then((res) => {
+    if (res && res.success) {
+      try { input.value = (res.suffix || 'D'); } catch (_) {}
+      // Update Cmd/Ctrl label depending on platform
+      try { cmdCap.textContent = (process.platform === 'darwin' ? 'Cmd' : 'Ctrl'); } catch (_) {}
+    }
+  }).catch(() => {});
+
+  // Sanitize input and save on blur
+  input.addEventListener('input', (e) => {
+    let v = String(e.target.value || '').toUpperCase();
+    // Keep only last A-Z character
+    const m = v.match(/[A-Z]/g);
+    v = m ? m[m.length - 1] : '';
+    e.target.value = v;
+  });
+
+  input.addEventListener('blur', async (e) => {
+    const v = String(e.target.value || '').toUpperCase();
+    if (!v || !/^[A-Z]$/.test(v)) {
+      // Revert to current from main
+      try {
+        const res = await ipcRenderer.invoke('hotkey:get');
+        if (res && res.success) {
+          input.value = res.suffix || 'D';
+        }
+      } catch (_) {}
+      return;
+    }
+    try {
+      const res = await ipcRenderer.invoke('hotkey:set', { suffix: v });
+      if (res && res.success) {
+        input.value = res.suffix || v;
+        logAnalyticsEvent('hotkey_updated', { suffix: res.suffix });
+      }
+    } catch (error) {
+      console.error('Failed to set hotkey:', error);
+    }
+  });
+}

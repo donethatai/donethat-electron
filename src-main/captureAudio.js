@@ -91,8 +91,16 @@ function initializeSessionDetection(config) {
     
     
     audioSessionDetector.onSessionEnd(() => {
+      log.info('Audio session ended, stopping recording');
       stopRecordingInternal().catch(error => {
         log.error('Failed to stop recording after session detection:', error);
+        // Force stop recording even if there's an error
+        isRecording = false;
+        if (transcriptionInterval) { 
+          clearInterval(transcriptionInterval); 
+          transcriptionInterval = null; 
+        }
+        stopPeriodicChecks();
       });
     });
     
@@ -190,11 +198,12 @@ async function performPeriodicCheck() {
     
   } catch (error) {
     log.error('Error during periodic check:', error);
-    // Resume recording on error to be safe
+    // Don't resume recording on error - stop it instead to be safe
+    log.warn('Periodic check failed, stopping recording to prevent unwanted recording');
     try {
-      await resumeRecording();
-    } catch (resumeError) {
-      log.error('Failed to resume recording after periodic check error:', resumeError);
+      await stopRecordingInternal();
+    } catch (stopError) {
+      log.error('Failed to stop recording after periodic check error:', stopError);
     }
   } finally {
     isPausedForCheck = false;
@@ -231,11 +240,12 @@ async function performLowAudioCheck() {
     
   } catch (error) {
     log.error('Error during low audio check:', error);
-    // Resume recording on error to be safe
+    // Don't resume recording on error - stop it instead to be safe
+    log.warn('Low audio check failed, stopping recording to prevent unwanted recording');
     try {
-      await resumeRecording();
-    } catch (resumeError) {
-      log.error('Failed to resume recording after low audio check error:', resumeError);
+      await stopRecordingInternal();
+    } catch (stopError) {
+      log.error('Failed to stop recording after low audio check error:', stopError);
     }
   } finally {
     isPausedForCheck = false;
@@ -475,7 +485,14 @@ async function startRecordingInternal() {
           }
         }
       } catch (e) {
-        // Periodic transcription error, continuing...
+        log.error('Periodic transcription error:', e.message);
+        // If we get IPC serialization errors, stop recording to prevent hanging
+        if (e.message.includes('could not be cloned') || e.message.includes('serialization')) {
+          log.warn('IPC serialization error detected, stopping recording to prevent hanging');
+          if (isRecording && mainWindow && !mainWindow.isDestroyed()) {
+            await stopRecordingInternal();
+          }
+        }
       }
     }, TRANSCRIPTION_INTERVAL_MS)
     

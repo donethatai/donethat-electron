@@ -358,6 +358,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       try { ipcRenderer.send('overlay:toggle'); } catch (e) {}
     });
+
+    // React to hotkey updates from main to refresh label
+    try {
+      ipcRenderer.on('hotkey:updated', (_event, payload) => {
+        if (!payload || !payload.label) return;
+        openChatBtn.textContent = `Chat (${payload.label})`;
+        openChatBtn.title = `Chat (${payload.label})`;
+      });
+      // Also request current label once
+      ipcRenderer.invoke('hotkey:get').then((res) => {
+        if (res && res.success && res.label) {
+          openChatBtn.textContent = `Chat (${res.label})`;
+          openChatBtn.title = `Chat (${res.label})`;
+        }
+      }).catch(() => {});
+    } catch (_) {}
   }
   if (openSettingsViewBtn) {
     openSettingsViewBtn.addEventListener('click', () => {
