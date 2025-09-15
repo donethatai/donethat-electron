@@ -297,6 +297,23 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     updateInputDataSettings(settings);
   });
 
+  // Pause capture interval temporarily due to permission events
+  ipcMain.on('pause-capture-due-to-permission', (event, payload) => {
+    try {
+      const ms = Math.max(0, Math.min(60000, (payload && payload.ms) || 10000));
+      stopCaptureInterval();
+      setTimeout(() => {
+        // Only resume if user still has capturing enabled (safety: windows may be off now)
+        try {
+          if (!screenshotInterval) {
+            // Resume interval; feature flags will prevent window tracking if disabled
+            startCaptureInterval();
+          }
+        } catch (_) {}
+      }, ms);
+    } catch (e) {}
+  });
+
   // Handler for updating disable screenshots in meetings setting
   ipcMain.on('updateDisableScreenshotsInMeetings', (event, enabled) => {
     updateDisableScreenshotsInMeetings(enabled);

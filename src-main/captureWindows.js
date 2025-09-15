@@ -13,6 +13,9 @@ const BACKOFF_MULTIPLIER = 2 // Exponential backoff multiplier
 let consecutiveFailures = 0 // Track consecutive failures for backoff
 let lastBackoffTime = 0 // Track when we last applied backoff
 let processingRecordWindow = false // Flag to prevent overlapping calls
+let permissionCooldownUntil = 0 // Timestamp in ms; skip probes until this time when permission flips false
+let lastEmittedPermission = null // Track last emitted permission state to avoid repeated emissions
+let capturePausedDueToWindowsPermission = false // Circuit breaker: pause capture interval once on permission loss
 
 // References to communicate permission/state changes without prompting the OS
 let stateManagerRef = null
@@ -164,12 +167,33 @@ async function recordCurrentWindow() {
   
   try {
     // Generic passive permission gate before probing window info
+    const now = Date.now()
+    if (now < permissionCooldownUntil) {
+      // Cooldown active: do not probe, just exit tick
+      processingRecordWindow = false
+      return
+    }
     const hasPerm = await checkPermissions()
     if (!hasPerm) {
-      // Permission not available: propagate and stop tracking without prompting OS settings
-      try { stateManagerRef?.updateWindowsPermission(false) } catch (_) {}
-      try { if (mainWindowRef) mainWindowRef.webContents.send('windowsPermission', false) } catch (_) {}
-      // Don't stop tracking here; let the renderer's settings flow disable it via updateInputDataSettings
+      // Permission revoked: stop interval to avoid native probe during transient OS state
+      try { stopTracking() } catch (_) {}
+      if (!capturePausedDueToWindowsPermission) {
+        capturePausedDueToWindowsPermission = true
+        try {
+          const captureModule = require('./capture')
+          if (captureModule && typeof captureModule.stopCaptureInterval === 'function') {
+            captureModule.stopCaptureInterval()
+          }
+        } catch (_) {}
+      }
+      if (lastEmittedPermission !== false) {
+        lastEmittedPermission = false
+        try { stateManagerRef?.updateWindowsPermission(false) } catch (_) {}
+        try { if (mainWindowRef) mainWindowRef.webContents.send('windowsPermission', false) } catch (_) {}
+      }
+      
+      // Longer cooldown to let macOS settle after revocation
+      permissionCooldownUntil = Date.now() + 3000
       processingRecordWindow = false
       return
     }
@@ -204,8 +228,11 @@ async function recordCurrentWindow() {
       windowTimeline = windowTimeline.slice(-MAX_ENTRIES)
     }
     
-    // Reset backoff on success
+    // Reset backoff on success and clear any cooldown
     resetBackoff()
+    permissionCooldownUntil = 0
+    lastEmittedPermission = true
+    // Do not auto-resume main capture here; user/system flow will re-enable as needed
     
   } catch (error) {
     log.warn('Error tracking window (treated as transient):', error?.message || error)

@@ -7,6 +7,7 @@ const openSettingsBtn = document.getElementById("openSettingsBtn");
 let navigateToView;
 let getCurrentView;
 let updateTopbarVisibility;
+let lastWindowsPermFocusTs = 0; // throttle focusing app on permission loss
 
 // Initialize permissions module
 function initializePermissions(viewNavigator, currentViewGetter, topbarVisibilityUpdater) {
@@ -201,18 +202,22 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
   
   // Update topbar visibility
   if (updateTopbarVisibility) updateTopbarVisibility();
-  
-  // If windows permission is missing, ensure app window is shown
-  try {
-    if (!hasPermission) {
-      ipcRenderer.send('focus-app-window');
+  // Bring app to front on permission loss, but throttle to avoid churn during revocation
+  if (!hasPermission) {
+    const now = Date.now();
+    if (now - lastWindowsPermFocusTs > 2000) {
+      lastWindowsPermFocusTs = now;
+      try { ipcRenderer.send('focus-app-window'); } catch (_) {}
+      // Navigate to settings if not already there (slight delay to avoid event ordering issues)
+      try {
+        const currentView = getCurrentView ? getCurrentView() : null;
+        if (currentView !== 'settings') {
+          setTimeout(() => { try { navigateToView('settings'); } catch (_) {} }, 150);
+        }
+      } catch (_) {}
     }
-  } catch (_) {}
-
-  // Only navigate if we're not already on settings view
-  const currentView = getCurrentView ? getCurrentView() : null;
-  if (currentView !== 'settings') {
-    navigateToView('signup-next');
+    // Tell main to keep the capture interval paused for a short duration
+    try { ipcRenderer.send('pause-capture-due-to-permission', { source: 'windows', ms: 3000 }); } catch (_) {}
   }
 });
 
