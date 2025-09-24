@@ -1046,8 +1046,18 @@ function createApplicationMenu() {
     ]
   };
   
+  // Window menu to support standard shortcuts like Cmd/Ctrl+W (close)
+  const windowMenu = {
+    label: 'Window',
+    submenu: [
+      { role: 'minimize' },
+      // Explicit accelerator ensures it works reliably across platforms
+      { role: 'close', accelerator: 'CmdOrCtrl+W' }
+    ]
+  };
+  
   // Push menus to template
-  template.push(fileMenu, editMenu, recordingMenu, accountMenu, helpMenu);
+  template.push(fileMenu, editMenu, windowMenu, recordingMenu, accountMenu, helpMenu);
   
   // Set as application menu
   const menu = Menu.buildFromTemplate(template);
@@ -1314,10 +1324,15 @@ function createWindow() {
         // Ensure taskbar presence on Windows/Linux
         try { mainWindow.setSkipTaskbar(false); } catch (e) {}
       }
-      // Notify renderer to reload the embedded webview when app window is shown/unhidden
-      try { mainWindow.webContents.send('webview:reload'); } catch (e) {}
-      // Record time of last reload
-      try { lastWebviewReloadAt = Date.now(); } catch (e) {}
+      // Notify renderer to reload the embedded webview when app window is shown/unhidden,
+      // but only if at least RELOAD_MIN_INTERVAL_MS has passed since last reload
+      try {
+        const now = Date.now();
+        if (!lastWebviewReloadAt || (now - lastWebviewReloadAt) > RELOAD_MIN_INTERVAL_MS) {
+          try { mainWindow.webContents.send('webview:reload'); } catch (e) {}
+          lastWebviewReloadAt = now;
+        }
+      } catch (e) {}
     });
 
     // Conditionally request webview reload when the main window gains focus
@@ -1339,6 +1354,8 @@ function createWindow() {
         // Hide from taskbar on Windows/Linux when main window is hidden
         try { mainWindow.setSkipTaskbar(true); } catch (e) {}
       }
+      // Reset refresh guard so next show triggers an immediate reload
+      try { lastWebviewReloadAt = 0; } catch (e) {}
     });
 
     // Enable context menus

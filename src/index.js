@@ -34,6 +34,45 @@ require('./audio-recorder');
 let portalView = null;
 let lastPortalTokenSent = null;
 let lastPortalTokenTs = 0;
+// Webview load watchdog/retry state
+let portalLoadTimer = null;
+let portalLoadRetries = 0;
+const PORTAL_LOAD_TIMEOUT_MS = 12000; // 12s timeout for slow networks
+const PORTAL_MAX_RETRIES = 3;
+
+function clearPortalLoadWatchdog() {
+  if (portalLoadTimer) {
+    clearTimeout(portalLoadTimer);
+    portalLoadTimer = null;
+  }
+}
+
+function startPortalLoadWatchdog(reason) {
+  try { clearPortalLoadWatchdog(); } catch (_) {}
+  try {
+    // Reuse summary spinner as a generic dashboard overlay while webview loads
+    try {
+      const s = document.getElementById('summaryLoadingSpinner');
+      if (s) s.classList.remove('hidden');
+    } catch (_) {}
+    portalLoadTimer = setTimeout(() => {
+      // If we timed out waiting for load, show error and optionally retry
+      try { console.warn('[Webview] load timeout (' + (reason || 'unknown') + '), retries:', portalLoadRetries); } catch (_) {}
+      showWebviewError();
+      // Retry only if we appear to be online and under retry limit
+      if (navigator.onLine && portalView && portalLoadRetries < PORTAL_MAX_RETRIES) {
+        portalLoadRetries += 1;
+        try {
+          hideWebviewError();
+          portalView.reload();
+          startPortalLoadWatchdog('timeout-retry-' + portalLoadRetries);
+        } catch (e) {
+          console.error('[Webview] Error reloading after timeout:', e);
+        }
+      }
+    }, PORTAL_LOAD_TIMEOUT_MS);
+  } catch (_) {}
+}
 
 // Global updater for the Settings/Dashboard toggle button label
 function updateSettingsToggleLabelGlobal() {
@@ -319,6 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (portalView) {
     try {
       portalView.reload();
+      startPortalLoadWatchdog('window-open');
     } catch (e) {
       console.error('[Webview] Error reloading on window open:', e);
     }
@@ -337,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   window.addEventListener('online', () => {
     hideWebviewError();
-    try { if (portalView) portalView.reload(); } catch (e) { console.error('[Webview] reload on online failed', e); }
+    try { if (portalView) { portalView.reload(); startPortalLoadWatchdog('online'); } } catch (e) { console.error('[Webview] reload on online failed', e); }
   });
 
   // Reloads on focus are coordinated via main process (webview:reload)
@@ -521,12 +561,33 @@ document.addEventListener('DOMContentLoaded', () => {
     portalView.addEventListener('did-fail-load', (event) => {
       console.error('[Webview] Failed to load:', event);
       showWebviewError();
+      clearPortalLoadWatchdog();
+      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
     });
+    try { portalView.addEventListener('did-fail-provisional-load', (event) => {
+      console.error('[Webview] Provisional load failed:', event);
+      showWebviewError();
+      clearPortalLoadWatchdog();
+      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+    }); } catch (_) {}
+
+    try { portalView.addEventListener('did-start-loading', () => {
+      hideWebviewError();
+      startPortalLoadWatchdog('did-start-loading');
+    }); } catch (_) {}
+
+    try { portalView.addEventListener('did-stop-loading', () => {
+      clearPortalLoadWatchdog();
+      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+    }); } catch (_) {}
 
     // When the webview is ready, send login token and optionally open devtools
     portalView.addEventListener('dom-ready', () => {
       // Hide any error message when webview loads successfully
       hideWebviewError();
+      portalLoadRetries = 0;
+      clearPortalLoadWatchdog();
+      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
       // Proactively send login token whenever portal becomes ready
       sendPortalLoginIfPossible();
       
@@ -571,6 +632,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {}
       })();
     });
+
+    try { portalView.addEventListener('did-finish-load', () => {
+      portalLoadRetries = 0;
+      clearPortalLoadWatchdog();
+      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+    }); } catch (_) {}
 
     // Also send token on internal navigations
     try { portalView.addEventListener('did-navigate', sendPortalLoginIfPossible); } catch (e) {}
