@@ -40,8 +40,9 @@ app.on('second-instance', (event, commandLine, workingDirectory) => {
     try {
       const urlObj = new URL(url);
       const token = urlObj.searchParams.get('token');
-      if (token && mainWindow) {
-        mainWindow.webContents.send('firebase-custom-token', token);
+      if (token) {
+        logDeepLinkEvent('second-instance-url-received', { hasWindow: !!mainWindow });
+        enqueueDeepLinkToken(token);
       }
     } catch (error) {
       log.error('Error parsing URL in second-instance:', error);
@@ -156,6 +157,40 @@ let overlayStore = null
 let savedOverlayPosition = null
 let saveOverlayPositionDebounce = null
 let overlayPositionUserSet = false
+
+// Deep-link auth flow coordination
+let pendingDeepLinkToken = null;
+let rendererReadyForAuth = false;
+// Suppress disruptive webview reloads during active auth attempts
+let suppressWebviewReloadUntil = 0;
+
+function logDeepLinkEvent(kind, details) {
+  try { log.info(`[DEEPLINK] ${kind}`, details || ''); } catch (_) {}
+}
+
+function enqueueDeepLinkToken(token) {
+  if (!token) return;
+  pendingDeepLinkToken = token;
+  logDeepLinkEvent('token-queued', { hasWindow: !!mainWindow, rendererReadyForAuth });
+  tryDeliverDeepLinkToken();
+}
+
+function tryDeliverDeepLinkToken() {
+  try {
+    if (!pendingDeepLinkToken) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!rendererReadyForAuth) return;
+
+    const token = pendingDeepLinkToken;
+    pendingDeepLinkToken = null;
+    // Briefly suppress webview reloads to avoid interrupting auth UI
+    try { suppressWebviewReloadUntil = Date.now() + 30000; } catch (_) {}
+    logDeepLinkEvent('token-delivered');
+    try { mainWindow.webContents.send('firebase-custom-token', token); } catch (e) { log.warn('Failed to send firebase-custom-token to renderer:', e); }
+  } catch (e) {
+    log.error('Error in tryDeliverDeepLinkToken:', e);
+  }
+}
 
 // Track last time we reloaded the embedded webview to avoid excessive reloads
 const RELOAD_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -438,6 +473,9 @@ function setupAutoStart() {
 ////// MAIN /////
 
 app.whenReady().then(async () => {
+  // Create window as early as possible (kept hidden) to avoid losing early deep-links
+  createWindow()
+
   // Lazy-load electron-store for overlay position persistence
   try {
     const { default: Store } = await import('electron-store');
@@ -507,7 +545,7 @@ app.whenReady().then(async () => {
   // Call setupAutoStart here to ensure it runs after app is ready
   setupAutoStart();
   
-  // Check screen capture permission
+  // Check screen capture permission (do not block window creation earlier)
   await checkScreenCapturePermission()
   
   // Initial state check and schedule daily check
@@ -536,8 +574,14 @@ app.whenReady().then(async () => {
     tray.popUpContextMenu(contextMenu)
   })
 
-  // Create window but don't show it yet
-  createWindow()
+  // Renderer readiness handshake for auth delivery
+  ipcMain.on('renderer:ready-for-auth', () => {
+    try {
+      rendererReadyForAuth = true;
+      logDeepLinkEvent('renderer-ready');
+      tryDeliverDeepLinkToken();
+    } catch (e) {}
+  });
   // IPC to install update from in-app notification
   ipcMain.on('update:install', (_event, payload) => {
     try {
@@ -630,9 +674,9 @@ app.whenReady().then(async () => {
     const url = new URL(urlString);
     const token = url.searchParams.get('token');
     
-    if (token && mainWindow) {
-      // Send the token to the window so it can sign in
-      mainWindow.webContents.send('firebase-custom-token', token);
+    if (token) {
+      logDeepLinkEvent('open-url-received', { hasWindow: !!mainWindow });
+      enqueueDeepLinkToken(token);
     } else if (mainWindow) {
       // Forward other donethat:// URLs for internal navigation
       mainWindow.webContents.send('router:open-link', urlString);
@@ -645,8 +689,9 @@ app.whenReady().then(async () => {
     try {
       const urlObj = new URL(url);
       const token = urlObj.searchParams.get('token');
-      if (token && mainWindow) {
-        mainWindow.webContents.send('firebase-custom-token', token);
+      if (token) {
+        logDeepLinkEvent('argv-url-received', { hasWindow: !!mainWindow });
+        enqueueDeepLinkToken(token);
       } else if (mainWindow) {
         // Forward other donethat:// URLs for internal navigation
         mainWindow.webContents.send('router:open-link', url);
@@ -1328,7 +1373,15 @@ function createWindow() {
       // but only if at least RELOAD_MIN_INTERVAL_MS has passed since last reload
       try {
         const now = Date.now();
-        if (!lastWebviewReloadAt || (now - lastWebviewReloadAt) > RELOAD_MIN_INTERVAL_MS) {
+    if (!lastWebviewReloadAt || (now - lastWebviewReloadAt) > RELOAD_MIN_INTERVAL_MS) {
+      if (now < suppressWebviewReloadUntil) {
+        // Skip reload during active auth window
+        return;
+      }
+        if (now < suppressWebviewReloadUntil) {
+          // Skip reload during active auth window
+          return;
+        }
           try { mainWindow.webContents.send('webview:reload'); } catch (e) {}
           lastWebviewReloadAt = now;
         }

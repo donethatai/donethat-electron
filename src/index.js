@@ -41,6 +41,9 @@ const PORTAL_LOAD_TIMEOUT_MS = 12000; // 12s timeout for slow networks
 const PORTAL_MAX_RETRIES = 3;
 let portalSpinnerTimer = null; // delay before showing dashboard spinner
 
+// Inform main that renderer is ready to receive auth tokens as early as possible
+try { ipcRenderer.send('renderer:ready-for-auth'); } catch (_) {}
+
 function hidePortalSpinner() {
   try {
     if (portalSpinnerTimer) { clearTimeout(portalSpinnerTimer); portalSpinnerTimer = null; }
@@ -217,8 +220,13 @@ function navigateToView(viewName) {
       // Refresh webview only when transitioning from a different view to dashboard
       try {
         if (currentView !== 'dashboard' && portalView) {
-          hideWebviewError();
-          portalView.reload();
+          if (navigator.onLine) {
+            hideWebviewError();
+            portalView.reload();
+            startPortalLoadWatchdog('navigate-to-dashboard');
+          } else {
+            showWebviewError();
+          }
         }
       } catch (e) { console.error('[Webview] Error reloading on navigateToView(dashboard):', e); }
     }
@@ -615,8 +623,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // When the webview is ready, send login token and optionally open devtools
     portalView.addEventListener('dom-ready', () => {
-      // Hide any error message when webview loads successfully
-      hideWebviewError();
+      // Only hide error when online; keep offline overlay visible when offline
+      if (navigator.onLine) {
+        hideWebviewError();
+      }
       portalLoadRetries = 0;
       clearPortalLoadWatchdog();
       hidePortalSpinner();

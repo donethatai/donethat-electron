@@ -47,7 +47,11 @@ const AUTH_ERROR_TYPES = {
 // Add at the top level with other state
 let retryCount = 0;
 const INITIAL_RETRY_DELAY = 5000; // 5 seconds
-const MAX_RETRIES = 5; // 5 retries: 5s, 10s, 20s, 40s, 80s
+const MAX_RETRIES = 7; // 7 retries: 5s, 10s, 20s, 40s, 80s, 160s, 320s
+
+// When we've hit max retries while offline, wait for online event to retry
+let waitingForOnline = false;
+let onlineListenerBound = null;
 
 // Helper to get next retry delay with exponential backoff
 // We use exponential backoff to avoid overwhelming the server during issues
@@ -97,33 +101,71 @@ async function handleAuthError(error) {
   } else {
     // For temporary errors (network issues, rate limits, etc):
     if (retryCount < MAX_RETRIES) {
-      retryCount++;
-      
-      // Show notification for retry > 1
-      if (retryCount > 1) {
+      const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+
+      // Show notification for retry > 0
+      if (retryCount >= 0) {
         showBanner('Connection issue. Please check your internet connection.', { title: 'Network Issue', sticky: true });
       }
-      
+
       logAnalyticsEvent('auth_error_retry', {
         error_code: error.code,
         error_message: error.message,
-        retry_count: retryCount
+        retry_count: retryCount + 1,
+        offline: isOffline
       });
 
-      // Schedule next retry
-      const delay = getNextRetryDelay();
-      setTimeout(() => {
-        if (auth.currentUser) {
-          refreshAuthToken();
+      if (isOffline) {
+        // Pause timer-based backoff; wait for online to continue immediately
+        if (!waitingForOnline) {
+          waitingForOnline = true;
+          onlineListenerBound = () => {
+            try { window.removeEventListener('online', onlineListenerBound); } catch (_) {}
+            waitingForOnline = false;
+            // Proceed with the next retry step immediately upon connectivity
+            retryCount++;
+            if (auth.currentUser) {
+              refreshAuthToken();
+            }
+          };
+          try { window.addEventListener('online', onlineListenerBound, { once: true }); } catch (_) {}
         }
-      }, delay);
+      } else {
+        // Online: continue with exponential backoff timer
+        retryCount++;
+        const delay = getNextRetryDelay();
+        setTimeout(() => {
+          if (auth.currentUser) {
+            refreshAuthToken();
+          }
+        }, delay);
+      }
     } else {
-      showBanner('Connection issue. Please check your internet connection.', { title: 'Network Issue', sticky: true });
-      
+      // Max retries reached. If offline, stop backoff and wait for online to retry immediately
+      const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+      showBanner('Connection issue. Waiting to retry when back online…', { title: 'Network Issue', sticky: true });
+
       logAnalyticsEvent('auth_error_max_retries', {
         error_code: error.code,
-        error_message: error.message
+        error_message: error.message,
+        offline: isOffline
       });
+
+      if (isOffline && !waitingForOnline) {
+        waitingForOnline = true;
+        onlineListenerBound = () => {
+          try {
+            window.removeEventListener('online', onlineListenerBound);
+          } catch (_) {}
+          waitingForOnline = false;
+          // Reset retry counter and attempt immediately
+          retryCount = 0;
+          if (auth.currentUser) {
+            refreshAuthToken();
+          }
+        };
+        try { window.addEventListener('online', onlineListenerBound, { once: true }); } catch (_) {}
+      }
       hideSpinner();
     }
   }
@@ -217,7 +259,7 @@ onAuthStateChanged(auth, async (user) => {
       // User is signed in - add retry mechanism for token retrieval
       let token = null;
       let tokenRetries = 0;
-      const maxTokenRetries = 3;
+      const maxTokenRetries = 6; // 1s,2s,4s,8s,16s,32s
       
       while (!token && tokenRetries < maxTokenRetries) {
         try {
@@ -226,7 +268,7 @@ onAuthStateChanged(auth, async (user) => {
         } catch (error) {
           tokenRetries++;
           if (tokenRetries < maxTokenRetries) {
-            // Wait before retry (1s, 2s, 4s)
+            // Wait before retry (1s,2s,4s,8s,16s,32s)
             await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, tokenRetries - 1)));
           }
         }
