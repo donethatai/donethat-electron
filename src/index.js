@@ -39,6 +39,27 @@ let portalLoadTimer = null;
 let portalLoadRetries = 0;
 const PORTAL_LOAD_TIMEOUT_MS = 12000; // 12s timeout for slow networks
 const PORTAL_MAX_RETRIES = 3;
+let portalSpinnerTimer = null; // delay before showing dashboard spinner
+
+function hidePortalSpinner() {
+  try {
+    if (portalSpinnerTimer) { clearTimeout(portalSpinnerTimer); portalSpinnerTimer = null; }
+    const s = document.getElementById('summaryLoadingSpinner');
+    if (s) s.classList.add('hidden');
+  } catch (_) {}
+}
+
+function showPortalSpinnerDelayed() {
+  try {
+    if (portalSpinnerTimer) { clearTimeout(portalSpinnerTimer); portalSpinnerTimer = null; }
+    portalSpinnerTimer = setTimeout(() => {
+      try {
+        const s = document.getElementById('summaryLoadingSpinner');
+        if (s) s.classList.remove('hidden');
+      } catch (_) {}
+    }, 1000); // 1s delay to avoid flicker on fast loads
+  } catch (_) {}
+}
 
 function clearPortalLoadWatchdog() {
   if (portalLoadTimer) {
@@ -50,11 +71,10 @@ function clearPortalLoadWatchdog() {
 function startPortalLoadWatchdog(reason) {
   try { clearPortalLoadWatchdog(); } catch (_) {}
   try {
-    // Reuse summary spinner as a generic dashboard overlay while webview loads
-    try {
-      const s = document.getElementById('summaryLoadingSpinner');
-      if (s) s.classList.remove('hidden');
-    } catch (_) {}
+    // Reuse summary spinner as a generic dashboard overlay while webview loads (only when online)
+    if (navigator.onLine) {
+      showPortalSpinnerDelayed();
+    }
     portalLoadTimer = setTimeout(() => {
       // If we timed out waiting for load, show error and optionally retry
       try { console.warn('[Webview] load timeout (' + (reason || 'unknown') + '), retries:', portalLoadRetries); } catch (_) {}
@@ -63,7 +83,7 @@ function startPortalLoadWatchdog(reason) {
       if (navigator.onLine && portalView && portalLoadRetries < PORTAL_MAX_RETRIES) {
         portalLoadRetries += 1;
         try {
-          hideWebviewError();
+          if (navigator.onLine) hideWebviewError();
           portalView.reload();
           startPortalLoadWatchdog('timeout-retry-' + portalLoadRetries);
         } catch (e) {
@@ -345,8 +365,13 @@ document.addEventListener('DOMContentLoaded', () => {
     ipcRenderer.on('webview:reload', () => {
       try {
         if (getCurrentView && getCurrentView() === 'dashboard' && portalView) {
-          hideWebviewError();
-          portalView.reload();
+          if (navigator.onLine) {
+            hideWebviewError();
+            portalView.reload();
+            startPortalLoadWatchdog('ipc-reload');
+          } else {
+            showWebviewError();
+          }
           // Re-send token after reload
           sendPortalLoginIfPossible();
         }
@@ -357,8 +382,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reload webview when window opens (only once)
   if (portalView) {
     try {
-      portalView.reload();
-      startPortalLoadWatchdog('window-open');
+      if (navigator.onLine) {
+        portalView.reload();
+        startPortalLoadWatchdog('window-open');
+      }
     } catch (e) {
       console.error('[Webview] Error reloading on window open:', e);
     }
@@ -374,6 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Listen to connectivity changes
   window.addEventListener('offline', () => {
     showWebviewError();
+    try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
   });
   window.addEventListener('online', () => {
     hideWebviewError();
@@ -562,23 +590,27 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('[Webview] Failed to load:', event);
       showWebviewError();
       clearPortalLoadWatchdog();
-      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+      hidePortalSpinner();
     });
     try { portalView.addEventListener('did-fail-provisional-load', (event) => {
       console.error('[Webview] Provisional load failed:', event);
       showWebviewError();
       clearPortalLoadWatchdog();
-      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+      hidePortalSpinner();
     }); } catch (_) {}
 
     try { portalView.addEventListener('did-start-loading', () => {
-      hideWebviewError();
-      startPortalLoadWatchdog('did-start-loading');
+      if (navigator.onLine) {
+        hideWebviewError();
+        startPortalLoadWatchdog('did-start-loading');
+      } else {
+        showWebviewError();
+      }
     }); } catch (_) {}
 
     try { portalView.addEventListener('did-stop-loading', () => {
       clearPortalLoadWatchdog();
-      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+      hidePortalSpinner();
     }); } catch (_) {}
 
     // When the webview is ready, send login token and optionally open devtools
@@ -587,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
       hideWebviewError();
       portalLoadRetries = 0;
       clearPortalLoadWatchdog();
-      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+      hidePortalSpinner();
       // Proactively send login token whenever portal becomes ready
       sendPortalLoginIfPossible();
       
@@ -636,7 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try { portalView.addEventListener('did-finish-load', () => {
       portalLoadRetries = 0;
       clearPortalLoadWatchdog();
-      try { const s = document.getElementById('summaryLoadingSpinner'); if (s) s.classList.add('hidden'); } catch (_) {}
+      hidePortalSpinner();
     }); } catch (_) {}
 
     // Also send token on internal navigations
