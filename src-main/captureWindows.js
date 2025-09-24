@@ -16,6 +16,7 @@ let processingRecordWindow = false // Flag to prevent overlapping calls
 let permissionCooldownUntil = 0 // Timestamp in ms; skip probes until this time when permission flips false
 let lastEmittedPermission = null // Track last emitted permission state to avoid repeated emissions
 let capturePausedDueToWindowsPermission = false // Circuit breaker: pause capture interval once on permission loss
+let firstPermissionDeniedAt = 0 // Timestamp when permission first went false; 0 means not currently denied
 
 // References to communicate permission/state changes without prompting the OS
 let stateManagerRef = null
@@ -175,7 +176,24 @@ async function recordCurrentWindow() {
     }
     const hasPerm = await checkPermissions()
     if (!hasPerm) {
-      // Permission revoked: stop interval to avoid native probe during transient OS state
+      // Always set a sane cooldown immediately to avoid hammering probes
+      const nowTs = Date.now()
+      const baseCooldown = Math.max(3000, currentTrackingIntervalMs)
+      permissionCooldownUntil = nowTs + baseCooldown
+
+      // Start denial window if this is the first false
+      if (firstPermissionDeniedAt === 0) {
+        firstPermissionDeniedAt = nowTs
+      }
+      
+      // Gate ALL side-effects until denial is persistent for >=10s
+      const deniedDuration = nowTs - firstPermissionDeniedAt
+      if (deniedDuration < 10000) {
+        processingRecordWindow = false
+        return
+      }
+
+      // Persistent denial: perform the original strong actions
       try { stopTracking() } catch (_) {}
       if (!capturePausedDueToWindowsPermission) {
         capturePausedDueToWindowsPermission = true
@@ -191,12 +209,11 @@ async function recordCurrentWindow() {
         try { stateManagerRef?.updateWindowsPermission(false) } catch (_) {}
         try { if (mainWindowRef) mainWindowRef.webContents.send('windowsPermission', false) } catch (_) {}
       }
-      
-      // Longer cooldown to let macOS settle after revocation
-      permissionCooldownUntil = Date.now() + 3000
       processingRecordWindow = false
       return
     }
+    // Permission present again: reset denial window
+    firstPermissionDeniedAt = 0
     const activeWindowInfo = await safeActiveWindow(300)
     
     if (!activeWindowInfo) {

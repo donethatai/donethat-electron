@@ -26,6 +26,11 @@ let inputDataSettings = {
   windows: false
 };
 
+// Window tracking startup retry state (to avoid disabling on transient failures)
+let windowStartRetryCount = 0;
+const WINDOW_START_MAX_RETRIES = 5;
+let windowStartRetryTimer = null;
+
 // Track disable screenshots in meetings setting
 let disableScreenshotsInMeetings = false;
 
@@ -151,20 +156,36 @@ async function _startWindowTracking() {
   try {
     const trackingStarted = await windowsCapture.startTracking();
     if (!trackingStarted) {
-      const error = new Error('Window tracking permission denied or failed to start');
-      log.warn(error.message);
-      
-      // Use handleCaptureError with specific windows error
-      handleCaptureError(
-        error, 
-        'windows-permission', 
-        { windows: true },
-        false // Don't stop capturing, just disable this feature
-      );
-      
+      // Transient or denied permission. Preserve user's setting and retry with bounded backoff.
+      if (windowStartRetryTimer) {
+        clearTimeout(windowStartRetryTimer);
+        windowStartRetryTimer = null;
+      }
+      if (!isCapturing() || !inputDataSettings.windows) {
+        // Do not retry if capture stopped or user disabled windows
+        windowStartRetryCount = 0;
+        return false;
+      }
+      windowStartRetryCount = Math.min(windowStartRetryCount + 1, WINDOW_START_MAX_RETRIES);
+      const delayMs = Math.min(1000 * Math.pow(2, windowStartRetryCount - 1), 30000);
+      log.warn(`Window tracking did not start (permission missing or transient). Retry #${windowStartRetryCount} in ${delayMs}ms`);
+      windowStartRetryTimer = setTimeout(() => {
+        // Only retry if still capturing and windows setting enabled
+        try {
+          if (isCapturing() && inputDataSettings.windows) {
+            _startWindowTracking();
+          } else {
+            windowStartRetryCount = 0;
+          }
+        } catch (_) {
+          windowStartRetryCount = 0;
+        }
+      }, delayMs);
       return false;
     }
     
+    // Success: reset retry state
+    windowStartRetryCount = 0;
     return true;
   } catch (error) {
     log.error('Failed to start window tracking:', error);
@@ -225,6 +246,12 @@ function updateInputDataSettings(settings) {
       }
       
       if (!previousSettings.windows && inputDataSettings.windows) {
+        // Reset window start retry state on fresh enable
+        if (windowStartRetryTimer) {
+          clearTimeout(windowStartRetryTimer);
+          windowStartRetryTimer = null;
+        }
+        windowStartRetryCount = 0;
         _startWindowTracking();
       }
     }
@@ -953,6 +980,13 @@ function startCaptureInterval() {
   // Clear existing interval and stop tracking
   stopCaptureInterval(); // Ensure clean state
   
+  // Reset window start retry state on fresh interval start
+  if (windowStartRetryTimer) {
+    clearTimeout(windowStartRetryTimer);
+    windowStartRetryTimer = null;
+  }
+  windowStartRetryCount = 0;
+
   // Run first cycle immediately
   _runCaptureCycle().catch(error => {
     log.error('Error during initial capture cycle run:', error);
@@ -979,6 +1013,12 @@ function stopCaptureInterval() {
     clearInterval(screenshotInterval);
     screenshotInterval = null;
   }
+  // Cancel any pending window-tracking start retries
+  if (windowStartRetryTimer) {
+    clearTimeout(windowStartRetryTimer);
+    windowStartRetryTimer = null;
+  }
+  windowStartRetryCount = 0;
   
   // Stop ongoing captures
   if (inputDataSettings.audio) {
