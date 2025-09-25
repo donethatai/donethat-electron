@@ -6,6 +6,8 @@ const audioSessionDetector = require('./audioSessionDetector')
 // Variables to track audio capture
 let isRecording = false
 let mainWindow = null
+// Rolling buffer of transcripts from periodic ticks
+let transcriptBuffer = [] // [{ text: string, ts: number }]
 
 // Permission state - check once, remember forever
 let hasMicrophonePermission = null
@@ -415,6 +417,17 @@ async function processAudioFromRenderer(audioData) {
     
     // Transcribe audio locally
     const transcript = await voiceToText.transcribeAudioBuffer(audioBuffer);
+    // Append to rolling buffer
+    try {
+      if (transcript && typeof transcript === 'string' && transcript.length > 0) {
+        const ts = Date.now()
+        transcriptBuffer.push({ text: transcript, ts })
+        // Prune entries older than 60 minutes to cap memory
+        const ONE_HOUR_MS = 60 * 60 * 1000
+        const cutoff = ts - ONE_HOUR_MS
+        transcriptBuffer = transcriptBuffer.filter(t => t && t.ts && t.ts >= cutoff)
+      }
+    } catch (_) {}
     
     return {
       transcript
@@ -424,6 +437,33 @@ async function processAudioFromRenderer(audioData) {
     return null;
   }
 }
+
+/**
+ * Get recent transcript aggregated from periodic ticks within a time window
+ * @param {number} windowMs time window in ms
+ * @param {boolean} resetAfter whether to clear used entries
+ * @returns {string|null}
+ */
+function getRecentTranscript(windowMs = null, resetAfter = true) {
+  try {
+    const now = Date.now()
+    const recent = (windowMs && windowMs > 0)
+      ? transcriptBuffer.filter(t => t && t.ts >= (now - windowMs))
+      : [...transcriptBuffer]
+    if (recent.length === 0) {
+      return null
+    }
+    const combined = recent.map(t => t.text).join(' ').trim()
+    if (resetAfter) {
+      // Drop the used entries; keep newer entries if any
+      transcriptBuffer = []
+    }
+    return combined.length > 0 ? combined : null
+  } catch (_) {
+    return null
+  }
+}
+
 
 /**
  * Check microphone permission once
@@ -600,43 +640,30 @@ async function startAudioTracking(config) {
 }
 
 /**
- * Get current buffer without stopping recording
- * @returns {Promise<{filePath: string, duration: number} | null>} Recording info
+ * Get current transcript without stopping recording
+ * @returns {Promise<{transcript: string} | null>} Transcript info
  */
 async function stopRecording() {
-  if (!isRecording) {
-    
-    return null;
-  }
-  
   try {
-    if (!mainWindow) {
-      log.error('Cannot get audio buffer: main window not initialized');
-      return null;
+    if (isRecording) {
+      if (!mainWindow) {
+        log.error('Cannot get audio buffer: main window not initialized');
+      } else {
+        // Pull the latest chunk and append to buffer
+        const audioData = await mainWindow.webContents.executeJavaScript(
+          'window.stopAudioRecording && window.stopAudioRecording();'
+        );
+        if (audioData) {
+          try { await processAudioFromRenderer(audioData) } catch (_) {}
+        }
+      }
     }
-    
-    // Ask renderer to provide the current buffer without stopping recording
-    const audioData = await mainWindow.webContents.executeJavaScript(
-      'window.stopAudioRecording && window.stopAudioRecording();'
-    );
-    
-    if (!audioData) {
-      
-      return null;
+    // Aggregate once (works for both recording and non-recording cases)
+    const aggregated = getRecentTranscript(null, true)
+    if (aggregated) {
+      return { transcript: aggregated }
     }
-    
-    // Process audio data for transcription
-    const audioResult = audioData ? await processAudioFromRenderer(audioData) : null;
-    
-    if (!audioResult) {
-      
-      return null;
-    }    
-    // Return recording information
-    return {
-      transcript: audioResult.transcript,
-      duration: audioData.timeMs
-    };
+    return null;
   } catch (error) {
     log.error('Error retrieving audio buffer:', error);
     return null;

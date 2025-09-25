@@ -838,7 +838,7 @@ async function captureAndSend(idToken) {
     }
     
     // Send all collected data to the server
-    const sendResult = await _sendToServer(idToken, screenshots, inputData);
+  const sendResult = await _sendToServer(idToken, screenshots, inputData);
     return sendResult;
   } catch (error) {
     // Handle errors specifically from captureScreenshot or collectInputData
