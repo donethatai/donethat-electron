@@ -1373,17 +1373,13 @@ function createWindow() {
       // but only if at least RELOAD_MIN_INTERVAL_MS has passed since last reload
       try {
         const now = Date.now();
-    if (!lastWebviewReloadAt || (now - lastWebviewReloadAt) > RELOAD_MIN_INTERVAL_MS) {
-      if (now < suppressWebviewReloadUntil) {
-        // Skip reload during active auth window
-        return;
-      }
-        if (now < suppressWebviewReloadUntil) {
-          // Skip reload during active auth window
-          return;
-        }
+        if (!lastWebviewReloadAt || (now - lastWebviewReloadAt) > RELOAD_MIN_INTERVAL_MS) {
+          if (now < suppressWebviewReloadUntil) {
+            // Skip reload during active auth window
+            return;
+          }
           try { mainWindow.webContents.send('webview:reload'); } catch (e) {}
-          lastWebviewReloadAt = now;
+              lastWebviewReloadAt = now;
         }
       } catch (e) {}
     });
