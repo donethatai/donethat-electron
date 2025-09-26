@@ -503,6 +503,15 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Renderer readiness handshake for auth delivery (register BEFORE creating the window)
+  ipcMain.on('renderer:ready-for-auth', () => {
+    try {
+      rendererReadyForAuth = true;
+      logDeepLinkEvent('renderer-ready');
+      tryDeliverDeepLinkToken();
+    } catch (e) {}
+  });
+
   // Create window as early as possible (kept hidden) to avoid losing early deep-links
   createWindow()
 
@@ -604,14 +613,7 @@ app.whenReady().then(async () => {
     tray.popUpContextMenu(contextMenu)
   })
 
-  // Renderer readiness handshake for auth delivery
-  ipcMain.on('renderer:ready-for-auth', () => {
-    try {
-      rendererReadyForAuth = true;
-      logDeepLinkEvent('renderer-ready');
-      tryDeliverDeepLinkToken();
-    } catch (e) {}
-  });
+  
   // IPC to install update from in-app notification
   ipcMain.on('update:install', (_event, payload) => {
     try {

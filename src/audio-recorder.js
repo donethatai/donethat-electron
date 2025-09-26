@@ -245,7 +245,6 @@ window.stopAudioRecording = async function() {
     const duration = Date.now() - oldestTimestamp;
     
     if (audioChunks.length === 0) {
-      console.warn('No audio data captured');
       return null;
     }
     

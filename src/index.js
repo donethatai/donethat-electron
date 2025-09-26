@@ -40,9 +40,11 @@ let portalLoadRetries = 0;
 const PORTAL_LOAD_TIMEOUT_MS = 12000; // 12s timeout for slow networks
 const PORTAL_MAX_RETRIES = 3;
 let portalSpinnerTimer = null; // delay before showing dashboard spinner
+const PORTAL_RELOAD_COOLDOWN_MS = 10000; // avoid reloads shortly after token delivery
 
 // Inform main that renderer is ready to receive auth tokens as early as possible
 try { ipcRenderer.send('renderer:ready-for-auth'); } catch (_) {}
+
 
 function hidePortalSpinner() {
   try {
@@ -134,6 +136,29 @@ async function sendPortalLoginIfPossible() {
   } catch (e) {}
 }
 
+function canReloadPortalNow() {
+  try {
+    // Avoid reloads shortly after we just sent an auth token to the portal
+    if (lastPortalTokenTs && (Date.now() - lastPortalTokenTs) < PORTAL_RELOAD_COOLDOWN_MS) {
+      return false;
+    }
+  } catch (_) {}
+  return true;
+}
+
+function safePortalReload(reason) {
+  try {
+    if (!portalView) return;
+    if (!navigator.onLine) { showWebviewError(); return; }
+    if (!canReloadPortalNow()) { return; }
+    hideWebviewError();
+    portalView.reload();
+    startPortalLoadWatchdog(reason || 'safe-reload');
+  } catch (e) {
+    console.error('[Webview] Error in safePortalReload:', e);
+  }
+}
+
 
 
 // Add a small delay to check initial auth state
@@ -220,13 +245,7 @@ function navigateToView(viewName) {
       // Refresh webview only when transitioning from a different view to dashboard
       try {
         if (currentView !== 'dashboard' && portalView) {
-          if (navigator.onLine) {
-            hideWebviewError();
-            portalView.reload();
-            startPortalLoadWatchdog('navigate-to-dashboard');
-          } else {
-            showWebviewError();
-          }
+          safePortalReload('navigate-to-dashboard');
         }
       } catch (e) { console.error('[Webview] Error reloading on navigateToView(dashboard):', e); }
     }
@@ -373,14 +392,8 @@ document.addEventListener('DOMContentLoaded', () => {
     ipcRenderer.on('webview:reload', () => {
       try {
         if (getCurrentView && getCurrentView() === 'dashboard' && portalView) {
-          if (navigator.onLine) {
-            hideWebviewError();
-            portalView.reload();
-            startPortalLoadWatchdog('ipc-reload');
-          } else {
-            showWebviewError();
-          }
-          // Re-send token after reload
+          safePortalReload('ipc-reload');
+          // Re-send token after reload (allowed to be no-op)
           sendPortalLoginIfPossible();
         }
       } catch (e) { console.error('[Webview] Error reloading on IPC webview:reload:', e); }
@@ -391,8 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (portalView) {
     try {
       if (navigator.onLine) {
-        portalView.reload();
-        startPortalLoadWatchdog('window-open');
+        safePortalReload('window-open');
       }
     } catch (e) {
       console.error('[Webview] Error reloading on window open:', e);
@@ -413,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   window.addEventListener('online', () => {
     hideWebviewError();
-    try { if (portalView) { portalView.reload(); startPortalLoadWatchdog('online'); } } catch (e) { console.error('[Webview] reload on online failed', e); }
+    try { if (portalView) { safePortalReload('online'); } } catch (e) { console.error('[Webview] reload on online failed', e); }
   });
 
   // Reloads on focus are coordinated via main process (webview:reload)
