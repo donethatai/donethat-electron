@@ -14,32 +14,32 @@ function initializePermissions(viewNavigator, currentViewGetter, topbarVisibilit
   navigateToView = viewNavigator;
   getCurrentView = currentViewGetter;
   updateTopbarVisibility = topbarVisibilityUpdater;
-  
+
   // Set up event listeners for platform-specific permission issues
   setupPlatformSpecificListeners();
-  
+
   // Set up screen capture checkbox behavior
   setupScreenCaptureCheckboxBehavior();
-  
+
   // Set up windows checkbox behavior
   setupWindowsCheckboxBehavior();
-  
+
   // Set up audio checkbox behavior
   setupAudioCheckboxBehavior();
-  
+
   // Set up keystrokes checkbox behavior
   setupKeystrokesCheckboxBehavior();
-  
+
   // Check permissions on startup
   checkPermissionsOnStartup();
 }
 
 // Check all permissions on startup to update state
 function checkPermissionsOnStartup() {
-  
+
   // Check Windows permission (don't open settings, just check current status)
   ipcRenderer.send('requestWindowsPermission', false);
-  
+
   // Check other permissions as needed
   // (Audio and keystrokes might need different handling)
 }
@@ -58,11 +58,11 @@ function setupPlatformSpecificListeners() {
     // Functionally disable windows tracking
     ipcRenderer.send('updateInputDataSettings', { windows: false });
   });
-  
+
   ipcRenderer.on('linux-audio-permission-notice', () => {
     showLinuxPermissionHelp('audio');
   });
-  
+
   ipcRenderer.on('linux-keystrokes-permission-notice', () => {
     showLinuxPermissionHelp('keystrokes');
     // Uncheck the keystrokes checkbox since it's not supported on Linux
@@ -74,7 +74,7 @@ function setupPlatformSpecificListeners() {
     // Functionally disable keystrokes tracking
     ipcRenderer.send('updateInputDataSettings', { keystrokes: false });
   });
-  
+
   ipcRenderer.on('linux-pactl-missing-notice', () => {
     showLinuxPermissionHelp('pactl');
     // Uncheck the audio checkbox since audio session detection won't work
@@ -92,7 +92,7 @@ function setupPlatformSpecificListeners() {
 function showLinuxPermissionHelp(permissionType) {
   const platform = process.platform;
   if (platform !== 'linux') return;
-  
+
   // Show inline notifications instead of modals
   switch (permissionType) {
     case 'audio':
@@ -122,44 +122,44 @@ function showInlineLinuxNotification(sectionId) {
 
 // Modify the existing screenCapturePermission listener to include session type
 ipcRenderer.on('screenCapturePermission', (event, data) => {
-    // Extract permission status and session type (if provided)
-    const hasPermission = typeof data === 'object' ? data.hasPermission : data;
-    const isWaylandSession = typeof data === 'object' ? data.isWaylandSession : null;
-  
-    updateScreenCapturePermission(hasPermission);
-  
-    // Log screen capture permission status
-    logAnalyticsEvent('screen_capture_permission', {
-      status: hasPermission ? 'granted' : 'denied',
-      platform: process.platform,
-      is_wayland: isWaylandSession
-    });
-  
-    // Update UI based on permission status
-    if (!hasPermission && process.platform === 'linux' && isWaylandSession !== null) {
-          updateLinuxInstructions(isWaylandSession);     
-    }
-    
-    // Update screen capture checkbox in settings if we're on settings view
-    updateScreenCaptureCheckbox(hasPermission);
-    
-    // Update topbar visibility
-    if (updateTopbarVisibility) updateTopbarVisibility();
-    
-    // If screen recording permission is missing, ensure app window is shown
-    try {
-      if (!hasPermission) {
-        ipcRenderer.send('focus-app-window');
-      }
-    } catch (_) {}
-    
-    // Navigate to signup-next only when screen recording is missing
+  // Extract permission status and session type (if provided)
+  const hasPermission = typeof data === 'object' ? data.hasPermission : data;
+  const isWaylandSession = typeof data === 'object' ? data.isWaylandSession : null;
+
+  updateScreenCapturePermission(hasPermission);
+
+  // Log screen capture permission status
+  logAnalyticsEvent('screen_capture_permission', {
+    status: hasPermission ? 'granted' : 'denied',
+    platform: process.platform,
+    is_wayland: isWaylandSession
+  });
+
+  // Update UI based on permission status
+  if (!hasPermission && process.platform === 'linux' && isWaylandSession !== null) {
+    updateLinuxInstructions(isWaylandSession);
+  }
+
+  // Update screen capture checkbox in settings if we're on settings view
+  updateScreenCaptureCheckbox(hasPermission);
+
+  // Update topbar visibility
+  if (updateTopbarVisibility) updateTopbarVisibility();
+
+  // If screen recording permission is missing, ensure app window is shown
+  try {
     if (!hasPermission) {
-      const currentView = getCurrentView ? getCurrentView() : null;
-      if (currentView !== 'settings') {
-        navigateToView('signup-next');
-      }
+      ipcRenderer.send('focus-app-window');
     }
+  } catch (_) {}
+
+  // Navigate to signup-next only when screen recording is missing
+  if (!hasPermission) {
+    const currentView = getCurrentView ? getCurrentView() : null;
+    if (currentView !== 'settings') {
+      navigateToView('signup-next');
+    }
+  }
 });
 
 // Add listeners for other permission types
@@ -196,12 +196,12 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
 
   // Update windows checkbox in settings if we're on settings view
   updateWindowsCheckbox(hasPermission);
-  
+
   // Notify settings component about permission status
   document.dispatchEvent(new CustomEvent('permissionResult', {
     detail: { type: 'windows', hasPermission }
   }));
-  
+
   // Update topbar visibility
   if (updateTopbarVisibility) updateTopbarVisibility();
   // Bring app to front on permission loss, but throttle to avoid churn during revocation
@@ -209,7 +209,8 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
     const now = Date.now();
     if (now - lastWindowsPermFocusTs > 2000) {
       lastWindowsPermFocusTs = now;
-      try { ipcRenderer.send('focus-app-window'); } catch (_) {}
+      // Fail silently
+      // try { ipcRenderer.send('focus-app-window'); } catch (_) {}
       // Navigate to settings if not already there (slight delay to avoid event ordering issues)
       try {
         const currentView = getCurrentView ? getCurrentView() : null;
@@ -225,39 +226,39 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
 
 // Simplified function to update Linux installation instructions
 function updateLinuxInstructions(isWaylandSession) {
-    const linuxInstallSection = document.getElementById('linuxInstallSection');
-  
-    // Show Linux install instructions
-    if (linuxInstallSection) {
-      linuxInstallSection.classList.remove('hidden');
-    }
-  
-    // Hide all instruction sets first
-    const waylandInstructions = document.getElementById('waylandInstructions');
-    const x11Instructions = document.getElementById('x11Instructions');
-  
-    if (waylandInstructions) waylandInstructions.classList.add('hidden');
-    if (x11Instructions) x11Instructions.classList.add('hidden');
-  
-    // Show appropriate instructions based on session type
-    if (isWaylandSession) {
-      if (waylandInstructions) waylandInstructions.classList.remove('hidden');
-    } else {
-      if (x11Instructions) x11Instructions.classList.remove('hidden');
-    }
+  const linuxInstallSection = document.getElementById('linuxInstallSection');
+
+  // Show Linux install instructions
+  if (linuxInstallSection) {
+    linuxInstallSection.classList.remove('hidden');
+  }
+
+  // Hide all instruction sets first
+  const waylandInstructions = document.getElementById('waylandInstructions');
+  const x11Instructions = document.getElementById('x11Instructions');
+
+  if (waylandInstructions) waylandInstructions.classList.add('hidden');
+  if (x11Instructions) x11Instructions.classList.add('hidden');
+
+  // Show appropriate instructions based on session type
+  if (isWaylandSession) {
+    if (waylandInstructions) waylandInstructions.classList.remove('hidden');
+  } else {
+    if (x11Instructions) x11Instructions.classList.remove('hidden');
+  }
 }
 
 // Function to update screen capture checkbox in settings
 function updateScreenCaptureCheckbox(hasPermission) {
   const checkbox = document.getElementById('screenCheckbox');
   if (!checkbox) return;
-  
+
   const toggleLabel = checkbox.closest('.toggle');
-  
+
   try {
     // Show checked when we have permission; unchecked when not.
     checkbox.checked = !!hasPermission;
-    
+
     if (!hasPermission) {
       // Permission missing: enable toggle and make it look clickable
       checkbox.disabled = false;
@@ -286,13 +287,13 @@ function updateScreenCaptureCheckbox(hasPermission) {
 function updateWindowsCheckbox(hasPermission) {
   const checkbox = document.getElementById('windowsCheckbox');
   if (!checkbox) return;
-  
+
   const toggleLabel = checkbox.closest('.toggle');
-  
+
   try {
     // Show checked when we have permission; unchecked when not.
     checkbox.checked = !!hasPermission;
-    
+
     if (!hasPermission) {
       // Permission missing: enable toggle and make it look clickable
       checkbox.disabled = false;
@@ -321,7 +322,7 @@ function updateWindowsCheckbox(hasPermission) {
 function setupScreenCaptureCheckboxBehavior() {
   const checkbox = document.getElementById('screenCheckbox');
   if (!checkbox) return;
-  
+
   const toggleLabel = checkbox.closest('.toggle');
 
   // When user clicks the toggle area, open system settings
@@ -358,7 +359,7 @@ function setupScreenCaptureCheckboxBehavior() {
 function setupWindowsCheckboxBehavior() {
   const checkbox = document.getElementById('windowsCheckbox');
   if (!checkbox) return;
-  
+
   const toggleLabel = checkbox.closest('.toggle');
 
   // When user clicks the toggle area, open system settings
@@ -468,7 +469,7 @@ function requestWindowsPermission() {
   ipcRenderer.send("requestWindowsPermission");
 }
 
-module.exports = { 
+module.exports = {
   initializePermissions,
   requestAudioPermission,
   requestKeystrokesPermission,

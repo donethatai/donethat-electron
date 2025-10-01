@@ -186,9 +186,9 @@ async function recordCurrentWindow() {
         firstPermissionDeniedAt = nowTs
       }
       
-      // Gate ALL side-effects until denial is persistent for >=10s
+      // Gate ALL side-effects until denial is persistent for >=10s (Windows is more forgiving)
       const deniedDuration = nowTs - firstPermissionDeniedAt
-      if (deniedDuration < 10000) {
+      if (deniedDuration < 10000 || process.platform === 'win32') {
         processingRecordWindow = false
         return
       }

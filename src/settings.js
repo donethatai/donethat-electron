@@ -158,7 +158,8 @@ function setupDisableCaptureListener() {
     }
 
     // After updating state and persisting, bring app to front and navigate to Settings
-    try { ipcRenderer.send('focus-app-window'); } catch (_) {}
+    // Fail silently
+    // try { ipcRenderer.send('focus-app-window'); } catch (_) {}
     try { if (navigateToView) navigateToView('settings'); } catch (_) {}
   });
 }
@@ -213,7 +214,8 @@ function setupPermissionResultListener() {
 
     // If permission was denied, bring app to front and navigate to Settings after state persisted
     if (!hasPermission) {
-      try { ipcRenderer.send('focus-app-window'); } catch (_) {}
+      // Fail silently
+      // try { ipcRenderer.send('focus-app-window'); } catch (_) {}
       try { if (navigateToView) navigateToView('settings'); } catch (_) {}
     }
   });
