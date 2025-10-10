@@ -122,13 +122,13 @@
   background-color: var(--color-primary-dark);
 }
 
-/* Action button - dark gray without shadow */
+/* Action button - brand orange without shadow (base and hover) */
 .btn-primary.topbar-btn {
-  background-color: var(--color-neutral-700);
+  background-color: var(--color-primary);
   box-shadow: none;
 }
 .btn-primary.topbar-btn:hover {
-  background-color: var(--color-neutral-900);
+  background-color: var(--color-primary-dark);
 }
 
 /* Secondary button (for consistency) */
