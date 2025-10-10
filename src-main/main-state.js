@@ -24,6 +24,7 @@ let userStatus = 'active'; // User status - 'active' or 'inactive'
 // Function references that will be set by main.js
 let checkAndAdjustRecording = null;
 let navigateToView = null;
+let getUserAwayState = null; // Function to get current user away state (screen locked or system suspended)
 
 /**
  * Show storage error message to the user
@@ -95,6 +96,7 @@ async function initState(options = {}) {
   // Store callback functions
   checkAndAdjustRecording = options.checkRecording;
   navigateToView = options.navigateToView;
+  getUserAwayState = options.getUserAwayState;
   try {
     // Set AppUserModelId for Windows notifications
     if (process.platform === 'win32') {
@@ -928,9 +930,20 @@ function _scheduleNextWorkEndCheck() {
     const LATE_GRACE_MS = 30 * 60 * 1000; // 30 minutes
     const firedLate = now - intendedFireTs > LATE_GRACE_MS;
 
+    // Check if user is away (screen locked or system suspended) to avoid notifications
+    let isUserAway = false;
+    if (getUserAwayState && typeof getUserAwayState === 'function') {
+      try {
+        isUserAway = getUserAwayState();
+      } catch (error) {
+        log.warn('Could not check user away state:', error);
+      }
+    }
+
     // When work period ends, pause until next work period
-    // Use silent=true when firing late to suppress the banner
-    pauseUntilNextWorkPeriod(mainWindow, firedLate === true);
+    // Use silent=true when firing late OR when user is away to suppress the banner
+    const shouldBeSilent = firedLate === true || isUserAway;
+    pauseUntilNextWorkPeriod(mainWindow, shouldBeSilent);
   }, positiveMsUntilCheck);
   
   return positiveMsUntilCheck;

@@ -541,7 +541,8 @@ app.whenReady().then(async () => {
   // Initialize the state manager with necessary callbacks
   stateManager = await initState({
     checkRecording: checkAndAdjustRecording, // for pause state changes
-    navigateToView: navigateToView // for notifications
+    navigateToView: navigateToView, // for notifications
+    getUserAwayState: () => isScreenLocked || isSystemSuspended // for checking if user is away
   });
 
 
