@@ -27,6 +27,7 @@ const {
 } = require('./app-state.js');
 
 require('./audio-recorder');
+require('./linux-screenshot');
 
 
 
@@ -230,6 +231,15 @@ function navigateToView(viewName) {
     allViews.forEach(view => view.classList.add('hidden'));
     // Show the requested view
     viewToShow.classList.remove('hidden');
+    
+    // Show custom screenshot section on Linux when settings view is displayed
+    if ((viewName === 'settings' || viewName === 'permissions') && process.platform === 'linux') {
+      const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
+      if (linuxScreenshotSection) {
+        linuxScreenshotSection.classList.remove('hidden');
+      }
+    }
+    
     // Single shared topbar visibility
     const appTopbar = document.getElementById('appTopbar');
     const isAuthScreen = (viewName === 'signin' || viewName === 'signup' || viewName === 'reset');

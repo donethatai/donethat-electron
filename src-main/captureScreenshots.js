@@ -3,9 +3,8 @@ const { execSync } = require('child_process')
 const path = require('path')
 const log = require('electron-log')
 
-// Store tool and session state
-let linuxScreenshotTool = null
-let isWaylandSession = null
+// Store Linux screenshot command
+let linuxScreenshotCommand = null
 
 // Store the last captured screenshots for next upload
 let lastScreenshots = null
@@ -17,14 +16,6 @@ const PREVIOUS_SCREENSHOT_SCALE_FACTOR = 0.25
 const PREVIOUS_SCREENSHOT_MAX_AGE_FACTOR = 1.5
 
 ///// UTILITIES /////
-
-// Wayland vs X11 for linux
-function _checkSessionType() {
-  // Check if running on Wayland
-  isWaylandSession = process.env.XDG_SESSION_TYPE === 'wayland'
-  return isWaylandSession
-}
-
 // Function to scale down a screenshot to the configured scale factor
 function scaleScreenshotToPreviousSize(dataUrl) {
   try {
@@ -117,91 +108,77 @@ async function checkScreenCapturePermission() {
   }
 }
 
-// Helper function to handle gnome-screenshot with animations disabled
-async function takeGnomeScreenshot(outputPath) {
-  // Save original animation and sound settings to restore later
-  const getOriginalAnimationSetting = execSync('gsettings get org.gnome.desktop.interface enable-animations').toString().trim()
-  const getOriginalSoundSetting = execSync('gsettings get org.gnome.desktop.sound event-sounds').toString().trim()
 
+// Function to load Linux screenshot command from store
+async function loadLinuxScreenshotCommand() {
   try {
-    // Disable animations and sounds
-    execSync('gsettings set org.gnome.desktop.interface enable-animations false')
-    execSync('gsettings set org.gnome.desktop.sound event-sounds false')
+    if (process.platform !== 'linux') {
+      return null;
+    }
+
+    // Load from the same store that main-state.js uses
+    const { default: Store } = await import('electron-store');
+    const store = new Store({ name: 'donethat-config' });
+    let customCommand = store.get('linuxScreenshotCommand');
     
-    // Take screenshot with gnome-screenshot
-    execSync(`gnome-screenshot -f "${outputPath}"`, { timeout: 5000 })
-  } finally {
-    // Restore original settings (even if screenshot fails)
-    execSync(`gsettings set org.gnome.desktop.interface enable-animations ${getOriginalAnimationSetting}`)
-    execSync(`gsettings set org.gnome.desktop.sound event-sounds ${getOriginalSoundSetting}`)
+    // If no custom command exists, set a default one based on takeGnomeScreenshot logic
+    if (!customCommand) {
+      // Create a default command that includes the full gsettings logic
+      customCommand = `bash -c 'getOriginalAnimationSetting=$(gsettings get org.gnome.desktop.interface enable-animations); getOriginalSoundSetting=$(gsettings get org.gnome.desktop.sound event-sounds); gsettings set org.gnome.desktop.interface enable-animations false; gsettings set org.gnome.desktop.sound event-sounds false; gnome-screenshot -f "%s"; gsettings set org.gnome.desktop.interface enable-animations $getOriginalAnimationSetting; gsettings set org.gnome.desktop.sound event-sounds $getOriginalSoundSetting'`;
+      
+      // Save the default command to store
+      store.set('linuxScreenshotCommand', customCommand);
+      log.info('Set default Linux screenshot command');
+    }
+    
+    setLinuxScreenshotCommand(customCommand);
+    
+    return customCommand;
+  } catch (error) {
+    log.error('Error loading Linux screenshot command:', error);
+    return null;
   }
 }
 
-// Linux-specific permission checking and tool detection
-async function checkLinuxScreenCapturePermission() {
-  _checkSessionType() // Use the renamed internal function
-  // Session type already checked by parent function
-  try {
+// Function to set Linux screenshot command (called from main process)
+function setLinuxScreenshotCommand(command) {
+  linuxScreenshotCommand = command;
+  if (command) {
+    log.info('Using Linux screenshot command:', command);
+  }
+}
 
+// Linux-specific permission checking - only uses custom command
+async function checkLinuxScreenCapturePermission() {
+  try {
     const fs = require('fs')
     const os = require('os')
     const tempDir = os.tmpdir()
     const testPath = path.join(tempDir, `test-screenshot-${Date.now()}.png`)
-        
-    // Check available tools based on the environment
-    if (isWaylandSession) {
-      // For Wayland, check if gnome-screenshot is available
-      try {
-        execSync('which gnome-screenshot', { stdio: 'ignore' })
-        
-        // Try to take a test screenshot with animations disabled
-        await takeGnomeScreenshot(testPath)
-        
-        if (fs.existsSync(testPath)) {
-          fs.unlinkSync(testPath)
-          linuxScreenshotTool = 'gnome-screenshot'
-          return true
-        }
-      } catch (e) {
-      }
-      
-      linuxScreenshotTool = null
-      return false
-    } else {
-      // For X11, try scrot first, then maim
-      try {
-        execSync('which scrot', { stdio: 'ignore' })
-        
-        execSync(`scrot -z "${testPath}"`, { timeout: 3000 })
-        
-        if (fs.existsSync(testPath)) {
-          fs.unlinkSync(testPath)
-          linuxScreenshotTool = 'scrot'
-          return true
-        }
-      } catch (e) {
-      }
-      
-      // Try maim as alternative
-      try {
-        execSync('which maim', { stdio: 'ignore' })
-
-        execSync(`maim "${testPath}"`, { timeout: 3000 })
-        
-        if (fs.existsSync(testPath)) {
-          fs.unlinkSync(testPath)
-          linuxScreenshotTool = 'maim'
-          return true
-        }
-      } catch (e) {
-      }
-      
-      linuxScreenshotTool = null
-      return false
+    
+    // Load Linux command if not already loaded
+    if (!linuxScreenshotCommand) {
+      await loadLinuxScreenshotCommand();
     }
+    
+    // Only use Linux command - no fallback detection
+    if (linuxScreenshotCommand) {
+      try {
+        // Test the Linux command
+        const testCommand = linuxScreenshotCommand.replace('%s', `"${testPath}"`);
+        execSync(testCommand, { timeout: 5000, stdio: 'pipe' });
+        
+        if (fs.existsSync(testPath)) {
+          fs.unlinkSync(testPath);
+          return true;
+        }
+      } catch (e) {
+        log.warn('Linux screenshot command failed:', e.message);
+      }
+    }
+    return false
   } catch (error) {
     log.error('Linux screenshot permission check failed:', error)
-    linuxScreenshotTool = null
     return false
   }
 }
@@ -250,12 +227,12 @@ async function captureScreenshot() {
   }
 }
 
-// Simplified Linux screenshot function using the detected tool
+// Simplified Linux screenshot function - only uses custom command
 async function captureScreenshotsLinux() {
   try {
-    // If no tool was found during permission check, abort
-    if (!linuxScreenshotTool) {
-      log.error('No screenshot tool available for Linux')
+    // If no Linux command available, abort
+    if (!linuxScreenshotCommand) {
+      log.error('No Linux screenshot command available')
       return []
     }
     
@@ -264,33 +241,12 @@ async function captureScreenshotsLinux() {
     const tempDir = os.tmpdir()
     const screenshotPath = path.join(tempDir, `screenshot-${Date.now()}.png`)
     
-    // Use the appropriate tool based on what was detected
-    if (linuxScreenshotTool === 'gnome-screenshot') {
-      // For Wayland with gnome-screenshot
-      try {
-        await takeGnomeScreenshot(screenshotPath)
-      } catch (e) {
-        log.error(`gnome-screenshot failed: ${e.message}`)
-        return []
-      }
-    } else if (linuxScreenshotTool === 'scrot') {
-      // For X11 with scrot
-      try {
-        execSync(`scrot -z "${screenshotPath}"`, { timeout: 5000 })
-      } catch (e) {
-        log.error(`scrot failed: ${e.message}`)
-        return []
-      }
-    } else if (linuxScreenshotTool === 'maim') {
-      // For X11 with maim
-      try {
-        execSync(`maim "${screenshotPath}"`, { timeout: 5000 })
-      } catch (e) {
-        log.error(`maim failed: ${e.message}`)
-        return []
-      }
-    } else {
-      log.error(`Unknown screenshot tool: ${linuxScreenshotTool}`)
+    // Only use Linux command
+    try {
+      const linuxCommand = linuxScreenshotCommand.replace('%s', `"${screenshotPath}"`);
+      execSync(linuxCommand, { timeout: 5000, stdio: 'pipe' });
+    } catch (e) {
+      log.error(`Linux screenshot command failed: ${e.message}`)
       return []
     }
     
@@ -300,27 +256,9 @@ async function captureScreenshotsLinux() {
       const base64Data = `data:image/png;base64,${screenshotData.toString('base64')}`
       fs.unlinkSync(screenshotPath)
       
-      // For multi-monitor setups
-      if (linuxScreenshotTool === 'gnome-screenshot') {
-        // Process for all displays if needed
-        const displays = await getLinuxDisplays()
-        
-        if (displays.length <= 1) {
-          // If only one display, just process the whole image
-          const processedImage = await processScreenshotForUpload(base64Data)
-          return [processedImage]
-        } else {
-          // For multiple displays, crop the image for each display
-          return await cropScreenshots(
-            Buffer.from(base64Data.split(',')[1], 'base64'),
-            displays.map(d => d.bounds)
-          )
-        }
-      } else {
-        // For scrot and maim, just process the whole image
-        const processedImage = await processScreenshotForUpload(base64Data)
-        return [processedImage]
-      }
+      // Process the merged screenshot (all monitors in one image)
+      const processedImage = await processScreenshotForUpload(base64Data)
+      return [processedImage]
     } else {
       log.error('Screenshot file was not created or is empty')
       return []
@@ -331,86 +269,6 @@ async function captureScreenshotsLinux() {
   }
 }
 
-// Helper function to get Linux display information for multi-monitor setups
-async function getLinuxDisplays() {
-  try {
-    // For X11, we can use xrandr to get display information
-    if (process.env.XDG_SESSION_TYPE !== 'wayland') {
-      const { execSync } = require('child_process')
-      const xrandrOutput = execSync('xrandr --current').toString()
-      
-      // Parse the output to get display information
-      const displays = []
-      const displayRegex = /(\S+) connected (\d+)x(\d+)\+(\d+)\+(\d+)/g
-      let match
-      
-      while ((match = displayRegex.exec(xrandrOutput)) !== null) {
-        const [, name, width, height, x, y] = match
-        displays.push({
-          name,
-          bounds: {
-            x: parseInt(x),
-            y: parseInt(y),
-            width: parseInt(width),
-            height: parseInt(height)
-          }
-        })
-      }
-      
-      if (displays.length > 0) {
-        return displays
-      }
-    }
-    
-    // Fallback to electron's screen module
-    const displays = screen.getAllDisplays().map(display => ({
-      name: `Display ${display.id}`,
-      bounds: display.bounds
-    }))
-    
-    return displays
-  } catch (error) {
-    log.error('Failed to get Linux displays:', error)
-    // Default to the primary display
-    const primaryDisplay = screen.getPrimaryDisplay()
-    return [{
-      name: 'Primary Display',
-      bounds: primaryDisplay.bounds
-    }]
-  }
-}
-
-// Modified function to crop screenshots using Electron's nativeImage
-async function cropScreenshots(imageBuffer, displays) {
-  try {
-    const results = []
-    
-    // Create nativeImage from buffer
-    const fullImage = nativeImage.createFromBuffer(imageBuffer)
-    
-    for (const display of displays) {
-      const { width, height, x, y } = display
-      
-      // Crop the image for this display
-      const croppedImage = fullImage.crop({ x, y, width, height })
-      
-      // Convert to data URL
-      const dataUrl = croppedImage.toDataURL()
-      
-      // Process the cropped screenshot
-      const processedImage = await processScreenshotForUpload(dataUrl)
-      results.push(processedImage)
-    }
-    
-    return results
-  } catch (error) {
-    log.error('Error cropping screenshots:', error)
-    // Fall back to processing the full image
-    const dataUrl = nativeImage.createFromBuffer(imageBuffer).toDataURL()
-    const processedImage = await processScreenshotForUpload(dataUrl)
-    return [processedImage]
-  }
-}
 
 // Simplified function to process screenshots using only Electron's nativeImage
 async function processScreenshotForUpload(dataUrl) {
@@ -490,8 +348,7 @@ function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndA
 
       if (stateManager?.hasScreenCapturePermission() !== oldPermission && mainWindow) { // Check if permission *changed*
         mainWindow.webContents.send('screenCapturePermission', {
-          hasPermission: stateManager?.hasScreenCapturePermission(),
-          isWaylandSession: stateManager?.isWaylandSession()
+          hasPermission: stateManager?.hasScreenCapturePermission()
         });
 
         // Re-evaluate recording state based on permission change
@@ -502,14 +359,66 @@ function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndA
     
     app.on('browser-window-focus', focusListener);
   });
+
+  // Test Linux screenshot command handler
+  ipcMain.handle('test-linux-screenshot-command', async (event, command) => {
+    try {
+      if (!command || typeof command !== 'string') {
+        throw new Error('Invalid command provided');
+      }
+
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+
+      // Create a temporary file for testing
+      const tempDir = os.tmpdir();
+      const testPath = path.join(tempDir, `test-screenshot-${Date.now()}.png`);
+
+      try {
+        // Replace %s placeholder with actual file path
+        const testCommand = command.replace('%s', `"${testPath}"`);
+        
+        // Execute the command with a timeout
+        execSync(testCommand, { timeout: 5000, stdio: 'pipe' });
+        
+        // Check if the file was created and has content
+        if (fs.existsSync(testPath) && fs.statSync(testPath).size > 0) {
+          // Clean up the test file
+          fs.unlinkSync(testPath);
+          return { success: true, message: 'Command test successful' };
+        } else {
+          return { success: false, message: 'Command executed but no screenshot file was created' };
+        }
+      } catch (execError) {
+        // Clean up test file if it exists
+        try {
+          if (fs.existsSync(testPath)) {
+            fs.unlinkSync(testPath);
+          }
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+        
+        return { 
+          success: false, 
+          message: `Command failed: ${execError.message}` 
+        };
+      }
+    } catch (error) {
+      log.error('Error testing Linux screenshot command:', error);
+      return { success: false, message: error.message };
+    }
+  });
 }
 
 module.exports = {
   captureScreenshot,
   checkScreenCapturePermission,
-  getWaylandStatus: () => isWaylandSession,
   getPreviousScreenshots,
   saveCurrentScreenshot,
   PREVIOUS_SCREENSHOT_SCALE_FACTOR,
-  initScreenCapturePermissionHandling
+  initScreenCapturePermissionHandling,
+  setLinuxScreenshotCommand,
+  loadLinuxScreenshotCommand
 } 

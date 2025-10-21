@@ -14,7 +14,6 @@ let userWorkdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
 let userWorkhours = { start: "09:00", end: "17:00" }; // Default 9 AM to 5 PM
 let lastSummaryTimestamp = null;
 let hasScreenCapturePermission = false;
-let isWaylandSession = null;
 let idToken = null; // User authentication token
 let workPeriodCheckTimeoutId = null; // For scheduling next workday/workhours check
 let autoSubmit = false;
@@ -124,7 +123,6 @@ async function initState(options = {}) {
       pauseRecording,
       recordingStarted,
       pauseUntilNextWorkPeriod,
-      updateWaylandStatus,
       updateScreenCapturePermission,
       updateWindowsPermission,
       hasWindowsPermission: getWindowsPermission,
@@ -132,7 +130,6 @@ async function initState(options = {}) {
       getUserWorkdays: () => userWorkdays,
       getUserWorkhours: () => userWorkhours,
       hasScreenCapturePermission: () => hasScreenCapturePermission,
-      isWaylandSession: () => isWaylandSession,
       isAuthenticated: () => Boolean(idToken),
       hasValidAccess: () => userStatus === 'active',
       getIdToken: () => {
@@ -576,11 +573,6 @@ function loadSummaryTimestamp() {
   }
 }
 
-// Update Wayland session status
-function updateWaylandStatus(status) {
-  isWaylandSession = status;
-}
-
 // Update screen capture permission status
 function updateScreenCapturePermission(permission) {
   hasScreenCapturePermission = permission;
@@ -630,8 +622,7 @@ function setupIPCHandlers() {
       // Send permission status to renderer
       if (mainWindow) {
         mainWindow.webContents.send('screenCapturePermission', {
-          hasPermission: hasScreenCapturePermission,
-          isWaylandSession: isWaylandSession
+          hasPermission: hasScreenCapturePermission
         });
       }
     }
@@ -781,6 +772,52 @@ function setupIPCHandlers() {
       log.error('Received invalid autoSubmit value:', value);
     }
   });
+
+  // Linux screenshot command handlers
+  ipcMain.handle('save-linux-screenshot-command', async (event, command) => {
+    try {
+      if (command && typeof command !== 'string') {
+        throw new Error('Invalid command provided');
+      }
+
+      // Save command to store (no encryption needed for commands)
+      safeStoreOperation(() => {
+        if (store) {
+          if (command && command.trim()) {
+            store.set('linuxScreenshotCommand', command.trim());
+          } else {
+            store.delete('linuxScreenshotCommand');
+          }
+        } else {
+          throw new Error('Store not initialized');
+        }
+      }, 'save Linux screenshot command');
+
+      log.info('Linux screenshot command saved successfully');
+      return { success: true };
+    } catch (error) {
+      log.error('Error saving Linux screenshot command:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('get-linux-screenshot-command', async (event) => {
+    try {
+      const command = safeStoreOperation(() => {
+        if (store) {
+          return store.get('linuxScreenshotCommand');
+        } else {
+          return null;
+        }
+      }, 'get Linux screenshot command');
+
+      return { success: true, command: command || null };
+    } catch (error) {
+      log.error('Error retrieving Linux screenshot command:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
 
   // Gemini API key handlers
   ipcMain.handle('save-gemini-api-key', async (event, apiKey) => {
@@ -1067,7 +1104,6 @@ module.exports = {
   recordingStarted,
   loadWorkSettings,
   loadSummaryTimestamp,
-  updateWaylandStatus,
   updateScreenCapturePermission,
   updateWindowsPermission,
   hasWindowsPermission: getWindowsPermission,

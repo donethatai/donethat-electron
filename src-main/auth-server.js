@@ -43,10 +43,8 @@ class AuthServer {
               res.end(`
                 <html>
                   <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                    <h2>Authentication Successful!</h2>
-                    <p>You can close this tab now.</p>
-                    <p>Returning to DoneThat...</p>
-                    <script>setTimeout(() => window.close(), 2000);</script>
+                    <h2>Authentication Successful</h2>
+                    <p>You can close this tab now</p>
                   </body>
                 </html>
               `);

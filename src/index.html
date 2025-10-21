@@ -369,27 +369,39 @@
                 <label class="toggle"><input type="checkbox" id="screenCheckbox" checked><span class="slider"></span></label>
               </div>
 
-              <!-- Linux-specific installation instructions (hidden by default) -->
-              <div id="linuxInstallSection" class="hidden mt-4">
-                <h3 class="linux-section-heading">Screenshot Tool Required</h3>
+
+              <!-- Custom screenshot command configuration (Linux only) -->
+              <div id="linuxScreenshotSection" class="hidden mt-4">
+                <h3 class="linux-section-heading">Screenshot Command</h3>
+                <p class="instruction-text text-sm mb-3">Taking background screenshots on Linux is not as easy as it sounds. Please adapt the script below to make it work on your installation. The command should capture all monitors merged into one image. The settings juggling in the default command deactivates the screenshot animation in Ubuntu. Changes are automatically saved.</p>
                 
-                <!-- Wayland instructions -->
-                <div id="waylandInstructions" class="hidden linux-install-instructions">
-                  <p class="instruction-text font-medium">For Wayland:</p>
-                  <div class="code-block">
-                    <input type="text" value="sudo apt install gnome-screenshot" readonly class="code-input" onclick="this.select()" />
+                <div class="space-y-3">
+                  <div>
+                    <label for="linuxScreenshotCommand" class="block text-sm font-medium text-gray-700 mb-1">Screenshot Command</label>
+                    <div class="space-y-2">
+                      <textarea 
+                        id="linuxScreenshotCommand" 
+                        class="form-input w-full text-xs py-2 px-3 font-mono resize-none" 
+                        rows="8"
+                        placeholder="gnome-screenshot -f" 
+                        title="Command to take screenshot. Use %s as placeholder for output file path"
+                        style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; line-height: 1.4;"
+                      ></textarea>
+                      <div class="flex gap-2">
+                        <button id="testScreenshotCommand" class="btn-secondary text-xs py-1.5 px-3">Test</button>
+                        <button id="restoreDefaultScreenshot" class="btn-secondary text-xs py-1.5 px-3">Restore Default</button>
+                      </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Use %s as placeholder for the output file path</p>
                   </div>
-                </div>
-                
-                <!-- X11 instructions -->
-                <div id="x11Instructions" class="hidden linux-install-instructions">
-                  <p class="instruction-text font-medium">For X11:</p>
-                  <div class="code-block">
-                    <input type="text" value="sudo apt install scrot" readonly class="code-input" onclick="this.select()" />
-                  </div>
-                  <p class="instruction-text text-xs mt-2">Alternative:</p>
-                  <div class="code-block">
-                    <input type="text" value="sudo apt install maim" readonly class="code-input" onclick="this.select()" />
+                  
+                  <div id="screenshotTestResult" class="hidden">
+                    <div class="p-3 rounded-lg border">
+                      <div class="flex items-center gap-2">
+                        <div id="screenshotTestIcon" class="w-4 h-4"></div>
+                        <span id="screenshotTestMessage" class="text-sm font-medium"></span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -464,6 +476,7 @@
                   </ul>
                 </div>
               </div>
+
 
               <!-- Hotkey setting (placed below other optional controls) -->
               <div class="flex items-start justify-between">

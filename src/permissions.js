@@ -120,24 +120,33 @@ function showInlineLinuxNotification(sectionId) {
   }
 }
 
-// Modify the existing screenCapturePermission listener to include session type
+// Function to show custom screenshot section on Linux
+function showLinuxScreenshotSection() {
+  const platform = process.platform;
+  if (platform !== 'linux') return;
+
+  const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
+  if (linuxScreenshotSection) {
+    linuxScreenshotSection.classList.remove('hidden');
+  }
+}
+
+// Screen capture permission listener
 ipcRenderer.on('screenCapturePermission', (event, data) => {
-  // Extract permission status and session type (if provided)
+  // Extract permission status
   const hasPermission = typeof data === 'object' ? data.hasPermission : data;
-  const isWaylandSession = typeof data === 'object' ? data.isWaylandSession : null;
 
   updateScreenCapturePermission(hasPermission);
 
   // Log screen capture permission status
   logAnalyticsEvent('screen_capture_permission', {
     status: hasPermission ? 'granted' : 'denied',
-    platform: process.platform,
-    is_wayland: isWaylandSession
+    platform: process.platform
   });
 
-  // Update UI based on permission status
-  if (!hasPermission && process.platform === 'linux' && isWaylandSession !== null) {
-    updateLinuxInstructions(isWaylandSession);
+  // Show custom screenshot section on Linux (regardless of permission status)
+  if (process.platform === 'linux') {
+    showLinuxScreenshotSection();
   }
 
   // Update screen capture checkbox in settings if we're on settings view
@@ -224,29 +233,6 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
   }
 });
 
-// Simplified function to update Linux installation instructions
-function updateLinuxInstructions(isWaylandSession) {
-  const linuxInstallSection = document.getElementById('linuxInstallSection');
-
-  // Show Linux install instructions
-  if (linuxInstallSection) {
-    linuxInstallSection.classList.remove('hidden');
-  }
-
-  // Hide all instruction sets first
-  const waylandInstructions = document.getElementById('waylandInstructions');
-  const x11Instructions = document.getElementById('x11Instructions');
-
-  if (waylandInstructions) waylandInstructions.classList.add('hidden');
-  if (x11Instructions) x11Instructions.classList.add('hidden');
-
-  // Show appropriate instructions based on session type
-  if (isWaylandSession) {
-    if (waylandInstructions) waylandInstructions.classList.remove('hidden');
-  } else {
-    if (x11Instructions) x11Instructions.classList.remove('hidden');
-  }
-}
 
 // Function to update screen capture checkbox in settings
 function updateScreenCaptureCheckbox(hasPermission) {

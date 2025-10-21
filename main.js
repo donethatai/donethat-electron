@@ -10,7 +10,6 @@ const log = require('electron-log')
 const { AuthServer } = require('./src-main/auth-server')
 const {
   checkScreenCapturePermission: moduleCheckPermission,
-  getWaylandStatus,
   initScreenCapturePermissionHandling
 } = require('./src-main/captureScreenshots')
 const { initWindowsPermissionHandling } = require('./src-main/captureWindows')
@@ -718,12 +717,11 @@ app.whenReady().then(async () => {
   app.on('activate', async () => {
     await checkScreenCapturePermission();
 
-    log.warn(`A Sending permission check result: hasPermission=${stateManager?.hasScreenCapturePermission()}, isWaylandSession=${stateManager?.isWaylandSession()}`);
+    log.warn(`A Sending permission check result: hasPermission=${stateManager?.hasScreenCapturePermission()}`);
 
     if (mainWindow) {
       mainWindow.webContents.send('screenCapturePermission', {
-        hasPermission: stateManager?.hasScreenCapturePermission(),
-        isWaylandSession: stateManager?.isWaylandSession()
+        hasPermission: stateManager?.hasScreenCapturePermission()
       });
     }
 
@@ -1401,8 +1399,7 @@ function createWindow() {
     // Position the window once it's ready.
     mainWindow.once('ready-to-show', async () => {
       mainWindow.webContents.send('screenCapturePermission', {
-        hasPermission: stateManager?.hasScreenCapturePermission(),
-        isWaylandSession: stateManager?.isWaylandSession()
+        hasPermission: stateManager?.hasScreenCapturePermission()
       });
       
       // Initialize capture with auth error handler
@@ -1740,8 +1737,7 @@ app.on('browser-window-focus', async () => {
   if (oldPermission !== stateManager?.hasScreenCapturePermission() && mainWindow) {
     // Use the state manager values
     mainWindow.webContents.send('screenCapturePermission', {
-      hasPermission: stateManager?.hasScreenCapturePermission(),
-      isWaylandSession: stateManager?.isWaylandSession()
+      hasPermission: stateManager?.hasScreenCapturePermission()
     });
 
     // Re-evaluate recording state based on permission change
@@ -1811,12 +1807,10 @@ function stopRecording() {
 async function checkScreenCapturePermission() {
   // Get current permission status from OS-level APIs
   const hasPermission = await moduleCheckPermission();
-  const waylandStatus = getWaylandStatus();
   
   // Update the state manager with current values
   if (stateManager) {
     stateManager.updateScreenCapturePermission(hasPermission);
-    stateManager.updateWaylandStatus(waylandStatus);
   } else {
     log.warn('State manager not initialized, cannot update screen capture permission');
   }
@@ -1833,10 +1827,9 @@ ipcMain.on('checkScreenCapturePermission', async () => {
   await checkScreenCapturePermission();
 
   if (mainWindow) {
-    // Send both permission status and session type from state manager
+    // Send permission status from state manager
     mainWindow.webContents.send('screenCapturePermission', {
-      hasPermission: stateManager?.hasScreenCapturePermission(),
-      isWaylandSession: stateManager?.isWaylandSession()
+      hasPermission: stateManager?.hasScreenCapturePermission()
     });
   }
 });
