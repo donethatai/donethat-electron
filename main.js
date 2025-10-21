@@ -589,7 +589,9 @@ app.whenReady().then(async () => {
   stateManager = await initState({
     checkRecording: checkAndAdjustRecording, // for pause state changes
     navigateToView: navigateToView, // for notifications
-    getUserAwayState: () => isScreenLocked || isSystemSuspended // for checking if user is away
+    getUserAwayState: () => isScreenLocked || isSystemSuspended, // for checking if user is away
+    mainWindow: mainWindow, // window reference
+    overlayWindow: overlayWindow // overlay window reference
   });
 
 

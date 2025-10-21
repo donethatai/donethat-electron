@@ -9,6 +9,15 @@ let keyboardListener = null;
 let lastKeyTime = {}; // Stores the last time each key was pressed for debouncing
 const DEBOUNCE_TIME = 150; // 150ms debounce time for keystrokes
 const MAX_KEYSTROKE_HISTORY = 1000; // Limit keystroke history to avoid memory issues
+let mainWindow = null;
+
+/**
+ * Initialize keystroke tracking module with window reference
+ * @param {BrowserWindow} window Main window reference
+ */
+function initialize(window) {
+  mainWindow = window;
+}
 
 /**
  * Check if the application has permission to track keystrokes
@@ -28,7 +37,6 @@ async function checkPermissions() {
       } catch (linuxError) {
         log.error('Linux keystroke check failed:', linuxError);
         // Send notice to renderer about Linux keystrokes permission and emit permission=false
-        const mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('linux-keystrokes-permission-notice');
           mainWindow.webContents.send('keystrokesPermission', false);
@@ -46,7 +54,6 @@ async function checkPermissions() {
   } catch (error) {
     log.error('Keystroke tracking permission check failed:', error);
     try {
-      const mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('keystrokesPermission', false);
       }
@@ -271,8 +278,6 @@ async function startTracking() {
           
           // Find main window to notify
           try {
-            const { BrowserWindow } = require('electron');
-            const mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
             if (mainWindow && !mainWindow.isDestroyed()) {
               // Notify renderer to disable keystrokes
               mainWindow.webContents.send('disable-capture-features', { keystrokes: false });
@@ -392,6 +397,7 @@ function isTrackingActive() {
 }
 
 module.exports = {
+  initialize,
   startTracking,
   stopTracking,
   checkPermissions,

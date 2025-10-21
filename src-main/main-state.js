@@ -24,6 +24,8 @@ let userStatus = 'active'; // User status - 'active' or 'inactive'
 let checkAndAdjustRecording = null;
 let navigateToView = null;
 let getUserAwayState = null; // Function to get current user away state (screen locked or system suspended)
+let mainWindow = null;
+let overlayWindow = null;
 
 /**
  * Show storage error message to the user
@@ -47,19 +49,17 @@ function showStorageError(error) {
       );
     } catch (dialogError) {
       // Fallback to notification if dialog fails
-      try {
-        const { BrowserWindow } = require('electron');
-        const win = BrowserWindow.getAllWindows()[0];
-        if (win) {
-          try { win.show(); win.focus(); } catch (e) {}
-          win.webContents.send('inapp:notify', {
-            id: 'storage-permission-error',
-            title: 'Storage Permission Error',
-            message: 'Could not store configuration. Please check your antivirus software.',
-            sticky: true
-          });
-        }
-      } catch (notificationError) {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.show(); mainWindow.focus(); } catch (e) {}
+        mainWindow.webContents.send('inapp:notify', {
+          id: 'storage-permission-error',
+          title: 'Storage Permission Error',
+          message: 'Could not store configuration. Please check your antivirus software.',
+          sticky: true
+        });
+      }
+    } catch (notificationError) {
         log.error('Failed to send in-app storage error notification:', notificationError);
       }
     }
@@ -96,6 +96,8 @@ async function initState(options = {}) {
   checkAndAdjustRecording = options.checkRecording;
   navigateToView = options.navigateToView;
   getUserAwayState = options.getUserAwayState;
+  mainWindow = options.mainWindow;
+  overlayWindow = options.overlayWindow;
   try {
     // Set AppUserModelId for Windows notifications
     if (process.platform === 'win32') {
@@ -294,11 +296,9 @@ function _checkWorkdayEndNotification() {
   if (lastSummaryTimestamp && (Date.now() - lastSummaryTimestamp > threeHoursInMillis)) {
     // Create notification with same options structure as start notification
     try {
-      const { BrowserWindow } = require('electron');
-      const win = BrowserWindow.getAllWindows()[0];
-      if (win) {
-        try { win.show(); win.focus(); } catch (e) {}
-        win.webContents.send('inapp:notify', {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.show(); mainWindow.focus(); } catch (e) {}
+        mainWindow.webContents.send('inapp:notify', {
           id: 'workday-ended',
           title: 'Workday Ended',
           message: 'Remember to generate your summary in DoneThat!',
@@ -952,14 +952,7 @@ function _scheduleNextWorkEndCheck() {
 
   // Set timeout for next check - when work period ends, pause until next work period
   workPeriodCheckTimeoutId = setTimeout(() => {
-    // Create a bridge to mainWindow
-    let mainWindow = null;
-    try {
-      const { BrowserWindow } = require('electron');
-      mainWindow = BrowserWindow.getAllWindows()[0];
-    } catch (error) {
-      log.error('Failed to get mainWindow for pauseUntilNextWorkPeriod:', error);
-    }
+    // Use the stored mainWindow reference
     
     // If this timer fires significantly late (e.g., device resumed next day),
     // avoid showing a stale end-of-day notification
@@ -1070,19 +1063,17 @@ async function getGeminiApiKey() {
         log.warn('Failed to clear corrupted Gemini API key:', e);
       }
       // Send a sticky in-app notification to prompt user
-      try {
-        const { BrowserWindow } = require('electron');
-        const win = BrowserWindow.getAllWindows()[0];
-        if (win) {
-          try { win.show(); win.focus(); } catch (e) {}
-          win.webContents.send('inapp:notify', {
-            id: 'gemini-key-decrypt-failed',
-            title: 'Settings',
-            message: "We couldn't read your Gemini API key. Please set it again in Settings. For now we'll use cloud processing.",
-            sticky: true
-          });
-        }
-      } catch (notifyErr) {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.show(); mainWindow.focus(); } catch (e) {}
+        mainWindow.webContents.send('inapp:notify', {
+          id: 'gemini-key-decrypt-failed',
+          title: 'Settings',
+          message: "We couldn't read your Gemini API key. Please set it again in Settings. For now we'll use cloud processing.",
+          sticky: true
+        });
+      }
+    } catch (notifyErr) {
         log.warn('Failed to send in-app notification for Gemini key reset:', notifyErr);
       }
       // Return success with null apiKey to fall back to cloud processing

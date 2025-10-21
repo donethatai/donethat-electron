@@ -319,6 +319,9 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     bufferDurationMs: captureIntervalMinutes * 60 * 1000
   });
   
+  // Initialize keystrokes capture with main window
+  keystrokesCapture.initialize(mainWindow);
+  
   // Handler for updating input data settings
   ipcMain.on('updateInputDataSettings', (event, settings) => {
     updateInputDataSettings(settings);
