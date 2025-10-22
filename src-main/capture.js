@@ -1,6 +1,6 @@
 const log = require('electron-log');
 const { captureScreenshot, getPreviousScreenshots } = require('./captureScreenshots');
-const { ipcMain } = require('electron');
+const { ipcMain, powerMonitor } = require('electron');
 const { isLocalProcessingAvailable, processDataLocally } = require('./processLocal');
 
 // Firebase URL constant
@@ -526,6 +526,15 @@ async function collectInputData(resetBuffers = true) {
     windows: false
   };
   
+  // Get system idle time
+  try {
+    const idleTime = powerMonitor.getSystemIdleTime();
+    inputData.idleTime = idleTime;
+  } catch (error) {
+    log.error('Error getting system idle time:', error);
+    // Don't add to captureErrors as this is not a critical failure
+  }
+  
   // Get audio transcript
   if (inputDataSettings.audio) {
     try {
@@ -732,6 +741,10 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
       if (inputData) {
         if (inputData.audioTranscript) {
           payload.audioTranscript = inputData.audioTranscript;
+        }
+        
+        if (inputData.idleTime !== undefined) {
+          payload.idleTime = inputData.idleTime;
         }
         
         if (inputData.activity && inputData.activity.length > 0) {

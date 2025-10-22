@@ -241,7 +241,7 @@ function validateAndProcessImage(imageData) {
 /**
  * Build content blocks based on config spec (mirror online version)
  */
-function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioTranscript) {
+function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioTranscript, idleTime) {
   const spec = config.contentBlocksSpec || {};
   const imageKey = spec.imagePartKey || 'image_url';
   const blocks = [ { type: 'text', text: config.prefilledPrompt } ];
@@ -251,6 +251,12 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
   }
   if (audioTranscript) {
     blocks.push({ type: 'text', text: `Audio Transcript:\n${audioTranscript}` });
+  }
+  
+  if (idleTime !== undefined && idleTime !== null) {
+    const idleMinutes = Math.floor(idleTime / 60);
+    const idleSeconds = idleTime % 60;
+    blocks.push({ type: 'text', text: `System Idle Time: ${idleMinutes}m ${idleSeconds}s` });
   }
 
   // Add previous screenshots if available (mirror online version)
@@ -299,7 +305,7 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
 /**
  * Analyze screenshots using local LLM processing
  */
-async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioTranscript, idToken) {
+async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioTranscript, idleTime, idToken) {
   try {
     // Validate current screenshots - this is critical
     if (!screenshots || screenshots.length === 0) {
@@ -321,7 +327,7 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
     // Ensure we have up-to-date config
     const config = latestConfig || await getConfig(idToken);
     // Build content blocks using spec
-    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioTranscript);
+    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioTranscript, idleTime);
 
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
@@ -421,12 +427,19 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
       audioTranscript = inputData.audioTranscript;
     }
 
+    // Get idle time
+    let idleTime = undefined;
+    if (inputData.idleTime !== undefined) {
+      idleTime = inputData.idleTime;
+    }
+
     // Analyze screenshots locally
     const structured = await analyzeScreenshots(
       screenshots,
       previousScreenshots,
       applicationActivity,
       audioTranscript,
+      idleTime,
       idToken
     );
 
