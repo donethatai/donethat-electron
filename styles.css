@@ -131,6 +131,25 @@
   background-color: var(--color-primary-dark);
 }
 
+/* Finish button container - positioned bottom right */
+.finish-button-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+}
+
+/* Finish button styling - match other buttons exactly */
+.finish-button {
+  @apply px-4 py-2 text-sm font-medium rounded-lg;
+  background-color: var(--color-primary);
+  box-shadow: none;
+  transition: background-color 0.2s;
+}
+.finish-button:hover {
+  background-color: var(--color-primary-dark);
+}
+
 /* Secondary button (for consistency) */
 .btn-secondary {
   @apply w-full p-1.5 rounded text-sm cursor-pointer transition duration-200 shadow-sm;

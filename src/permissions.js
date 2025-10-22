@@ -32,6 +32,9 @@ function initializePermissions(viewNavigator, currentViewGetter, topbarVisibilit
 
   // Check permissions on startup
   checkPermissionsOnStartup();
+  
+  // Set up finish button handler
+  setupFinishButtonHandler();
 }
 
 // Check all permissions on startup to update state
@@ -152,6 +155,9 @@ ipcRenderer.on('screenCapturePermission', (event, data) => {
   // Update screen capture checkbox in settings if we're on settings view
   updateScreenCaptureCheckbox(hasPermission);
 
+  // Update finish button visibility
+  updateFinishButtonVisibility();
+
   // Update topbar visibility
   if (updateTopbarVisibility) updateTopbarVisibility();
 
@@ -205,6 +211,9 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
 
   // Update windows checkbox in settings if we're on settings view
   updateWindowsCheckbox(hasPermission);
+
+  // Update finish button visibility
+  updateFinishButtonVisibility();
 
   // Notify settings component about permission status
   document.dispatchEvent(new CustomEvent('permissionResult', {
@@ -455,10 +464,51 @@ function requestWindowsPermission() {
   ipcRenderer.send("requestWindowsPermission");
 }
 
+// Function to update finish button visibility based on required permissions
+function updateFinishButtonVisibility() {
+  const finishButtonContainer = document.getElementById('finishButtonContainer');
+  if (!finishButtonContainer) return;
+
+  // Check the actual checkbox states
+  const screenToggle = document.getElementById('screenCheckbox');
+  const windowsToggle = document.getElementById('windowsCheckbox');
+  
+  if (!screenToggle || !windowsToggle) return;
+
+  const screenChecked = screenToggle.checked;
+  const windowsChecked = windowsToggle.checked;
+
+  // Show finish button only when both toggles are checked
+  if (screenChecked && windowsChecked) {
+    finishButtonContainer.classList.remove('hidden');
+  } else {
+    finishButtonContainer.classList.add('hidden');
+  }
+}
+
+// Set up finish button click handler
+function setupFinishButtonHandler() {
+  const finishButton = document.getElementById('finishButton');
+  if (!finishButton) return;
+
+  finishButton.addEventListener('click', () => {
+    // Log analytics event
+    logAnalyticsEvent('permissions_finished', {
+      platform: process.platform
+    });
+    
+    // Navigate to dashboard
+    if (navigateToView) {
+      navigateToView('dashboard');
+    }
+  });
+}
+
 module.exports = {
   initializePermissions,
   requestAudioPermission,
   requestKeystrokesPermission,
-  requestWindowsPermission
+  requestWindowsPermission,
+  updateFinishButtonVisibility
 };
 

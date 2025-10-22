@@ -110,6 +110,18 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupHotkeyConfiguration();
   // Set up dependency: disable screenshots in meetings requires microphone enabled
   setupMeetingScreenshotsDependency();
+  
+  // Set up finish button (only when settings view is loaded)
+  setTimeout(() => {
+    try {
+      const { updateFinishButtonVisibility } = require('./permissions.js');
+      if (updateFinishButtonVisibility) {
+        updateFinishButtonVisibility();
+      }
+    } catch (error) {
+      console.error('Error setting up finish button:', error);
+    }
+  }, 100);
 }
 // Note: Screen capture checkbox behavior is now handled in permissions.js
 

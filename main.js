@@ -77,7 +77,7 @@ app.on('activate', () => {
 });
 
 // To show dev tools next to main window
-let DEBUG = false
+let DEBUG = true
 
 // Global hotkey configuration (suffix only, final character)
 let HOTKEY_SUFFIX = 'D' // default
