@@ -196,6 +196,12 @@ function navigateToView(viewName) {
     }
   }
 
+  // Protected views require authentication
+  const protectedViews = ['dashboard', 'settings', 'permission', 'permissions'];
+  if (protectedViews.includes(viewName) && !isAuthenticated()) {
+    viewName = 'signin';
+  }
+
   // Show the requested view
   let viewToShow;
   switch (viewName) {
@@ -206,12 +212,10 @@ function navigateToView(viewName) {
       resetSummaryState();
       viewToShow = settingsView;
       break;
-
     case 'permission':
     case 'permissions':
       viewToShow = settingsView;
       break;
-
     case 'signin':
       viewToShow = signInView;
       break;
@@ -222,7 +226,7 @@ function navigateToView(viewName) {
       viewToShow = resetView;
       break;
     default:
-      viewToShow = dashboardView;
+      viewToShow = isAuthenticated() ? dashboardView : signInView;
   }
 
   // Check there is an actual change in view

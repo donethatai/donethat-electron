@@ -104,7 +104,7 @@ async function handleAuthError(error) {
       const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false);
 
       // Show notification for retry > 0
-      if (retryCount >= 0) {
+      if (retryCount > 0) {
         showBanner('Connection issue. Please check your internet connection.', { title: 'Network Issue', sticky: false, noFocus: true });
       }
 
