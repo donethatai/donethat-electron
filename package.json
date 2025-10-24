@@ -1,6 +1,6 @@
 {
   "name": "donethat",
-  "version": "1.4.6-beta.1",
+  "version": "1.4.6",
   "description": "DoneThat",
   "main": "main.js",
   "scripts": {
