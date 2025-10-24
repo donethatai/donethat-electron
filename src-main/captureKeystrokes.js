@@ -47,8 +47,8 @@ async function checkPermissions() {
       }
     }
 
-    // For non-Linux platforms, normal check
-    const testListener = new GlobalKeyboardListener();
+    // For non-Linux platforms, use allowChmod: false to prevent password prompts
+    const testListener = new GlobalKeyboardListener({ allowChmod: false });
     testListener.kill();
     return true;
   } catch (error) {
@@ -249,8 +249,8 @@ async function startTracking() {
   lastKeyTime = {};
 
   try {
-    // For Linux (AppImage), try with options to prevent pkexec errors
-    const options = process.platform === 'linux' ? { allowChmod: false } : {};
+    // Always use allowChmod: false to prevent password prompts on all platforms
+    const options = { allowChmod: false };
     
     // Create the keyboard listener
     keyboardListener = new GlobalKeyboardListener(options);
