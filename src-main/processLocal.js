@@ -161,6 +161,7 @@ async function invokeWithFallback(messages) {
   }
 
   const maxAttemptsPerModel = 3; // initial + 2 retries
+  let lastError = null;
 
   for (const llm of llmModels) {
     let attempt = 0;
@@ -170,6 +171,7 @@ async function invokeWithFallback(messages) {
         return response;
       } catch (error) {
         attempt += 1;
+        lastError = error;
         const remaining = maxAttemptsPerModel - attempt;
         
         // Check if it's an image processing error
@@ -198,8 +200,9 @@ async function invokeWithFallback(messages) {
     }
   }
 
-  log.warn('All LLMs failed after retries; will skip this round.');
-  return null;
+  log.warn('All LLMs failed after retries; throwing last error for higher-level handling.');
+  if (lastError) throw lastError;
+  throw new Error('Local LLM failed after retries');
 }
 
 /**
@@ -473,14 +476,33 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
     }
 
     // Analyze screenshots locally
-    const structured = await analyzeScreenshots(
-      screenshots,
-      previousScreenshots,
-      applicationActivity,
-      audioTranscript,
-      idleTime,
-      idToken
-    );
+    let structured;
+    try {
+      structured = await analyzeScreenshots(
+        screenshots,
+        previousScreenshots,
+        applicationActivity,
+        audioTranscript,
+        idleTime,
+        idToken
+      );
+    } catch (err) {
+      // Notify user directly on local analysis errors
+      try {
+        const { BrowserWindow } = require('electron');
+        const win = BrowserWindow.getAllWindows()?.[0];
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('inapp:notify', {
+            id: 'local-processing-error',
+            title: 'Local processing error',
+            message: (err && err.message) ? err.message : 'Unknown error',
+            sticky: false
+          });
+        }
+      } catch (_) {}
+      // Throw canonical local-processing error marker for upstream
+      throw new Error('Local Processing');
+    }
 
     // Build parameters to send (based on config.parameters)
     const config = latestConfig || await getConfig(idToken);

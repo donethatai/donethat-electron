@@ -716,16 +716,8 @@ async function _sendToServer(idToken, screenshots, inputData = {}) {
           return { authError: true };
         }
         
-        // Non-auth errors: notify user and let outer flow handle failure
-        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-          mainWindowRef.webContents.send('inapp:notify', {
-            id: 'local-processing-error',
-            title: 'Local processing error',
-            message: (error && error.message) ? error.message : 'Unknown error',
-            sticky: false
-          });
-        }
-        // Re-throw for outer catch to handle (logging/return false)
+        // Non-auth errors in local path: already notified inside processLocal
+        // Just propagate
         throw error;
       }
     } else {      
