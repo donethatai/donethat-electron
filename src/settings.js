@@ -110,6 +110,8 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupOpenAICompatibleListeners();
   // Set up hotkey configuration UI
   setupHotkeyConfiguration();
+  // Set up test local processing button
+  setupTestLocalProcessing();
   // Set up dependency: disable screenshots in meetings requires microphone enabled
   setupMeetingScreenshotsDependency();
   
@@ -924,6 +926,50 @@ function setupHotkeyConfiguration() {
       }
     } catch (error) {
       console.error('Failed to set hotkey:', error);
+    }
+  });
+}
+
+// Set up test local processing button
+function setupTestLocalProcessing() {
+  const testBtn = document.getElementById('testLocalProcessing');
+  const testResult = document.getElementById('localProcessingTestResult');
+  const testIcon = document.getElementById('localProcessingTestIcon');
+  const testMessage = document.getElementById('localProcessingTestMessage');
+
+  if (!testBtn || !testResult || !testIcon || !testMessage) return;
+
+  testBtn.addEventListener('click', async () => {
+    try {
+      testBtn.disabled = true;
+      testBtn.textContent = 'Testing...';
+      testResult.classList.add('hidden');
+
+      const result = await ipcRenderer.invoke('test-local-processing');
+      const success = result && result.success;
+
+      // Update test result display
+      testIcon.innerHTML = success
+        ? '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'
+        : '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+
+      testResult.classList.remove('border-gray-300', 'border-green-200', 'border-red-200');
+      testResult.classList.add(success ? 'border-green-200' : 'border-red-200');
+
+      testMessage.textContent = result?.message || (success ? 'Success' : 'Failed');
+      testResult.classList.remove('hidden');
+
+    } catch (error) {
+      console.error('Error testing local processing:', error);
+
+      testIcon.innerHTML = '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+      testResult.classList.remove('border-gray-300', 'border-green-200', 'border-red-200');
+      testResult.classList.add('border-red-200');
+      testMessage.textContent = `Error: ${error.message}`;
+      testResult.classList.remove('hidden');
+    } finally {
+      testBtn.disabled = false;
+      testBtn.textContent = 'Test';
     }
   });
 }

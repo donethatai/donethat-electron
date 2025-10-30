@@ -441,8 +441,13 @@ async function submitResults(idToken, timestamp, structured, parameters) {
 
 /**
  * Main function to process data locally
+ * @param {string} idToken Firebase ID token
+ * @param {Array} screenshots Screenshot data
+ * @param {Array} previousScreenshots Previous screenshot data
+ * @param {Object} inputData Input data (audio, keystrokes, etc.)
+ * @param {boolean} testMode If true, skip Firebase submission
  */
-async function processDataLocally(idToken, screenshots, previousScreenshots, inputData) {
+async function processDataLocally(idToken, screenshots, previousScreenshots, inputData, testMode = false) {
   try {
     // Check if local processing is available
     if (!await isLocalProcessingAvailable()) {
@@ -517,6 +522,12 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
     if (!structured) {
       log.warn('No structured output available; skipping result submission this round.');
       return { success: false, skipped: true };
+    }
+
+    // Skip Firebase submission in test mode
+    if (testMode) {
+      log.info('Test mode: skipping Firebase submission');
+      return { success: true, test: true };
     }
 
     // Submit results to Firebase using current time

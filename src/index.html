@@ -436,6 +436,24 @@
                         <button id="restoreDefaultScreenshot" class="btn-secondary text-xs py-1.5 px-3">Restore Default</button>
                       </div>
                     </div>
+
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <div class="text-base font-semibold text-gray-800">Test Local Processing</div>
+                        <div class="text-xs text-gray-500">Run a local capture cycle without saving the data.</div>
+                      </div>
+                      <button id="testLocalProcessing" class="btn-secondary text-xs py-1.5 px-3">Test</button>
+                    </div>
+
+                    <div id="localProcessingTestResult" class="hidden">
+                      <div class="p-3 rounded-lg border">
+                        <div class="flex items-center gap-2">
+                          <div id="localProcessingTestIcon" class="w-4 h-4"></div>
+                          <span id="localProcessingTestMessage" class="text-sm font-medium"></span>
+                        </div>
+                      </div>
+                    </div>
+                    </div>
                     <p class="text-xs text-gray-500 mt-1">Use %s as placeholder for the output file path</p>
                   </div>
                   

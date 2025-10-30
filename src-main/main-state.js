@@ -1084,6 +1084,32 @@ function setupIPCHandlers() {
       throw error;
     }
   });
+
+  // Test local processing handler
+  ipcMain.handle('test-local-processing', async (event) => {
+    try {
+      const { collectInputData } = require('./capture');
+      const { processDataLocally } = require('./processLocal');
+
+      // Get current input data (screenshots, audio, etc.)
+      const inputData = await collectInputData(false); // Don't reset buffers for test
+      const screenshots = await require('./captureScreenshots').captureScreenshot();
+
+      // Check if we have local processing available
+      const { isLocalProcessingAvailable } = require('./processLocal');
+      if (!await isLocalProcessingAvailable()) {
+        return { success: false, message: 'No local processing configuration found. Set up Gemini API key or OpenAI-compatible endpoint first.' };
+      }
+
+      // Run local processing only (no cloud upload)
+      await processDataLocally('test-token', screenshots, null, inputData, true);
+
+      return { success: true, message: 'Local processing test successful' };
+    } catch (error) {
+      log.error('Error in local processing test:', error);
+      return { success: false, message: error.message };
+    }
+  });
 }
 
 /**
