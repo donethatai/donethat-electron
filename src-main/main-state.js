@@ -82,10 +82,32 @@ function _validateState() {
       // Outside work hours but not paused (and no manual override) - should be paused
       pauseUntilNextWorkPeriod(mainWindow, true); // silent=true
     } else if (isActive && paused && pauseReason === 'workday-start') {
-      // In work hours but paused due to work-hours - should be active
-      _clearPauseStateAndCheckRecording();
-      // Clear manual override when work hours naturally start
-      manualOverrideWorkHours = false;
+      // In work hours but paused due to work-hours - check if pause extends beyond today
+      // Only clear if pause ends today (waiting for work hours to start scenario)
+      // Don't clear if pause extends to tomorrow (manual "pause until tomorrow" scenario)
+      const endParts = userWorkhours.end.split(':');
+      let shouldClearPause = true;
+      
+      if (pauseState.endTime && endParts.length >= 2) {
+        const endHour = parseInt(endParts[0], 10);
+        const endMinute = parseInt(endParts[1], 10);
+        
+        if (!isNaN(endHour) && !isNaN(endMinute)) {
+          const todayWorkHoursEnd = new Date(now);
+          todayWorkHoursEnd.setHours(endHour, endMinute, 0, 0);
+          
+          // Only clear pause if it ends today or earlier (automatic pause scenario)
+          // If pause ends beyond today's work hours end, it's a manual "pause until tomorrow"
+          shouldClearPause = pauseState.endTime <= todayWorkHoursEnd;
+        }
+      }
+      
+      if (shouldClearPause) {
+        // In work hours but paused due to work-hours - should be active
+        _clearPauseStateAndCheckRecording();
+        // Clear manual override when work hours naturally start
+        manualOverrideWorkHours = false;
+      }
     } else if (isActive && !paused && manualOverrideWorkHours) {
       // Work hours started naturally while user had manual override - clear it
       manualOverrideWorkHours = false;
