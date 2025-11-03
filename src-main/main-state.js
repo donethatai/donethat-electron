@@ -362,7 +362,8 @@ function resume() {
   // Check if we should be paused based on work hours when app starts
   // This handles the case where user is already authenticated and it's past work hours
   const now = new Date();
-  if (!isActiveWorkPeriod(now) && !isPaused()) {
+  // Respect manual override: do not auto-pause outside work hours if user manually resumed
+  if (!isActiveWorkPeriod(now) && !isPaused() && !manualOverrideWorkHours) {
     pauseUntilNextWorkPeriod(mainWindow, true); // silent=true to avoid notification on startup
   }
   
