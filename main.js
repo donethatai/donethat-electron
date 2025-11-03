@@ -235,8 +235,32 @@ if (app.isPackaged && !DEBUG) {
 
 // Configure logging based on environment
 if (app.isPackaged) {
-  // In production: only show warnings and errors
-  log.transports.console.level = 'warn'
+  // In production: only show warnings and errors (to console when safe)
+  const isLinux = process.platform === 'linux'
+  let hasAttachedConsole = false
+  try {
+    const tty = require('tty')
+    hasAttachedConsole = tty.isatty(1) || tty.isatty(2)
+  } catch (_) {}
+
+  if (isLinux && !hasAttachedConsole) {
+    // No TTY → disable console transport to avoid EPIPE
+    log.transports.console.level = false
+    // Also redirect any raw stdout/stderr writes to the file transport
+    try {
+      const fs = require('fs')
+      const logFilePath = log.transports.file.getFile().path
+      const stream = fs.createWriteStream(logFilePath, { flags: 'a' })
+      const safeWrite = (chunk) => {
+        try { stream.write(Buffer.isBuffer(chunk) ? chunk : String(chunk)) } catch (_) {}
+      }
+      // Replace low-level writers to avoid EPIPE from any dependency
+      try { process.stdout.write = safeWrite } catch (_) {}
+      try { process.stderr.write = safeWrite } catch (_) {}
+    } catch (_) {}
+  } else {
+    log.transports.console.level = 'warn'
+  }
   log.transports.file.level = 'info'  // Still log info to file for troubleshooting
 } else {
   // In development: show all logs
