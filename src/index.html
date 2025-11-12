@@ -528,6 +528,35 @@
             </div>
           </div>
 
+          <div class="auth-card">
+            <div class="section-divider"><span class="section-divider-label">App exclusions</span></div>
+            <p class="text-sm text-gray-600 mb-4">Exclude specific apps from screenshots. Apps will be masked with gray fill. Use keywords to exclude apps only when specific windows are open.</p>
+            <div id="appExclusionsList" class="space-y-3 mb-3">
+              <!-- Exclusion entries will be added here dynamically -->
+            </div>
+            <button id="addAppExclusionBtn" class="btn-secondary text-xs py-1.5 px-3 mb-4">Add app</button>
+            <div class="grid grid-cols-2 items-center gap-4 mt-4">
+              <div>
+                <div class="text-base font-semibold text-gray-800">Test Exclusions</div>
+                <div class="text-xs text-gray-500 mt-1">Note: Apps must be active for at least 2 seconds to be considered</div>
+              </div>
+              <div>
+                <button id="testAppExclusions" class="btn-secondary w-full py-2.5 text-sm">Test</button>
+              </div>
+              <div id="appExclusionsTestResult" class="hidden col-span-2 mt-3">
+                <div class="p-3 rounded-lg border">
+                  <div class="flex items-center gap-2 mb-2">
+                    <div id="appExclusionsTestIcon" class="w-4 h-4"></div>
+                    <span id="appExclusionsTestMessage" class="text-sm font-medium"></span>
+                  </div>
+                  <div id="appExclusionsTestScreenshots" class="flex flex-wrap gap-2 mt-2">
+                    <!-- Screenshot thumbnails will be added here -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
             <div class="auth-card">
             <div class="section-divider"><span class="section-divider-label">App configuration</span></div>
             <p class="text-sm text-gray-600 mb-4">Choose your global chat hotkey.</p>

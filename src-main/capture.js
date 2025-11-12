@@ -2,6 +2,7 @@ const log = require('electron-log');
 const { captureScreenshot, getPreviousScreenshots } = require('./captureScreenshots');
 const { ipcMain, powerMonitor } = require('electron');
 const { isLocalProcessingAvailable, processDataLocally } = require('./processLocal');
+const { applyAppExclusions } = require('./screenshotMasking');
 
 // Firebase URL constant
 const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/captureScreenshot';
@@ -586,7 +587,7 @@ async function collectInputData(resetBuffers = true) {
         resetBuffers
       );
       
-      windowData = windowsCapture.processTimelineData(windowTimelineBuffer);
+      windowData = await windowsCapture.processTimelineData(windowTimelineBuffer);
       
       if (windowTimelineBuffer.length === 0 && windowsCapture.isTracking()) {
         log.warn('Window tracking is active but no data collected - possible issue with tracking');
@@ -829,6 +830,14 @@ async function captureAndSend(idToken) {
     if (!shouldDisableScreenshotsInMeetings()) {
       // Capture screenshots
       screenshots = await captureScreenshot();
+      
+      // Apply app exclusions if configured
+      try {
+        screenshots = await applyAppExclusions(screenshots);
+      } catch (error) {
+        // Non-critical: if masking fails, continue with unmasked screenshots
+        log.warn('Error applying app exclusions to screenshots:', error);
+      }
     }
 
     if (!screenshots || screenshots.length === 0) {
@@ -1004,6 +1013,12 @@ function startCaptureInterval() {
     windowStartRetryTimer = null;
   }
   windowStartRetryCount = 0;
+
+  // Start window tracking immediately if enabled (don't wait for first capture cycle)
+  // This is needed for app exclusions to work immediately
+  if (inputDataSettings.windows && !windowsCapture.isTracking()) {
+    _startWindowTracking();
+  }
 
   // Wait 1 minute before first capture
   initialCaptureDelayTimer = setTimeout(() => {

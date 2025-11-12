@@ -114,6 +114,8 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupTestLocalProcessing();
   // Set up dependency: disable screenshots in meetings requires microphone enabled
   setupMeetingScreenshotsDependency();
+  // Set up app exclusions listeners
+  setupAppExclusionsListeners();
   
   // Set up finish button (only when settings view is loaded)
   setTimeout(() => {
@@ -928,6 +930,302 @@ function setupHotkeyConfiguration() {
       console.error('Failed to set hotkey:', error);
     }
   });
+}
+
+// Set up app exclusions listeners
+function setupAppExclusionsListeners() {
+  const exclusionsList = document.getElementById('appExclusionsList');
+  const addBtn = document.getElementById('addAppExclusionBtn');
+  const testBtn = document.getElementById('testAppExclusions');
+  const testResult = document.getElementById('appExclusionsTestResult');
+  const testIcon = document.getElementById('appExclusionsTestIcon');
+  const testMessage = document.getElementById('appExclusionsTestMessage');
+  const testScreenshots = document.getElementById('appExclusionsTestScreenshots');
+  let testResultHideTimer = null;
+  
+  if (!exclusionsList || !addBtn) return;
+  
+  let exclusions = [];
+  
+  // Load exclusions on mount
+  (async () => {
+    try {
+      const result = await ipcRenderer.invoke('get-app-exclusions');
+      if (result && result.success) {
+        // Migrate old format (titlePattern) to new format (titlePatterns)
+        exclusions = (result.exclusions || []).map(exclusion => {
+          if (exclusion.titlePattern && !exclusion.titlePatterns) {
+            exclusion.titlePatterns = [exclusion.titlePattern];
+            delete exclusion.titlePattern;
+          } else if (!exclusion.titlePatterns) {
+            exclusion.titlePatterns = [];
+          }
+          return exclusion;
+        });
+        renderExclusionsList();
+      }
+    } catch (error) {
+      console.error('Error loading app exclusions:', error);
+    }
+  })();
+  
+  // Render exclusions list
+  function renderExclusionsList() {
+    exclusionsList.innerHTML = '';
+    exclusions.forEach((exclusion, index) => {
+      const entry = document.createElement('div');
+      entry.className = 'space-y-3 p-4 border border-gray-200 rounded-lg bg-white mb-3';
+      
+      const appNameRow = document.createElement('div');
+      appNameRow.className = '';
+      const appNameLabel = document.createElement('label');
+      appNameLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+      appNameLabel.textContent = 'App name';
+      
+      // Container for input and remove button
+      const appNameInputContainer = document.createElement('div');
+      appNameInputContainer.className = 'relative';
+      
+      const appNameInput = document.createElement('input');
+      appNameInput.type = 'text';
+      appNameInput.className = 'form-input text-xs py-1.5 pr-8';
+      appNameInput.placeholder = 'e.g., Slack, Chrome, Candy Crush';
+      appNameInput.value = exclusion.appName || '';
+      appNameInput.dataset.index = index;
+      appNameInput.dataset.field = 'appName';
+      
+      // Remove button (x) on the right
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 w-4 h-4 flex items-center justify-center text-sm';
+      removeBtn.dataset.index = index;
+      removeBtn.innerHTML = '×';
+      removeBtn.title = 'Remove exclusion';
+      
+      appNameInputContainer.appendChild(appNameInput);
+      appNameInputContainer.appendChild(removeBtn);
+      appNameRow.appendChild(appNameLabel);
+      appNameRow.appendChild(appNameInputContainer);
+      
+      const titlePatternRow = document.createElement('div');
+      titlePatternRow.className = '';
+      const titlePatternLabel = document.createElement('label');
+      titlePatternLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+      titlePatternLabel.textContent = 'Window name keywords (optional)';
+      
+      // Convert old format (single string) to new format (array)
+      let titlePatterns = exclusion.titlePatterns || [];
+      if (exclusion.titlePattern && !titlePatterns.length) {
+        titlePatterns = [exclusion.titlePattern];
+      }
+      if (!Array.isArray(titlePatterns)) {
+        titlePatterns = [];
+      }
+      
+      // Container for chips and input
+      const titlePatternContainer = document.createElement('div');
+      titlePatternContainer.className = 'flex flex-wrap gap-2 p-1.5 border border-gray-300 rounded min-h-[32px] items-center';
+      titlePatternContainer.dataset.index = index;
+      
+      // Render chips
+      const renderChips = () => {
+        // Clear existing chips (but keep input)
+        const existingChips = titlePatternContainer.querySelectorAll('.title-pattern-chip');
+        existingChips.forEach(chip => chip.remove());
+        
+        // Add chips
+        titlePatterns.forEach((pattern, patternIndex) => {
+          if (!pattern || !pattern.trim()) return;
+          
+          const chip = document.createElement('div');
+          chip.className = 'title-pattern-chip inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm';
+          
+          const chipText = document.createElement('span');
+          chipText.textContent = pattern;
+          
+          const chipRemove = document.createElement('button');
+          chipRemove.type = 'button';
+          chipRemove.className = 'text-gray-500 hover:text-gray-700 ml-1';
+          chipRemove.innerHTML = '×';
+          chipRemove.addEventListener('click', () => {
+            // Find the current index of this pattern (in case array changed)
+            const currentIndex = titlePatterns.indexOf(pattern);
+            if (currentIndex !== -1) {
+              titlePatterns.splice(currentIndex, 1);
+              exclusions[index].titlePatterns = titlePatterns.filter(p => p && p.trim());
+              renderChips();
+              saveExclusions();
+            }
+          });
+          
+          chip.appendChild(chipText);
+          chip.appendChild(chipRemove);
+          titlePatternContainer.insertBefore(chip, titlePatternInput);
+        });
+      };
+      
+      // Input for adding new patterns
+      const titlePatternInput = document.createElement('input');
+      titlePatternInput.type = 'text';
+      titlePatternInput.className = 'flex-1 min-w-[120px] border-0 outline-none bg-transparent text-xs';
+      titlePatternInput.placeholder = titlePatterns.length === 0 ? 'e.g. budget, John, incognito' : 'Add another keyword...';
+      titlePatternInput.dataset.index = index;
+      
+      titlePatternInput.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter' && titlePatternInput.value.trim()) {
+          e.preventDefault();
+          const newPattern = titlePatternInput.value.trim();
+          if (!titlePatterns.includes(newPattern)) {
+            titlePatterns.push(newPattern);
+            exclusions[index].titlePatterns = titlePatterns;
+            titlePatternInput.value = '';
+            renderChips();
+            await saveExclusions();
+          }
+        }
+      });
+      
+      titlePatternInput.addEventListener('blur', async () => {
+        // Also add on blur if there's a value
+        if (titlePatternInput.value.trim() && !titlePatterns.includes(titlePatternInput.value.trim())) {
+          titlePatterns.push(titlePatternInput.value.trim());
+          exclusions[index].titlePatterns = titlePatterns;
+          titlePatternInput.value = '';
+          renderChips();
+          await saveExclusions();
+        }
+      });
+      
+      titlePatternContainer.appendChild(titlePatternInput);
+      titlePatternRow.appendChild(titlePatternLabel);
+      titlePatternRow.appendChild(titlePatternContainer);
+      
+      // Initial render of chips
+      renderChips();
+      
+      entry.appendChild(appNameRow);
+      entry.appendChild(titlePatternRow);
+      exclusionsList.appendChild(entry);
+    });
+    
+    // Add event listeners for app name inputs only (title patterns handled separately)
+    exclusionsList.querySelectorAll('input[data-field="appName"]').forEach(input => {
+      input.addEventListener('blur', async () => {
+        const index = parseInt(input.dataset.index);
+        if (exclusions[index]) {
+          exclusions[index].appName = input.value.trim() || null;
+          if (!exclusions[index].appName) {
+            // Remove if app name is empty
+            exclusions.splice(index, 1);
+            renderExclusionsList();
+          } else {
+            await saveExclusions();
+          }
+        }
+      });
+    });
+    
+    // Add event listeners for remove buttons (x buttons in app name inputs)
+    exclusionsList.querySelectorAll('button[data-index]').forEach(btn => {
+      if (btn.textContent === '×') {
+        btn.addEventListener('click', async () => {
+          const index = parseInt(btn.dataset.index);
+          exclusions.splice(index, 1);
+          renderExclusionsList();
+          await saveExclusions();
+        });
+      }
+    });
+  }
+  
+  // Save exclusions
+  async function saveExclusions() {
+    try {
+      const result = await ipcRenderer.invoke('save-app-exclusions', exclusions);
+      if (!result || !result.success) {
+        console.error('Error saving app exclusions:', result?.error);
+        showBanner(`Error saving exclusions: ${result?.error || 'Unknown error'}`, { title: 'Settings', sticky: true });
+      }
+    } catch (error) {
+      console.error('Error saving app exclusions:', error);
+      showBanner(`Error saving exclusions: ${error.message}`, { title: 'Settings', sticky: true });
+    }
+  }
+  
+  // Add new exclusion
+  addBtn.addEventListener('click', () => {
+    exclusions.push({ appName: '', titlePatterns: [] });
+    renderExclusionsList();
+    // Focus the new app name input
+    const newInput = exclusionsList.querySelector(`input[data-index="${exclusions.length - 1}"][data-field="appName"]`);
+    if (newInput) {
+      newInput.focus();
+    }
+  });
+  
+  // Test button
+  if (testBtn && testResult && testIcon && testMessage && testScreenshots) {
+    testBtn.addEventListener('click', async () => {
+      try {
+        testBtn.disabled = true;
+        testBtn.textContent = 'Testing...';
+        testResult.classList.add('hidden');
+        testScreenshots.innerHTML = '';
+        if (testResultHideTimer) { 
+          clearTimeout(testResultHideTimer); 
+          testResultHideTimer = null; 
+        }
+        
+        const result = await ipcRenderer.invoke('test-app-exclusions');
+        const success = result && result.success;
+        
+        // Update test result display
+        testIcon.innerHTML = success
+          ? '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'
+          : '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+        
+        testResult.classList.remove('border-gray-300', 'border-green-200', 'border-red-200');
+        testResult.classList.add(success ? 'border-green-200' : 'border-red-200');
+        
+        testMessage.textContent = result?.message || (success ? 'Test successful' : 'Test failed');
+        
+        // Display screenshot thumbnails if available
+        if (success && result.screenshots && result.screenshots.length > 0) {
+          result.screenshots.forEach((screenshot, index) => {
+            const img = document.createElement('img');
+            img.src = screenshot;
+            img.className = 'max-w-[200px] max-h-[150px] border border-gray-300 rounded';
+            img.alt = `Screenshot ${index + 1}`;
+            testScreenshots.appendChild(img);
+          });
+        }
+        
+        testResult.classList.remove('hidden');
+        // Auto-hide after 30 seconds (longer for screenshots)
+        testResultHideTimer = setTimeout(() => {
+          try { testResult.classList.add('hidden'); } catch (_) {}
+          testResultHideTimer = null;
+        }, 30000);
+        
+      } catch (error) {
+        console.error('Error testing app exclusions:', error);
+        
+        testIcon.innerHTML = '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+        testResult.classList.remove('border-gray-300', 'border-green-200', 'border-red-200');
+        testResult.classList.add('border-red-200');
+        testMessage.textContent = `Error: ${error.message}`;
+        testResult.classList.remove('hidden');
+        // Auto-hide after 10 seconds
+        testResultHideTimer = setTimeout(() => {
+          try { testResult.classList.add('hidden'); } catch (_) {}
+          testResultHideTimer = null;
+        }, 10000);
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Test';
+      }
+    });
+  }
 }
 
 // Set up test local processing button

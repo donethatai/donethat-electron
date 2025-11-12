@@ -1,11 +1,75 @@
 const log = require('electron-log')
-const { activeWindow } = require('get-windows')
-const { systemPreferences, ipcMain, shell, app } = require('electron')
+const { activeWindow, openWindows } = require('get-windows')
+const { systemPreferences, ipcMain, shell, app, screen } = require('electron')
+
+// Helper to normalize app name
+function normalizeAppName(appName) {
+  if (!appName) return ''
+  return appName.toLowerCase().replace(/\.(app|exe)$/i, '').trim()
+}
+
+// Helper to create a unique window identifier for z-order tracking
+function getWindowId(window) {
+  if (!window || !window.bounds) return null
+  const normalizedApp = normalizeAppName(window.appName)
+  const b = window.bounds
+  const title = window.title || ''
+  // Use app name + title + bounds to uniquely identify a window
+  return `${normalizedApp}|${title}|${b.x},${b.y},${b.width},${b.height}`
+}
+
+// Helper to get display index for window bounds
+function getDisplayIndexForBounds(bounds) {
+  if (!bounds) return 0
+  try {
+    const matchingDisplay = screen.getDisplayMatching(bounds)
+    if (matchingDisplay) {
+      const displays = screen.getAllDisplays()
+      const displayIndex = displays.findIndex(display => display.id === matchingDisplay.id)
+      return displayIndex >= 0 ? displayIndex : 0
+    }
+    return 0
+  } catch (error) {
+    log.error('Error getting display index for bounds:', error)
+    return 0
+  }
+}
+
+/**
+ * Sort windows by approximate z-order using z-order cache
+ * The cache is updated every 2 seconds by recordCurrentWindow(), so the active window
+ * will have the most recent timestamp and naturally sort to the top
+ * @param {Array} windows All windows
+ * @returns {Array} Windows sorted by approximate z-order (topmost first)
+ */
+function sortWindowsByZOrder(windows) {
+  const activityMap = zOrderCache || new Map()
+  
+  // Sort windows by most recent activity (higher timestamp = more recent = higher z-order)
+  // Windows with no activity (never active) get 0, so they'll be sorted below recently active windows
+  const sorted = [...windows].sort((a, b) => {
+    const aWindowId = getWindowId(a)
+    const bWindowId = getWindowId(b)
+    const aActivity = aWindowId ? (activityMap.get(aWindowId) || 0) : 0
+    const bActivity = bWindowId ? (activityMap.get(bWindowId) || 0) : 0
+    if (aActivity !== bActivity) {
+      // Descending order: more recent activity (higher timestamp) = higher z-order
+      // This means recently active windows are on top of never-active windows
+      return bActivity - aActivity
+    }
+    
+    // Fallback: maintain original order
+    return 0
+  })
+  
+  return sorted
+}
 
 // Track active windows
 let isTracking = false
 let windowTimeline = []
 let trackingInterval = null
+let getAllVisibleWindowsInProgress = false
 const INITIAL_TRACKING_INTERVAL_MS = 2000 // Base polling interval (2 seconds)
 let currentTrackingIntervalMs = INITIAL_TRACKING_INTERVAL_MS // Current interval that can change with backoff
 const MAX_BACKOFF_MS = 60000 // Maximum backoff (1 minute)
@@ -21,6 +85,11 @@ let firstPermissionDeniedAt = 0 // Timestamp when permission first went false; 0
 // References to communicate permission/state changes without prompting the OS
 let stateManagerRef = null
 let mainWindowRef = null
+
+// Separate cache for z-order approximation: window ID -> last activity timestamp
+// Window ID is: normalizedAppName|bounds.x,bounds.y,bounds.width,bounds.height
+// This is independent of the main timeline and never gets cleared
+let zOrderCache = new Map() // Map<windowId, timestamp>
 
 // Helper: call activeWindow with a hard timeout to avoid hangs/crashes
 async function safeActiveWindow(timeoutMs = 300) {
@@ -154,12 +223,125 @@ async function startTracking() {
 }
 
 /**
+ * Reconstruct windows from z-order cache and timeline when openWindows() fails
+ * @private
+ */
+function reconstructWindowsFromCache() {
+  const reconstructed = []
+  
+  // Parse windowId to extract app name, title, and bounds
+  // Format: normalizedAppName|title|bounds.x,bounds.y,bounds.width,bounds.height
+  for (const [windowId, timestamp] of zOrderCache) {
+    try {
+      const parts = windowId.split('|')
+      if (parts.length >= 3) {
+        const normalizedAppName = parts[0]
+        const title = parts[1]
+        const boundsStr = parts[2]
+        const boundsParts = boundsStr.split(',')
+        
+        if (boundsParts.length === 4) {
+          const bounds = {
+            x: parseInt(boundsParts[0], 10),
+            y: parseInt(boundsParts[1], 10),
+            width: parseInt(boundsParts[2], 10),
+            height: parseInt(boundsParts[3], 10)
+          }
+          
+          // Validate bounds
+          if (!isNaN(bounds.x) && !isNaN(bounds.y) && !isNaN(bounds.width) && !isNaN(bounds.height) &&
+              bounds.width > 0 && bounds.height > 0) {
+            // Get screen index from bounds
+            const screenIndex = getDisplayIndexForBounds(bounds)
+            
+            // Try to find matching entry in timeline for executable
+            let executable = 'unknown'
+            if (windowTimeline.length > 0) {
+              const matchingEntry = windowTimeline.find(entry => {
+                const entryAppName = normalizeAppName(entry.app || '')
+                const entryTitle = entry.title || 'Unknown'
+                return entryAppName === normalizedAppName && entryTitle === title
+              })
+              if (matchingEntry && matchingEntry.executable) {
+                executable = matchingEntry.executable
+              }
+            }
+            
+            reconstructed.push({
+              appName: normalizedAppName,
+              title: title,
+              executable: executable,
+              bounds: bounds,
+              screen: screenIndex,
+              minimized: false,
+              hidden: false
+            })
+          }
+        }
+      }
+    } catch (err) {
+      // Skip invalid entries
+      continue
+    }
+  }
+  
+  return reconstructed
+}
+
+/**
+ * Process raw windows from openWindows() into our format with bounds and screen info
+ * @private
+ */
+function processWindows(windows) {
+  const processedWindows = []
+  for (const window of windows) {
+    try {
+      // Skip minimized or hidden windows
+      if (window.minimized || window.hidden) {
+        continue
+      }
+      
+      const bounds = window.bounds
+      if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
+        continue
+      }
+      
+      // Get screen index using Electron's getDisplayMatching
+      const screenIndex = getDisplayIndexForBounds(bounds)
+      
+      const appName = window.owner?.name || window.owner?.processName || 'Unknown'
+      const title = window.title || 'Unknown'
+      const executable = window.owner?.path || 'unknown'
+      
+      processedWindows.push({
+        appName,
+        title,
+        executable,
+        bounds,
+        screen: screenIndex,
+        minimized: false,
+        hidden: false
+      })
+    } catch (error) {
+      log.warn('Error processing window:', error)
+    }
+  }
+  return processedWindows
+}
+
+/**
  * Tracks the active window and adds it to the timeline
+ * Also enumerates all visible windows in parallel
  * @private
  */
 async function recordCurrentWindow() {
   // Prevent overlapping calls - if a previous call is still processing, skip this one
   if (processingRecordWindow) {
+    return
+  }
+  
+  // Pause if getAllVisibleWindows is in progress to avoid conflicts
+  if (getAllVisibleWindowsInProgress) {
     return
   }
   
@@ -231,13 +413,33 @@ async function recordCurrentWindow() {
       return
     }
     
-    // Record window information
+    // Record window information with bounds if available
+    const bounds = activeWindowInfo.bounds
+    const screenIndex = bounds ? getDisplayIndexForBounds(bounds) : null
+    
+    const appName = activeWindowInfo.owner?.name || activeWindowInfo.owner?.processName || 'Unknown'
+    
     windowTimeline.push({
       timestamp: new Date().toISOString(),
       title: activeWindowInfo.title || 'Unknown',
-      app: activeWindowInfo.owner?.name || activeWindowInfo.owner?.processName || 'Unknown',
-      executable: activeWindowInfo.owner?.path || 'unknown'
+      app: appName,
+      executable: activeWindowInfo.owner?.path || 'unknown',
+      bounds: bounds,
+      screen: screenIndex
     })
+    
+    // Update z-order cache with this specific window (never cleared, just updated with latest activity)
+    if (bounds) {
+      const windowObj = {
+        appName: appName,
+        title: activeWindowInfo.title || 'Unknown',
+        bounds: bounds
+      }
+      const windowId = getWindowId(windowObj)
+      if (windowId) {
+        zOrderCache.set(windowId, Date.now())
+      }
+    }
     
     // Keep timeline at a reasonable size (store at most 1 hour of data)
     const MAX_ENTRIES = 60 * 60 / (INITIAL_TRACKING_INTERVAL_MS/1000)
@@ -285,9 +487,15 @@ function getTimelineBuffer(timeWindowMs = 5 * 60 * 1000, resetAfterCollection = 
   const cutoffTime = now - timeWindowMs
   
   // Filter timeline to only include entries within the time window
-  const result = windowTimeline.filter(entry => {
+  const filtered = windowTimeline.filter(entry => {
     const entryTime = new Date(entry.timestamp).getTime()
     return entryTime >= cutoffTime
+  })
+  
+  // Remove bounds and screen from timeline entries before returning
+  const result = filtered.map(entry => {
+    const { bounds, screen, ...rest } = entry
+    return rest
   })
   
   // If requested, clear the timeline after collection to avoid duplicating data
@@ -317,9 +525,75 @@ function stopTracking() {
 
 /**
  * Clear the window timeline data without stopping tracking
+ * Note: This does NOT clear the z-order cache, which is separate
  */
 function clearTimeline() {
   windowTimeline = []
+}
+
+/**
+ * Check if a window should be excluded based on app exclusions
+ * Works with both window objects (from getAllVisibleWindows) and window periods (from processTimelineData)
+ * @param {Object} window Window object or window period with appName/name and title
+ * @param {Array} excludedApps Array of exclusion rules
+ * @returns {boolean} True if window should be excluded
+ */
+function shouldExcludeWindow(window, excludedApps) {
+  if (!excludedApps || excludedApps.length === 0) return false
+  
+  // Get app name from various possible fields (window objects use appName, window periods use name)
+  const appName = (window.appName || window.app || window.name || window.owner?.name || window.owner?.processName || '').trim()
+  const title = (window.title || '').trim()
+  
+  if (!appName) {
+    return false
+  }
+  
+  for (const exclusion of excludedApps) {
+    if (!exclusion.appName || !exclusion.appName.trim()) continue
+    
+    const exclusionAppName = exclusion.appName.trim().toLowerCase()
+    const windowAppName = appName.toLowerCase()
+    
+    // Normalize app names for comparison
+    const normalizedExclusion = normalizeAppName(exclusionAppName)
+    const normalizedWindow = normalizeAppName(windowAppName)
+    
+    // Check if normalized names match or contain each other
+    const appMatches = normalizedWindow === normalizedExclusion ||
+                       normalizedWindow.includes(normalizedExclusion) ||
+                       normalizedExclusion.includes(normalizedWindow) ||
+                       windowAppName.includes(exclusionAppName) ||
+                       exclusionAppName.includes(windowAppName)
+    
+    if (!appMatches) {
+      continue
+    }
+    
+    // Handle both old format (titlePattern) and new format (titlePatterns)
+    let titlePatterns = exclusion.titlePatterns || []
+    if (exclusion.titlePattern && !titlePatterns.length) {
+      // Migrate old format
+      titlePatterns = [exclusion.titlePattern]
+    }
+    
+    // If no title patterns, exclude all windows of this app
+    if (!titlePatterns || titlePatterns.length === 0) {
+      return true
+    }
+    
+    // Check if title matches any of the patterns (case-insensitive, substring)
+    const titleLower = title.toLowerCase()
+    for (const pattern of titlePatterns) {
+      if (!pattern || !pattern.trim()) continue
+      const patternLower = pattern.trim().toLowerCase()
+      if (titleLower.includes(patternLower)) {
+        return true
+      }
+    }
+  }
+  
+  return false
 }
 
 /**
@@ -327,7 +601,7 @@ function clearTimeline() {
  * @param {Array} timeline Raw timeline data
  * @returns {Array} Processed timeline data with window usage periods
  */
-function processTimelineData(timeline) {
+async function processTimelineData(timeline) {
   if (!timeline || !Array.isArray(timeline) || timeline.length === 0) {
     return []
   }
@@ -376,6 +650,23 @@ function processTimelineData(timeline) {
     windows.push(currentWindow)
   }
   
+  // Filter out excluded apps
+  try {
+    const { default: Store } = await import('electron-store')
+    const { app } = require('electron')
+    const store = new Store({ name: 'donethat-config', cwd: app.getPath('userData') })
+    const exclusions = store.get('appExclusions') || []
+    
+    if (exclusions && exclusions.length > 0) {
+      return windows.filter(windowPeriod => {
+        return !shouldExcludeWindow(windowPeriod, exclusions)
+      })
+    }
+  } catch (error) {
+    // Non-critical: if exclusion filtering fails, continue with all window data
+    log.warn('Error filtering excluded apps from window activity:', error)
+  }
+  
   return windows
 }
 
@@ -393,6 +684,96 @@ function isTrackingActive() {
  */
 function getCurrentInterval() {
   return currentTrackingIntervalMs;
+}
+
+/**
+ * Get all visible windows with current bounds and screen info, sorted by z-order (topmost first)
+ * Updates z-order cache with current active window to ensure it has the most recent timestamp
+ * @returns {Promise<Array>} Array of window objects with appName, title, executable, bounds, screen, sorted by z-order
+ */
+async function getAllVisibleWindows() {  
+  // Check permissions
+  const hasPerm = await checkPermissions()
+  if (!hasPerm) {
+    return []
+  }
+  
+  // Set flag to pause recordCurrentWindow to avoid conflicts
+  getAllVisibleWindowsInProgress = true
+  
+  try {
+    // Wait a second to let any in-flight recordCurrentWindow calls finish
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // Enumerate windows on-demand
+    let windows = []
+    try {
+      windows = await openWindows()
+    } catch (error) {
+      log.warn('Error enumerating windows:', error)
+      
+      // Try to reconstruct windows from z-order cache and timeline
+      windows = reconstructWindowsFromCache()
+    }
+    
+    // Process windows
+    const processedWindows = processWindows(windows)
+    
+    // Update z-order cache with latest active window from timeline
+    // Try to match it to one of the visible windows by app name and title
+    if (windowTimeline.length > 0) {
+      const latestEntry = windowTimeline[windowTimeline.length - 1]
+      if (latestEntry && latestEntry.app) {
+        const activeAppName = latestEntry.app
+        const activeTitle = latestEntry.title || 'Unknown'
+        
+        // Find matching window in processed windows (match by app name and title)
+        const matchingWindow = processedWindows.find(w => {
+          const appMatches = normalizeAppName(w.appName) === normalizeAppName(activeAppName)
+          const titleMatches = (w.title || 'Unknown') === activeTitle
+          return appMatches && titleMatches
+        })
+        
+        if (matchingWindow) {
+          const windowId = getWindowId(matchingWindow)
+          if (windowId) {
+            zOrderCache.set(windowId, Date.now())
+          }
+        }
+      }
+    }
+    
+    // Add z-order activity information to each window (after cache update)
+    for (const window of processedWindows) {
+      const windowId = getWindowId(window)
+      if (windowId) {
+        window.hasActivity = zOrderCache.has(windowId)
+      } else {
+        window.hasActivity = false
+      }
+    }
+    
+    // Clean up z-order cache: remove windows that are no longer visible
+    const visibleWindowIds = new Set()
+    for (const window of processedWindows) {
+      const windowId = getWindowId(window)
+      if (windowId) {
+        visibleWindowIds.add(windowId)
+      }
+    }
+    
+    // Remove any cache entries for windows that are no longer visible
+    for (const [windowId] of zOrderCache) {
+      if (!visibleWindowIds.has(windowId)) {
+        zOrderCache.delete(windowId)
+      }
+    }
+    
+    return sortWindowsByZOrder(processedWindows)
+  } finally {
+    // Clear flag to allow recordCurrentWindow to resume
+    getAllVisibleWindowsInProgress = false
+  }
 }
 
 // Initialize Windows permission handling
@@ -450,5 +831,8 @@ module.exports = {
   processTimelineData,
   isTracking: isTrackingActive,
   getCurrentInterval,
-  initWindowsPermissionHandling
+  getAllVisibleWindows,
+  initWindowsPermissionHandling,
+  normalizeAppName,
+  shouldExcludeWindow
 } 

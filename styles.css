@@ -104,8 +104,33 @@
 
 /* Form input */
 .form-input {
-  @apply w-full border border-black p-1.5 rounded text-sm focus:outline-none focus:ring-1 transition duration-200;
+  @apply w-full border border-gray-300 p-1.5 rounded text-sm focus:outline-none focus:ring-1 transition duration-200;
   --tw-ring-color: var(--color-primary);
+}
+
+/* Larger form input for app exclusions */
+.form-input-large {
+  @apply w-full border border-gray-300 rounded text-base py-2.5 px-3 focus:outline-none focus:ring-1 transition duration-200;
+  --tw-ring-color: var(--color-primary);
+}
+
+/* Title pattern chip styling */
+.title-pattern-chip {
+  user-select: none;
+}
+
+.title-pattern-chip button {
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: transparent;
+  border: none;
 }
 
 /* Form label */
@@ -1029,7 +1054,14 @@ body {
   margin-right: 0;
 }
 
-/* Settings: ensure placeholders are a neutral grey for local processing inputs */
+/* Settings: ensure placeholders are a neutral grey for all inputs */
+#settingsView input::placeholder,
+#settingsView textarea::placeholder {
+  color: #9ca3af; /* gray-400 */
+  opacity: 1;     /* ensure consistent color across browsers */
+}
+
+/* Specific overrides for local processing inputs (keep for backwards compatibility) */
 #settingsView #geminiApiKeyInput::placeholder,
 #settingsView #openaiEndpointInput::placeholder,
 #settingsView #openaiModelInput::placeholder,

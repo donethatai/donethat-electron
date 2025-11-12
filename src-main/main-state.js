@@ -1196,6 +1196,100 @@ function setupIPCHandlers() {
       return false;
     }
   });
+
+  // App exclusions handlers
+  ipcMain.handle('get-app-exclusions', async (event) => {
+    try {
+      const exclusions = safeStoreOperation(() => {
+        if (store) {
+          return store.get('appExclusions') || [];
+        } else {
+          return [];
+        }
+      }, 'get app exclusions');
+      return { success: true, exclusions };
+    } catch (error) {
+      log.error('Error getting app exclusions:', error);
+      return { success: false, error: error.message, exclusions: [] };
+    }
+  });
+
+  ipcMain.handle('save-app-exclusions', async (event, exclusions) => {
+    try {
+      if (!Array.isArray(exclusions)) {
+        throw new Error('Exclusions must be an array');
+      }
+      safeStoreOperation(() => {
+        if (store) {
+          store.set('appExclusions', exclusions);
+        } else {
+          throw new Error('Store not initialized');
+        }
+      }, 'save app exclusions');
+      return { success: true };
+    } catch (error) {
+      log.error('Error saving app exclusions:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('test-app-exclusions', async (event) => {
+    try {
+      const { applyAppExclusions } = require('./screenshotMasking');
+      const windowsCapture = require('./captureWindows');
+      const { captureScreenshot } = require('./captureScreenshots');
+
+      // Check if exclusions are configured
+      const exclusions = safeStoreOperation(() => {
+        if (store) {
+          return store.get('appExclusions') || [];
+        } else {
+          return [];
+        }
+      }, 'get app exclusions for test');
+
+      if (!exclusions || exclusions.length === 0) {
+        return { success: false, message: 'No app exclusions configured' };
+      }
+
+      // Capture fresh screenshots
+      const screenshots = await captureScreenshot();
+      if (!screenshots || screenshots.length === 0) {
+        return { success: false, message: 'Failed to capture screenshots' };
+      }
+
+      // Check if we have permission to access windows
+      const hasPermission = await windowsCapture.checkPermissions();
+      if (!hasPermission) {
+        return { success: false, message: 'Window tracking permission is not granted. Please enable "Active applications" in Required permissions and grant system permission.' };
+      }
+
+      // Apply masking (this will load exclusions from store and gather all needed data, including window enumeration)
+      const maskedScreenshots = await applyAppExclusions(screenshots);
+
+      // Scale down to thumbnails (max 200px width)
+      const sharp = require('sharp');
+      const thumbnails = await Promise.all(maskedScreenshots.map(async (screenshot) => {
+        try {
+          const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '');
+          const buffer = Buffer.from(base64Data, 'base64');
+          const thumbnailBuffer = await sharp(buffer)
+            .resize(200, null, { withoutEnlargement: true })
+            .jpeg({ quality: 70 })
+            .toBuffer();
+          return `data:image/jpeg;base64,${thumbnailBuffer.toString('base64')}`;
+        } catch (error) {
+          log.error('Error creating thumbnail:', error);
+          return screenshot;
+        }
+      }));
+
+      return { success: true, screenshots: thumbnails };
+    } catch (error) {
+      log.error('Error testing app exclusions:', error);
+      return { success: false, message: error.message };
+    }
+  });
 }
 
 /**
