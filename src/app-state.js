@@ -3,7 +3,7 @@ const { ipcRenderer } = require('electron');
 const { onAuthStateChanged } = require('firebase/auth');
 const { firebaseApp, functions, auth } = require('./firebase.js');
 const { getFirestore } = require('firebase/firestore');
-const { collection, query, orderBy, onSnapshot } = require('@firebase/firestore');
+const { collection, query, orderBy, where, onSnapshot } = require('@firebase/firestore');
 const { httpsCallable } = require('firebase/functions');
 const state = {
   // Authentication state
@@ -197,10 +197,11 @@ function startChatListeners() {
   const db = getFirestore(firebaseApp, 'europe-west1');
   const q = query(
     collection(db, `chats/${auth.currentUser.uid}/chats`),
+    where('channel', '==', 'desktop'),
     orderBy('updatedAt', 'desc')
   );
 
-  state.stopChatListener = onSnapshot(q, (snap) => {
+  state.stopChatListener = onSnapshot(q, async (snap) => {
     const docs = snap.docs;
     if (!docs || docs.length === 0) {
       state.currentChatId = null;
@@ -217,10 +218,20 @@ function startChatListeners() {
     
     if (newChatId !== state.currentChatId && chatCreatedAt > oneMinuteAgo) {
       state.currentChatId = newChatId;
-      // Clear chat window first, then show overlay (only if user has valid access)
+      // Clear chat window first, then show overlay (only if user has valid access and not in DND)
       try { ipcRenderer.send('chat:set-messages', []); } catch (_) {}
       if (hasValidAccess()) {
-        try { ipcRenderer.send('overlay:show-if-hidden'); } catch (_) {}
+        // Check do not disturb mode before showing overlay
+        try {
+          const isDND = await ipcRenderer.invoke('check-do-not-disturb');
+          if (!isDND) {
+            try { ipcRenderer.send('overlay:show-if-hidden'); } catch (_) {}
+          }
+        } catch (error) {
+          // If check fails, default to showing overlay
+          console.error('[CHAT] Error checking do not disturb:', error);
+          try { ipcRenderer.send('overlay:show-if-hidden'); } catch (_) {}
+        }
       }
       subscribeToMessages(state.currentChatId);
     }
@@ -252,7 +263,8 @@ function setupChatIpcBridge() {
       const result = await sendMessageFn({
         text: messageData.text,
         images: messageData.images || [],
-        chatId: state.currentChatId
+        chatId: state.currentChatId,
+        channel: 'desktop'
       });
       if (result.data?.chatId && result.data?.createdNewChat) {
         state.currentChatId = result.data.chatId;

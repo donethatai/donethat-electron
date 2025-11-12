@@ -1,6 +1,6 @@
 {
   "name": "donethat",
-  "version": "1.4.7-stable",
+  "version": "1.4.8-beta.1",
   "description": "DoneThat",
   "main": "main.js",
   "scripts": {
@@ -75,10 +75,12 @@
     "electron-updater": "^6.6.2",
     "firebase": "^12.4.0",
     "get-windows": "^9.2.3",
+    "macos-notification-state": "^3.0.0",
     "node-fetch": "^3.3.2",
     "node-global-key-listener": "^0.3.0",
     "sharp": "^0.34.4",
-    "tailwindcss": "^4.1.15"
+    "tailwindcss": "^4.1.15",
+    "windows-notification-state": "^2.0.0"
   },
   "build": {
     "appId": "com.donethat.app",
