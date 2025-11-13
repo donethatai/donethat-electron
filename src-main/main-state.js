@@ -1126,17 +1126,24 @@ function setupIPCHandlers() {
 
       const screenshots = await require('./captureScreenshots').captureScreenshot();
 
-      // Check if we have local processing available
+      // Check if we have local processing available and determine which provider
       const { isLocalProcessingAvailable } = require('./processLocal');
       if (!await isLocalProcessingAvailable()) {
         return { success: false, message: 'No local processing configuration found. Set up Gemini API key or OpenAI-compatible endpoint first.' };
       }
 
+      // Determine which provider is configured (Gemini takes precedence)
+      const geminiResult = await getGeminiApiKey();
+      const openaiResult = await getOpenAICompatibleConfig();
+      const isGemini = geminiResult.success && geminiResult.apiKey;
+      const isOpenAI = !isGemini && openaiResult.success && openaiResult.config && openaiResult.config.endpoint;
+      const providerName = isGemini ? 'Gemini' : (isOpenAI ? 'OpenAI-Compatible' : 'Local');
+
       // Attempt with current token; on FIREBASE auth error, request refresh and retry once
       let token = idToken || null;
       try {
         await processDataLocally(token, screenshots, null, inputData, true);
-        return { success: true, message: 'Local processing test successful' };
+        return { success: true, message: `${providerName} test successful` };
       } catch (err) {
         const isFirebase = err && err.source === 'FIREBASE';
         const isAuth = isFirebase && (err.code === 'TOKEN_EXPIRED' || err.code === 'AUTH_ERROR' || err.status === 401 || err.status === 403);
@@ -1169,7 +1176,7 @@ function setupIPCHandlers() {
 
         // Retry once with refreshed token
         await processDataLocally(token, screenshots, null, inputData, true);
-        return { success: true, message: 'Local processing test successful' };
+        return { success: true, message: `${providerName} test successful` };
       }
     } catch (error) {
       log.error('Error in local processing test:', error);

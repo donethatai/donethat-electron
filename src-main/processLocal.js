@@ -152,7 +152,7 @@ async function initializeLLM(idToken, testMode = false) {
       const baseURL = openaiCompat.config.endpoint.replace(/\/$/, '');
       const outputSchema = config.outputSchema;
       const chat = new ChatOpenAI({
-        apiKey: openaiCompat.config.apiKey || undefined,
+        apiKey: openaiCompat.config.apiKey || '',
         model: openaiCompat.config.model,
         maxTokens: MAX_OUTPUT_TOKENS,
         maxRetries: testMode ? 0 : undefined,
