@@ -3,6 +3,19 @@
 process.env.ORT_LOGGING_LEVEL = '4'
 process.env.ORT_LOGGING_VERBOSE = '0'
 
+// Suppress GTK warnings/assertions on Linux (especially Fedora)
+// This prevents "gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET (widget)' failed" errors
+if (process.platform === 'linux') {
+  // Suppress GTK debug messages (prevents noisy assertion failures)
+  if (!process.env.G_MESSAGES_DEBUG) {
+    process.env.G_MESSAGES_DEBUG = ''
+  }
+  // Disable GTK CSS cache to avoid widget-related issues
+  if (!process.env.GTK_DEBUG) {
+    process.env.GTK_DEBUG = 'no-css-cache'
+  }
+}
+
 const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor, globalShortcut } = require('electron')
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
