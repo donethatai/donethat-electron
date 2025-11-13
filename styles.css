@@ -25,6 +25,13 @@
   --color-warning: #f59e0b;
 }
 
+/* Global placeholder text styling */
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-neutral-600); /* gray-500 */
+  opacity: 1; /* ensure consistent color across browsers */
+}
+
 /* Unified Notification Banner Styles */
 .banner-notification {
   @apply fixed top-0 left-0 right-0 z-50;
