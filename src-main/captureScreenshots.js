@@ -100,7 +100,6 @@ async function checkScreenCapturePermission() {
     
     // Skip if already grabbing (permission check should not block or interfere)
     if (isGrabbingInProgress) {
-      log.debug('Skipping permission check - capture in progress')
       // Return undefined/null to indicate "skipped" rather than false (which implies denied)
       // Caller should use cached state if this returns undefined
       return undefined
@@ -110,7 +109,6 @@ async function checkScreenCapturePermission() {
     // Set flag to prevent overlapping calls to desktopCapturer.getSources()
     isGrabbingInProgress = true
     try {
-      log.debug('Requesting screen sources for permission check')
       const sources = await desktopCapturer.getSources({
         types: ['screen'],
         thumbnailSize: { width: 1, height: 1 }
@@ -232,7 +230,6 @@ async function captureScreenshot() {
         const delay = await waitWithBackoff(attempt, totalWaited)
         if (delay === 0) break
         totalWaited += delay
-        log.debug(`Capture waiting for grab to complete (attempt ${attempt + 1}, waited ${totalWaited}ms)`)
         attempt++
       }
       
@@ -245,7 +242,6 @@ async function captureScreenshot() {
       // Use the standard Electron approach for other platforms
       isGrabbingInProgress = true
       try {
-        log.debug('Requesting screen sources for screenshot capture')
         const sources = await desktopCapturer.getSources({
           types: ['screen'],
           thumbnailSize: { width: 1920, height: 1080 }
