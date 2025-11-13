@@ -597,6 +597,21 @@ function shouldExcludeWindow(window, excludedApps) {
 }
 
 /**
+ * Check if a window's activity should be ignored based on app exclusions with ignoreActivity flag
+ * Works with both window objects (from getAllVisibleWindows) and window periods (from processTimelineData)
+ * @param {Object} window Window object or window period with appName/name and title
+ * @param {Array} excludedApps Array of exclusion rules
+ * @returns {boolean} True if window activity should be ignored
+ */
+function shouldIgnoreActivity(window, excludedApps) {
+  if (!excludedApps || excludedApps.length === 0) return false
+  
+  // Filter to only exclusions with ignoreActivity flag, then reuse shouldExcludeWindow
+  const ignoreActivityExclusions = excludedApps.filter(exclusion => exclusion.ignoreActivity === true)
+  return shouldExcludeWindow(window, ignoreActivityExclusions)
+}
+
+/**
  * Process timeline data into a more usable format
  * @param {Array} timeline Raw timeline data
  * @returns {Array} Processed timeline data with window usage periods
@@ -650,7 +665,7 @@ async function processTimelineData(timeline) {
     windows.push(currentWindow)
   }
   
-  // Filter out excluded apps
+  // Filter out windows with ignoreActivity flag set
   try {
     const { default: Store } = await import('electron-store')
     const { app } = require('electron')
@@ -659,12 +674,12 @@ async function processTimelineData(timeline) {
     
     if (exclusions && exclusions.length > 0) {
       return windows.filter(windowPeriod => {
-        return !shouldExcludeWindow(windowPeriod, exclusions)
+        return !shouldIgnoreActivity(windowPeriod, exclusions)
       })
     }
   } catch (error) {
     // Non-critical: if exclusion filtering fails, continue with all window data
-    log.warn('Error filtering excluded apps from window activity:', error)
+    log.warn('Error filtering ignored activity from window data:', error)
   }
   
   return windows

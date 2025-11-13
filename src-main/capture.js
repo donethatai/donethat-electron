@@ -579,6 +579,7 @@ async function collectInputData(resetBuffers = true) {
   }
   
   // Get window data
+  let hadWindowDataBeforeFiltering = false;
   if (inputDataSettings.windows) {
     try {
       // Reset timeline after collection
@@ -586,6 +587,9 @@ async function collectInputData(resetBuffers = true) {
         captureIntervalMinutes * 60 * 1000, 
         resetBuffers
       );
+      
+      // Track if we had window data before filtering
+      hadWindowDataBeforeFiltering = windowTimelineBuffer.length > 0;
       
       windowData = await windowsCapture.processTimelineData(windowTimelineBuffer);
       
@@ -660,6 +664,12 @@ async function collectInputData(resetBuffers = true) {
     if (inputDataSettings.keystrokes) captureErrors.keystrokes = true;
     if (inputDataSettings.windows) captureErrors.windows = true;
   }
+  
+  // Track if activity was filtered out completely (had data before but empty after)
+  const noAllowedActivity = hadWindowDataBeforeFiltering && 
+                           inputDataSettings.windows && 
+                           (!inputData.activity || inputData.activity.length === 0);
+  inputData.noAllowedActivity = noAllowedActivity;
   
   inputData.captureErrors = captureErrors;
   return inputData;
@@ -853,6 +863,16 @@ async function captureAndSend(idToken) {
       // Pass the specific errors to the handler
       handleCaptureError(new Error('Capture module error detected'), 'module-specific', captureErrors);
       delete inputData.captureErrors; // Remove this property before sending
+    }
+    
+    // Check if activity was filtered out completely (had data before but empty after)
+    const noAllowedActivity = inputData.noAllowedActivity === true;
+    delete inputData.noAllowedActivity; // Remove this property before sending
+    
+    // Skip upload if no allowed activity (regardless of screenshots or audio)
+    if (noAllowedActivity) {
+      log.info('Skipping upload: no allowed activity after filtering');
+      return false;
     }
     
     // Check if we have any data to upload

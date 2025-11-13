@@ -960,6 +960,10 @@ function setupAppExclusionsListeners() {
           } else if (!exclusion.titlePatterns) {
             exclusion.titlePatterns = [];
           }
+          // Ensure ignoreActivity field exists (default to false for backward compatibility)
+          if (exclusion.ignoreActivity === undefined) {
+            exclusion.ignoreActivity = false;
+          }
           return exclusion;
         });
         renderExclusionsList();
@@ -1103,8 +1107,37 @@ function setupAppExclusionsListeners() {
       // Initial render of chips
       renderChips();
       
+      // Ignore activity toggle row
+      const ignoreActivityRow = document.createElement('div');
+      ignoreActivityRow.className = 'flex items-center justify-between';
+      const ignoreActivityLabel = document.createElement('label');
+      ignoreActivityLabel.className = 'block text-sm font-medium text-gray-700';
+      ignoreActivityLabel.textContent = 'Ignore activity';
+      const ignoreActivityToggle = document.createElement('label');
+      ignoreActivityToggle.className = 'toggle';
+      const ignoreActivityCheckbox = document.createElement('input');
+      ignoreActivityCheckbox.type = 'checkbox';
+      ignoreActivityCheckbox.checked = exclusion.ignoreActivity === true;
+      ignoreActivityCheckbox.dataset.index = index;
+      ignoreActivityToggle.appendChild(ignoreActivityCheckbox);
+      const toggleSlider = document.createElement('span');
+      toggleSlider.className = 'slider';
+      ignoreActivityToggle.appendChild(toggleSlider);
+      
+      ignoreActivityCheckbox.addEventListener('change', async () => {
+        const idx = parseInt(ignoreActivityCheckbox.dataset.index);
+        if (exclusions[idx]) {
+          exclusions[idx].ignoreActivity = ignoreActivityCheckbox.checked;
+          await saveExclusions();
+        }
+      });
+      
+      ignoreActivityRow.appendChild(ignoreActivityLabel);
+      ignoreActivityRow.appendChild(ignoreActivityToggle);
+      
       entry.appendChild(appNameRow);
       entry.appendChild(titlePatternRow);
+      entry.appendChild(ignoreActivityRow);
       exclusionsList.appendChild(entry);
     });
     
@@ -1154,7 +1187,7 @@ function setupAppExclusionsListeners() {
   
   // Add new exclusion
   addBtn.addEventListener('click', () => {
-    exclusions.push({ appName: '', titlePatterns: [] });
+    exclusions.push({ appName: '', titlePatterns: [], ignoreActivity: false });
     renderExclusionsList();
     // Focus the new app name input
     const newInput = exclusionsList.querySelector(`input[data-index="${exclusions.length - 1}"][data-field="appName"]`);
