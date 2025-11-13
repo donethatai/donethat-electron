@@ -148,14 +148,15 @@ function setupDisableCaptureListener() {
       await forceDisableScreenshotsInMeetings();
     }
     
-    if (disabledSettings.keystrokes === false) {
-      const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
-      if (keystrokesCheckbox && keystrokesCheckbox.checked) {
-        keystrokesCheckbox.checked = false;
-        // Update local state
-        inputData.keystrokes = false;
-      }
-    }
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    // if (disabledSettings.keystrokes === false) {
+    //   const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
+    //   if (keystrokesCheckbox && keystrokesCheckbox.checked) {
+    //     keystrokesCheckbox.checked = false;
+    //     // Update local state
+    //     inputData.keystrokes = false;
+    //   }
+    // }
     
     if (disabledSettings.windows === false) {
       const windowsCheckbox = document.getElementById('windowsCheckbox');
@@ -167,7 +168,8 @@ function setupDisableCaptureListener() {
     }
     
     // Save the updated settings - only if changes were made
-    if (disabledSettings.audio === false || disabledSettings.keystrokes === false || disabledSettings.windows === false) {
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    if (disabledSettings.audio === false || /* disabledSettings.keystrokes === false || */ disabledSettings.windows === false) {
       try {
         await saveUserSettings('inputData', inputData);
       } catch (error) {
@@ -189,7 +191,8 @@ function setupPermissionResultListener() {
     
     const checkboxMap = {
       'audio': 'audioCheckbox',
-      'keystrokes': 'keystrokesCheckbox',
+      // DISABLED: Keystroke tracking removed to avoid antivirus flags
+      // 'keystrokes': 'keystrokesCheckbox',
       'windows': 'windowsCheckbox'
     };
     
@@ -345,6 +348,7 @@ async function saveUserSettings(type, value) {
           delete partial.__partial;
           const merged = {
             windows: partial.windows !== undefined ? !!partial.windows : !!current.windows,
+            // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value
             keystrokes: partial.keystrokes !== undefined ? !!partial.keystrokes : !!current.keystrokes,
             audio: partial.audio !== undefined ? !!partial.audio : !!current.audio
           };
@@ -352,7 +356,8 @@ async function saveUserSettings(type, value) {
           logAnalyticsEvent('settings_updated', {
             type: 'inputData',
             windows: merged.windows,
-            keystrokes: merged.keystrokes,
+            // DISABLED: Keystroke tracking removed to avoid antivirus flags
+            // keystrokes: merged.keystrokes,
             audio: merged.audio,
             mode: 'partial-merge'
           });
@@ -360,22 +365,47 @@ async function saveUserSettings(type, value) {
           console.warn('Partial inputData merge failed, falling back to local value:', mergeErr);
           const fallback = { ...value };
           delete fallback.__partial;
+          // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value if not provided
+          if (fallback.keystrokes === undefined) {
+            // Keep existing value from current settings if not in partial update
+            try {
+              const result = await getUserSettingsFunction();
+              const current = result?.data?.inputData || {};
+              fallback.keystrokes = !!current.keystrokes;
+            } catch (_) {
+              fallback.keystrokes = false;
+            }
+          }
           settingsData.inputData = fallback;
           logAnalyticsEvent('settings_updated', {
             type: 'inputData',
             windows: fallback.windows,
-            keystrokes: fallback.keystrokes,
+            // DISABLED: Keystroke tracking removed to avoid antivirus flags
+            // keystrokes: fallback.keystrokes,
             audio: fallback.audio,
             mode: 'partial-fallback'
           });
         }
       } else {
-        settingsData.inputData = value; // Full replace
+        // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value if not provided
+        const fullValue = { ...value };
+        // If keystrokes is not provided in full update, keep existing value
+        if (fullValue.keystrokes === undefined) {
+          try {
+            const result = await getUserSettingsFunction();
+            const current = result?.data?.inputData || {};
+            fullValue.keystrokes = !!current.keystrokes;
+          } catch (_) {
+            fullValue.keystrokes = false;
+          }
+        }
+        settingsData.inputData = fullValue; // Full replace
         logAnalyticsEvent('settings_updated', {
           type: 'inputData',
-          windows: value.windows,
-          keystrokes: value.keystrokes,
-          audio: value.audio,
+          windows: fullValue.windows,
+          // DISABLED: Keystroke tracking removed to avoid antivirus flags
+          // keystrokes: fullValue.keystrokes,
+          audio: fullValue.audio,
           mode: 'full'
         });
       }
@@ -464,6 +494,7 @@ async function updateSettingsUI(settings) {
   // Passive windows: do not read persisted windows; use live OS permission for local state only
   inputData = {
     windows: (typeof hasWindowsPermission === 'function') ? hasWindowsPermission() : prevInputData.windows,
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value
     keystrokes: !!loadedInputData.keystrokes,
     audio: !!loadedInputData.audio
   };
@@ -473,17 +504,19 @@ async function updateSettingsUI(settings) {
   const delta = {};
   // IMPORTANT: Do not include windows in delta from settings load.
   // Windows permission state is managed by permissions.js via system events.
-  if (prevInputData.keystrokes !== inputData.keystrokes) delta.keystrokes = inputData.keystrokes;
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
+  // if (prevInputData.keystrokes !== inputData.keystrokes) delta.keystrokes = inputData.keystrokes;
   if (prevInputData.audio !== inputData.audio) delta.audio = inputData.audio;
   if (Object.keys(delta).length > 0) {
     ipcRenderer.send('updateInputDataSettings', delta);
   }
 
-  const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
+  // const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
   const audioCheckbox = document.getElementById('audioCheckbox');
 
   // Do not set windowsCheckbox state here; permissions.js updates checked/disabled based on system permission
-  if (keystrokesCheckbox) keystrokesCheckbox.checked = inputData.keystrokes;
+  // if (keystrokesCheckbox) keystrokesCheckbox.checked = inputData.keystrokes;
   if (audioCheckbox) audioCheckbox.checked = inputData.audio; // Keep disabled state from HTML
 
   // Recompute dependency for meeting screenshots toggle now that audio state is applied

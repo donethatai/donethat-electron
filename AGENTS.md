@@ -21,7 +21,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 
 - Main process: orchestrates capture, state, permissions, tray/menu, auto-updates, overlay creation. Entry: `main.js`.
 - Renderer process: app UI (`src/index.html`) and chat overlay (`src/chat.html`).
-- Capture modules (main): `src-main/*` implement screenshots, windows, keystrokes, and audio.
+- Capture modules (main): `src-main/*` implement screenshots, windows, and audio. (Keystroke tracking disabled to avoid antivirus flags)
 - State/policy (main): `src-main/main-state.js` centralizes auth token, pause/work hours, permissions, and secure settings.
 
 ### Key Modules
@@ -30,7 +30,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - `src-main/capture.js`: capture scheduler, collects enabled inputs, local-first processing, fallback upload.
 - `src-main/captureScreenshots.js`: screenshots capture/processing.
 - `src-main/captureWindows.js`: active window timeline + permissions.
-- `src-main/captureKeystrokes.js`: key listener + timeline buffering.
+- `src-main/captureKeystrokes.js`: key listener + timeline buffering. (Currently disabled to avoid antivirus flags)
 - `src-main/captureAudio.js` + `src-main/voiceToText.js`: rolling audio + Whisper transcription.
 - `src-main/processLocal.js`: local summarization path (if available).
 - `src-main/main-state.js`: work scheduling, pause/resume, permissions, encrypted settings, auth token SOT.
@@ -52,7 +52,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 1. Interval configured in `main.js` with `setCaptureInterval(minutes)` (default 5). Token is fetched inside each cycle.
 2. On each cycle (`src-main/capture.js`):
    - Optionally skip screenshots if `shouldDisableScreenshotsInMeetings()` (mic activity).
-   - Collect audio transcript, keystrokes, window timeline into compact activity.
+   - Collect audio transcript, window timeline into compact activity. (Keystroke tracking disabled)
    - Try local processing (`processLocal`) with current + previous screenshots; else POST to Cloud Function `captureScreenshot` with `Authorization: Bearer <idToken>`.
 3. Errors/permission issues disable only the failing modules and notify renderer; auth/token expiry is signaled back for refresh.
 
@@ -69,7 +69,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 
 ## IPC Contract (non-exhaustive)
 
-- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestAudioPermission`, `requestKeystrokesPermission`, `updateInputDataSettings`, `updateDisableScreenshotsInMeetings`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`.
+- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestAudioPermission`, `updateInputDataSettings`, `updateDisableScreenshotsInMeetings`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`.
 - Main → Renderer: `inapp:notify`, `screenCapturePermission`, `windowsPermission`, `overlay:state`, `chat:receive-messages`, `hotkey:updated`, `chat:message-update`, `chat:reset-state`, `webview:reload`, `router:open-link`, `firebase-custom-token`, `refresh-token`, `auth-error`.
 
 ## Build/Run
@@ -82,7 +82,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 
 - Workdays/hours and pause state persisted in `electron-store`.
 - Screen capture permission checks are surfaced to renderer; Windows (active apps) permission handled similarly.
-- Audio/keystrokes/windows are opt-in toggles; failures auto-disable the specific module.
+- Audio/windows are opt-in toggles; failures auto-disable the specific module. (Keystroke tracking disabled)
 - “Disable screenshots during meetings” switches based on mic activity from audio module.
 
 ## Privacy & Security

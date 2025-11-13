@@ -9,7 +9,7 @@ const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/c
 
 // Import capture modules
 const audioCapture = require('./captureAudio');
-const keystrokesCapture = require('./captureKeystrokes');
+// const keystrokesCapture = require('./captureKeystrokes'); // Disabled to avoid antivirus flags
 const windowsCapture = require('./captureWindows');
 
 // Variable to track the capture interval
@@ -116,39 +116,40 @@ async function _startAudioTracking() {
  * Helper function to start keystroke tracking
  * @returns {Promise<boolean>} Success status
  */
-async function _startKeystrokeTracking() {
-  try {
-    const trackingStarted = await keystrokesCapture.startTracking();
-    if (!trackingStarted) {
-      const error = new Error('Keystroke tracking permission denied or failed to start');
-      log.warn(error.message);
-      
-      // Use handleCaptureError with specific keystrokes error
-      handleCaptureError(
-        error, 
-        'keystrokes-permission', 
-        { keystrokes: true },
-        false // Don't stop capturing, just disable this feature
-      );
-      
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    log.error('Failed to start keystroke tracking:', error);
-    
-    // Use handleCaptureError with specific keystrokes error
-    handleCaptureError(
-      error, 
-      'keystrokes-error', 
-      { keystrokes: true },
-      false // Don't stop capturing, just disable this feature
-    );
-    
-    return false;
-  }
-}
+// DISABLED: Keystroke tracking removed to avoid antivirus flags
+// async function _startKeystrokeTracking() {
+//   try {
+//     const trackingStarted = await keystrokesCapture.startTracking();
+//     if (!trackingStarted) {
+//       const error = new Error('Keystroke tracking permission denied or failed to start');
+//       log.warn(error.message);
+//       
+//       // Use handleCaptureError with specific keystrokes error
+//       handleCaptureError(
+//         error, 
+//         'keystrokes-permission', 
+//         { keystrokes: true },
+//         false // Don't stop capturing, just disable this feature
+//       );
+//       
+//       return false;
+//     }
+//     
+//     return true;
+//   } catch (error) {
+//     log.error('Failed to start keystroke tracking:', error);
+//     
+//     // Use handleCaptureError with specific keystrokes error
+//     handleCaptureError(
+//       error, 
+//       'keystrokes-error', 
+//       { keystrokes: true },
+//       false // Don't stop capturing, just disable this feature
+//     );
+//     
+//     return false;
+//   }
+// }
 
 /**
  * Helper function to start window tracking
@@ -229,9 +230,10 @@ function updateInputDataSettings(settings) {
       });
     }
     
-    if (previousSettings.keystrokes && !inputDataSettings.keystrokes) {
-      keystrokesCapture.stopTracking();
-    }
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    // if (previousSettings.keystrokes && !inputDataSettings.keystrokes) {
+    //   keystrokesCapture.stopTracking();
+    // }
     
     if (previousSettings.windows && !inputDataSettings.windows) {
       windowsCapture.stopTracking();
@@ -243,9 +245,10 @@ function updateInputDataSettings(settings) {
         _startAudioTracking();
       }
       
-      if (!previousSettings.keystrokes && inputDataSettings.keystrokes) {
-        _startKeystrokeTracking();
-      }
+      // DISABLED: Keystroke tracking removed to avoid antivirus flags
+      // if (!previousSettings.keystrokes && inputDataSettings.keystrokes) {
+      //   _startKeystrokeTracking();
+      // }
       
       if (!previousSettings.windows && inputDataSettings.windows) {
         // Reset window start retry state on fresh enable
@@ -321,8 +324,9 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     bufferDurationMs: captureIntervalMinutes * 60 * 1000
   });
   
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
   // Initialize keystrokes capture with main window
-  keystrokesCapture.initialize(mainWindow);
+  // keystrokesCapture.initialize(mainWindow);
   
   // Handler for updating input data settings
   ipcMain.on('updateInputDataSettings', (event, settings) => {
@@ -401,44 +405,45 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     app.on('browser-window-focus', focusListener);
   });
 
-  ipcMain.on('requestKeystrokesPermission', async (event) => {
-    const { shell } = require('electron');
-    const { checkPermissions } = require('./captureKeystrokes');
-    
-    const hasPermission = await checkPermissions();
-    
-    if (hasPermission) {
-      if (mainWindow) {
-        mainWindow.webContents.send('keystrokesPermission', true);
-      }
-      return;
-    }
-    
-    // Open system settings based on platform
-    if (process.platform === 'darwin') {
-      shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
-    } else if (process.platform === 'win32') {
-      shell.openExternal('ms-settings:privacy');
-    } else if (process.platform === 'linux') {
-      if (mainWindow) {
-        mainWindow.webContents.send('linux-keystrokes-permission-notice');
-      }
-    }
-    
-    // Check permission on focus
-    const app = require('electron').app;
-    const focusListener = async () => {
-      app.removeListener('browser-window-focus', focusListener);
-      
-      const newHasPermission = await checkPermissions();
-      
-      if (mainWindow) {
-        mainWindow.webContents.send('keystrokesPermission', newHasPermission);
-      }
-    };
-    
-    app.on('browser-window-focus', focusListener);
-  });
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
+  // ipcMain.on('requestKeystrokesPermission', async (event) => {
+  //   const { shell } = require('electron');
+  //   const { checkPermissions } = require('./captureKeystrokes');
+  //   
+  //   const hasPermission = await checkPermissions();
+  //   
+  //   if (hasPermission) {
+  //     if (mainWindow) {
+  //       mainWindow.webContents.send('keystrokesPermission', true);
+  //     }
+  //     return;
+  //   }
+  //   
+  //   // Open system settings based on platform
+  //   if (process.platform === 'darwin') {
+  //     shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+  //   } else if (process.platform === 'win32') {
+  //     shell.openExternal('ms-settings:privacy');
+  //   } else if (process.platform === 'linux') {
+  //     if (mainWindow) {
+  //       mainWindow.webContents.send('linux-keystrokes-permission-notice');
+  //     }
+  //   }
+  //   
+  //   // Check permission on focus
+  //   const app = require('electron').app;
+  //   const focusListener = async () => {
+  //     app.removeListener('browser-window-focus', focusListener);
+  //     
+  //     const newHasPermission = await checkPermissions();
+  //     
+  //     if (mainWindow) {
+  //       mainWindow.webContents.send('keystrokesPermission', newHasPermission);
+  //     }
+  //   };
+  //   
+  //   app.on('browser-window-focus', focusListener);
+  // });
 
   // Windows permission IPC is handled in captureWindows.js to centralize logic
 }
@@ -551,32 +556,33 @@ async function collectInputData(resetBuffers = true) {
   }
   
   // Get keystroke and window data
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
   let keystrokeData = [];
   let windowData = [];
   
   // Get keystroke data
-  if (inputDataSettings.keystrokes) {
-    try {
-      // Reset timeline after collection
-      keystrokeData = keystrokesCapture.getKeystrokeTimeline(
-        captureIntervalMinutes * 60 * 1000, 
-        resetBuffers 
-      );
-      
-      if (keystrokeData.length === 0 && keystrokesCapture.isTracking()) {        
-        // Try to restart keystroke tracking
-        try {
-          await keystrokesCapture.stopTracking();
-          await keystrokesCapture.startTracking();
-        } catch (restartError) {
-          log.error('Failed to restart keystroke tracking:', restartError);
-        }
-      }
-    } catch (error) {
-      captureErrors.keystrokes = true;
-      log.error('Error capturing keystroke data:', error);
-    }
-  }
+  // if (inputDataSettings.keystrokes) {
+  //   try {
+  //     // Reset timeline after collection
+  //     keystrokeData = keystrokesCapture.getKeystrokeTimeline(
+  //       captureIntervalMinutes * 60 * 1000, 
+  //       resetBuffers 
+  //     );
+  //     
+  //     if (keystrokeData.length === 0 && keystrokesCapture.isTracking()) {        
+  //       // Try to restart keystroke tracking
+  //       try {
+  //         await keystrokesCapture.stopTracking();
+  //         await keystrokesCapture.startTracking();
+  //       } catch (restartError) {
+  //         log.error('Failed to restart keystroke tracking:', restartError);
+  //       }
+  //     }
+  //   } catch (error) {
+  //     captureErrors.keystrokes = true;
+  //     log.error('Error capturing keystroke data:', error);
+  //   }
+  // }
   
   // Get window data
   let hadWindowDataBeforeFiltering = false;
@@ -614,38 +620,40 @@ async function collectInputData(resetBuffers = true) {
   inputData.activity = [];
   
   try {
-    if (inputDataSettings.keystrokes && keystrokeData.length > 0) {
-      if (inputDataSettings.windows && windowData.length > 0) {
-        // Attach keystrokes to window periods
-        windowData.forEach(windowPeriod => {
-          const windowKeystrokes = keystrokeData.filter(ks => {
-            if (!ks.timestamp) return false;
-            const ksTime = typeof ks.timestamp === 'string' 
-              ? new Date(ks.timestamp).getTime() 
-              : ks.timestamp;
-            return ksTime >= windowPeriod.startTime && ksTime <= windowPeriod.endTime;
-          });
-          
-          const keystrokeString = windowKeystrokes
-            .map(ks => ks.key)
-            .join('');
-          
-          inputData.activity.push({
-            type: 'window',
-            name: windowPeriod.name,
-            title: windowPeriod.title,
-            startTime: windowPeriod.startTime,
-            endTime: windowPeriod.endTime,
-            duration: windowPeriod.duration,
-            keystrokes: keystrokeString
-          });
-        });
-      } else {
-        // Process keystrokes into segments
-        const keystrokeSegments = processKeystrokeSegments(keystrokeData);
-        inputData.activity = inputData.activity.concat(keystrokeSegments);
-      }
-    } else if (inputDataSettings.windows && windowData.length > 0) {
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    // if (inputDataSettings.keystrokes && keystrokeData.length > 0) {
+    //   if (inputDataSettings.windows && windowData.length > 0) {
+    //     // Attach keystrokes to window periods
+    //     windowData.forEach(windowPeriod => {
+    //       const windowKeystrokes = keystrokeData.filter(ks => {
+    //         if (!ks.timestamp) return false;
+    //         const ksTime = typeof ks.timestamp === 'string' 
+    //           ? new Date(ks.timestamp).getTime() 
+    //           : ks.timestamp;
+    //         return ksTime >= windowPeriod.startTime && ksTime <= windowPeriod.endTime;
+    //       });
+    //       
+    //       const keystrokeString = windowKeystrokes
+    //         .map(ks => ks.key)
+    //         .join('');
+    //       
+    //       inputData.activity.push({
+    //         type: 'window',
+    //         name: windowPeriod.name,
+    //         title: windowPeriod.title,
+    //         startTime: windowPeriod.startTime,
+    //         endTime: windowPeriod.endTime,
+    //         duration: windowPeriod.duration,
+    //         keystrokes: keystrokeString
+    //       });
+    //     });
+    //   } else {
+    //     // Process keystrokes into segments
+    //     const keystrokeSegments = processKeystrokeSegments(keystrokeData);
+    //     inputData.activity = inputData.activity.concat(keystrokeSegments);
+    //   }
+    // } else 
+    if (inputDataSettings.windows && windowData.length > 0) {
       // Just include window data
       windowData.forEach(window => {
         inputData.activity.push({
@@ -661,7 +669,8 @@ async function collectInputData(resetBuffers = true) {
     }
   } catch (error) {
     log.error('Error processing activity data:', error);
-    if (inputDataSettings.keystrokes) captureErrors.keystrokes = true;
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    // if (inputDataSettings.keystrokes) captureErrors.keystrokes = true;
     if (inputDataSettings.windows) captureErrors.windows = true;
   }
   
@@ -859,7 +868,8 @@ async function captureAndSend(idToken) {
 
     // Check if any capture errors occurred
     const captureErrors = inputData.captureErrors;
-    if (captureErrors && (captureErrors.audio || captureErrors.keystrokes || captureErrors.windows)) {
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    if (captureErrors && (captureErrors.audio || /* captureErrors.keystrokes || */ captureErrors.windows)) {
       // Pass the specific errors to the handler
       handleCaptureError(new Error('Capture module error detected'), 'module-specific', captureErrors);
       delete inputData.captureErrors; // Remove this property before sending
@@ -909,7 +919,8 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
   // Map of feature types to their friendly names
   const featureNames = {
     audio: 'Audio recording',
-    keystrokes: 'Keystroke tracking',
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    // keystrokes: 'Keystroke tracking',
     windows: 'Window tracking'
   };
   
@@ -942,7 +953,8 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
     log.warn('Unknown capture error source - disabling all capture features');
     updatedSettings = {
       audio: false,
-      keystrokes: false,
+      // DISABLED: Keystroke tracking removed to avoid antivirus flags
+      // keystrokes: false,
       windows: false
     };
     
@@ -998,10 +1010,11 @@ async function _runCaptureCycle() {
       await _startAudioTracking();
     }
     
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
     // Start keystroke tracking if needed
-    if (inputDataSettings.keystrokes && !keystrokesCapture.isTracking()) {
-      await _startKeystrokeTracking();
-    }
+    // if (inputDataSettings.keystrokes && !keystrokesCapture.isTracking()) {
+    //   await _startKeystrokeTracking();
+    // }
     
     // Start window tracking if needed
     if (inputDataSettings.windows && !windowsCapture.isTracking()) {
@@ -1088,9 +1101,10 @@ function stopCaptureInterval() {
     });
   }
   
-  if (inputDataSettings.keystrokes) {
-    keystrokesCapture.stopTracking();
-  }
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
+  // if (inputDataSettings.keystrokes) {
+  //   keystrokesCapture.stopTracking();
+  // }
   
   if (inputDataSettings.windows) {
     windowsCapture.stopTracking();

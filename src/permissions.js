@@ -27,8 +27,9 @@ function initializePermissions(viewNavigator, currentViewGetter, topbarVisibilit
   // Set up audio checkbox behavior
   setupAudioCheckboxBehavior();
 
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
   // Set up keystrokes checkbox behavior
-  setupKeystrokesCheckboxBehavior();
+  // setupKeystrokesCheckboxBehavior();
 
   // Check permissions on startup
   checkPermissionsOnStartup();
@@ -44,7 +45,7 @@ function checkPermissionsOnStartup() {
   ipcRenderer.send('requestWindowsPermission', false);
 
   // Check other permissions as needed
-  // (Audio and keystrokes might need different handling)
+  // (Audio might need different handling)
 }
 
 // Set up event listeners for platform-specific permission troubleshooting
@@ -66,17 +67,18 @@ function setupPlatformSpecificListeners() {
     showLinuxPermissionHelp('audio');
   });
 
-  ipcRenderer.on('linux-keystrokes-permission-notice', () => {
-    showLinuxPermissionHelp('keystrokes');
-    // Uncheck the keystrokes checkbox since it's not supported on Linux
-    const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
-    if (keystrokesCheckbox) {
-      keystrokesCheckbox.checked = false;
-      // Don't disable - allow user to try again if support is added
-    }
-    // Functionally disable keystrokes tracking
-    ipcRenderer.send('updateInputDataSettings', { keystrokes: false });
-  });
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
+  // ipcRenderer.on('linux-keystrokes-permission-notice', () => {
+  //   showLinuxPermissionHelp('keystrokes');
+  //   // Uncheck the keystrokes checkbox since it's not supported on Linux
+  //   const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
+  //   if (keystrokesCheckbox) {
+  //     keystrokesCheckbox.checked = false;
+  //     // Don't disable - allow user to try again if support is added
+  //   }
+  //   // Functionally disable keystrokes tracking
+  //   ipcRenderer.send('updateInputDataSettings', { keystrokes: false });
+  // });
 
   ipcRenderer.on('linux-pactl-missing-notice', () => {
     showLinuxPermissionHelp('pactl');
@@ -101,9 +103,10 @@ function showLinuxPermissionHelp(permissionType) {
     case 'audio':
       showInlineLinuxNotification('linuxWindowsSection');
       break;
-    case 'keystrokes':
-      showInlineLinuxNotification('linuxKeystrokesSection');
-      break;
+    // DISABLED: Keystroke tracking removed to avoid antivirus flags
+    // case 'keystrokes':
+    //   showInlineLinuxNotification('linuxKeystrokesSection');
+    //   break;
     case 'windows':
       showInlineLinuxNotification('linuxWindowsSection');
       break;
@@ -189,16 +192,17 @@ ipcRenderer.on('audioPermission', (event, hasPermission) => {
   }));
 });
 
-ipcRenderer.on('keystrokesPermission', (event, hasPermission) => {
-  logAnalyticsEvent('keystrokes_permission', {
-    status: hasPermission ? 'granted' : 'denied',
-    platform: process.platform
-  });
-  // Notify settings component about permission status
-  document.dispatchEvent(new CustomEvent('permissionResult', {
-    detail: { type: 'keystrokes', hasPermission }
-  }));
-});
+// DISABLED: Keystroke tracking removed to avoid antivirus flags
+// ipcRenderer.on('keystrokesPermission', (event, hasPermission) => {
+//   logAnalyticsEvent('keystrokes_permission', {
+//     status: hasPermission ? 'granted' : 'denied',
+//     platform: process.platform
+//   });
+//   // Notify settings component about permission status
+//   document.dispatchEvent(new CustomEvent('permissionResult', {
+//     detail: { type: 'keystrokes', hasPermission }
+//   }));
+// });
 
 ipcRenderer.on('windowsPermission', (event, hasPermission) => {
   updateWindowsPermission(hasPermission);
@@ -407,37 +411,38 @@ function setupAudioCheckboxBehavior() {
   });
 }
 
+// DISABLED: Keystroke tracking removed to avoid antivirus flags
 // Set up keystrokes checkbox behavior
-function setupKeystrokesCheckboxBehavior() {
-  const checkbox = document.getElementById('keystrokesCheckbox');
-  if (!checkbox) return;
-
-  const handleCheckboxChange = async (isChecked) => {
-    const originalValue = checkbox.checked;
-
-    if (isChecked) {
-      // Revert checkbox state immediately - will be re-enabled by permission listener if granted
-      checkbox.checked = false;
-      // Request permission and wait for the result
-      requestKeystrokesPermission();
-    } else {
-      // If turning OFF, update setting immediately - no permission needed
-      try {
-        // Dispatch custom event to notify settings.js to save the state
-        document.dispatchEvent(new CustomEvent('permissionResult', {
-          detail: { type: 'keystrokes', hasPermission: false }
-        }));
-      } catch (error) {
-        // Revert UI on error
-        checkbox.checked = originalValue;
-      }
-    }
-  };
-
-  checkbox.addEventListener('change', () => {
-    handleCheckboxChange(checkbox.checked);
-  });
-}
+// function setupKeystrokesCheckboxBehavior() {
+//   const checkbox = document.getElementById('keystrokesCheckbox');
+//   if (!checkbox) return;
+//
+//   const handleCheckboxChange = async (isChecked) => {
+//     const originalValue = checkbox.checked;
+//
+//     if (isChecked) {
+//       // Revert checkbox state immediately - will be re-enabled by permission listener if granted
+//       checkbox.checked = false;
+//       // Request permission and wait for the result
+//       requestKeystrokesPermission();
+//     } else {
+//       // If turning OFF, update setting immediately - no permission needed
+//       try {
+//         // Dispatch custom event to notify settings.js to save the state
+//         document.dispatchEvent(new CustomEvent('permissionResult', {
+//           detail: { type: 'keystrokes', hasPermission: false }
+//         }));
+//       } catch (error) {
+//         // Revert UI on error
+//         checkbox.checked = originalValue;
+//       }
+//     }
+//   };
+//
+//   checkbox.addEventListener('change', () => {
+//     handleCheckboxChange(checkbox.checked);
+//   });
+// }
 
 // Functions to request permissions for each capture type
 function requestAudioPermission() {
@@ -448,13 +453,14 @@ function requestAudioPermission() {
   ipcRenderer.send("requestAudioPermission");
 }
 
-function requestKeystrokesPermission() {
-  logAnalyticsEvent('keystrokes_capture_requested', {
-    status: 'requested',
-    platform: process.platform
-  });
-  ipcRenderer.send("requestKeystrokesPermission");
-}
+// DISABLED: Keystroke tracking removed to avoid antivirus flags
+// function requestKeystrokesPermission() {
+//   logAnalyticsEvent('keystrokes_capture_requested', {
+//     status: 'requested',
+//     platform: process.platform
+//   });
+//   ipcRenderer.send("requestKeystrokesPermission");
+// }
 
 function requestWindowsPermission() {
   logAnalyticsEvent('windows_capture_requested', {
@@ -507,7 +513,8 @@ function setupFinishButtonHandler() {
 module.exports = {
   initializePermissions,
   requestAudioPermission,
-  requestKeystrokesPermission,
+  // DISABLED: Keystroke tracking removed to avoid antivirus flags
+  // requestKeystrokesPermission,
   requestWindowsPermission,
   updateFinishButtonVisibility
 };

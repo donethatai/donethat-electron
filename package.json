@@ -77,7 +77,6 @@
     "get-windows": "^9.2.3",
     "macos-notification-state": "^3.0.0",
     "node-fetch": "^3.3.2",
-    "node-global-key-listener": "^0.3.0",
     "sharp": "^0.34.4",
     "tailwindcss": "^4.1.15",
     "windows-notification-state": "^2.0.0"
@@ -150,11 +149,7 @@
       "artifactName": "${productName}-${arch}.${ext}",
       "signtoolOptions": {
         "sign": "./scripts/digicert-sign-windows.js"
-      },
-      "files": [
-        "!**/node_modules/node-global-key-listener/bin/MacKeyServer",
-        "!**/node_modules/node-global-key-listener/bin/LinuxKeyServer"
-      ]
+      }
     },
     "nsis": {
       "runAfterFinish": true,
