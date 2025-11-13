@@ -1852,6 +1852,11 @@ async function checkScreenCapturePermission() {
   // Get current permission status from OS-level APIs
   const hasPermission = await moduleCheckPermission();
   
+  // If permission check was skipped (returned undefined), use cached state
+  if (hasPermission === undefined) {
+    return stateManager?.hasScreenCapturePermission() ?? false;
+  }
+  
   // Update the state manager with current values
   if (stateManager) {
     stateManager.updateScreenCapturePermission(hasPermission);

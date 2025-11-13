@@ -15,6 +15,9 @@ const PREVIOUS_SCREENSHOT_SCALE_FACTOR = 0.25
 // Maximum age factor for previous screenshot (1.5x the capture interval)
 const PREVIOUS_SCREENSHOT_MAX_AGE_FACTOR = 1.5
 
+// Track if desktopCapturer.getSources() is currently in progress to prevent overlapping calls
+let isGrabbingInProgress = false
+
 ///// UTILITIES /////
 // Function to scale down a screenshot to the configured scale factor
 function scaleScreenshotToPreviousSize(dataUrl) {
@@ -95,13 +98,27 @@ async function checkScreenCapturePermission() {
       return hasPermission
     }
     
-    // For other platforms (macOS, Windows)
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 1, height: 1 }
-    })
+    // Skip if already grabbing (permission check should not block or interfere)
+    if (isGrabbingInProgress) {
+      log.debug('Skipping permission check - capture in progress')
+      // Return undefined/null to indicate "skipped" rather than false (which implies denied)
+      // Caller should use cached state if this returns undefined
+      return undefined
+    }
     
-    return sources && sources.length > 0
+    // For other platforms (macOS, Windows)
+    // Set flag to prevent overlapping calls to desktopCapturer.getSources()
+    isGrabbingInProgress = true
+    try {
+      log.debug('Requesting screen sources for permission check')
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 1, height: 1 }
+      })
+      return sources && sources.length > 0
+    } finally {
+      isGrabbingInProgress = false
+    }
   } catch (error) {
     console.error('Error checking screen capture permission:', error)
     return false
@@ -185,6 +202,19 @@ async function checkLinuxScreenCapturePermission() {
 
 ///// MAIN /////
 
+// Helper function to wait with exponential backoff (total wait capped at 10 seconds)
+async function waitWithBackoff(attempt, totalWaited) {
+  const baseDelay = 1000 // 1 second
+  const maxTotalWait = 10000 // 10 seconds total
+  const remainingWait = maxTotalWait - totalWaited
+  if (remainingWait <= 0) {
+    return 0
+  }
+  const delay = Math.min(baseDelay * Math.pow(2, attempt), remainingWait)
+  await new Promise(resolve => setTimeout(resolve, delay))
+  return delay
+}
+
 // Use a single unified method for all platforms - only captures screenshots
 async function captureScreenshot() {
   try {
@@ -194,22 +224,46 @@ async function captureScreenshot() {
     if (process.platform === 'linux') {
       screenshots = await captureScreenshotsLinux();
     } else {
-      // Use the standard Electron approach for other platforms
-      const sources = await desktopCapturer.getSources({
-        types: ['screen'],
-        thumbnailSize: { width: 1920, height: 1080 }
-      });
+      // Wait with exponential backoff if already grabbing (max 10 seconds total)
+      let attempt = 0
+      let totalWaited = 0
+      const maxTotalWait = 10000 // 10 seconds total
+      while (isGrabbingInProgress && totalWaited < maxTotalWait) {
+        const delay = await waitWithBackoff(attempt, totalWaited)
+        if (delay === 0) break
+        totalWaited += delay
+        log.debug(`Capture waiting for grab to complete (attempt ${attempt + 1}, waited ${totalWaited}ms)`)
+        attempt++
+      }
       
-      if (sources.length === 0) {
-        log.warn('No screen sources found');
-        return [];
-      }      
-      // Process each source
-      screenshots = await Promise.all(
-        sources.map(async source => {
-          return await processScreenshotForUpload(source.thumbnail.toDataURL());
-        })
-      );
+      // Give up if still grabbing after backoff
+      if (isGrabbingInProgress) {
+        log.warn('Screenshot capture skipped - grab still in progress after backoff')
+        return []
+      }
+      
+      // Use the standard Electron approach for other platforms
+      isGrabbingInProgress = true
+      try {
+        log.debug('Requesting screen sources for screenshot capture')
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: 1920, height: 1080 }
+        });
+        
+        if (sources.length === 0) {
+          log.warn('No screen sources found');
+          return [];
+        }      
+        // Process each source
+        screenshots = await Promise.all(
+          sources.map(async source => {
+            return await processScreenshotForUpload(source.thumbnail.toDataURL());
+          })
+        );
+      } finally {
+        isGrabbingInProgress = false
+      }
     }
     
     if (screenshots.length === 0) {
@@ -222,6 +276,7 @@ async function captureScreenshot() {
 
     return screenshots;
   } catch (error) {
+    isGrabbingInProgress = false
     log.error('Screenshot capture error:', error.message, error.stack);
     return [];
   }
