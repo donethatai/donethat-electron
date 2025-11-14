@@ -95,6 +95,158 @@ textarea::placeholder {
   display: none !important;
 }
 
+/* Background Notification Window Styles */
+.notification-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.notification-card {
+  width: 100%;
+  max-width: 350px;
+  height: auto;
+  min-height: auto;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.1);
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.notification-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  margin: 0;
+  position: relative;
+}
+
+.notification-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  margin-bottom: 12px;
+}
+
+.notification-brand-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-neutral-900);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.notification-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+}
+
+.notification-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-neutral-900);
+  margin: 0;
+  margin-bottom: 2px;
+  line-height: 1.4;
+}
+
+.notification-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.notification-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.notification-message-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  position: relative;
+  margin-top: -20px;
+}
+
+.notification-message {
+  font-size: 13px;
+  color: var(--color-neutral-700);
+  margin: 0;
+  line-height: 1.4;
+  word-wrap: break-word;
+  flex: 1;
+  min-height: calc(1.4em * 2 + 20px);
+  padding-top: 20px;
+  box-sizing: border-box;
+}
+
+.notification-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+}
+
+.notification-action-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.notification-action-btn:hover {
+  background: var(--color-primary-dark);
+}
+
+.notification-close-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+}
+
+.notification-close-btn:hover {
+  color: var(--color-neutral-900);
+}
+
+.notification-close-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* Recent Chats List Styles */
 .recent-chats-container {
   display: none;

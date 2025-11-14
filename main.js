@@ -163,6 +163,7 @@ let stateManager = null
 let tray = null
 let mainWindow = null
 let overlayWindow = null
+let notificationWindow = null
 let screenshotInterval = null
 let isInitialStartup = true
 // Persist overlay position
@@ -649,6 +650,130 @@ app.whenReady().then(async () => {
         try { mainWindow.focus(); } catch (e) {}
       }
       try { mainWindow.webContents.send('inapp:notify', payload); } catch (e) {}
+    }
+  });
+
+  // Background notification handlers
+  ipcMain.on('background:notify', (_event, payload) => {
+    try {
+      const showNotification = () => {
+        if (!notificationWindow || notificationWindow.isDestroyed()) return;
+        
+        // Position window before showing
+        const isPlatformWindows = process.platform === 'win32';
+        const margin = 20;
+        try {
+          const cursorPoint = screen.getCursorScreenPoint();
+          const targetDisplay = screen.getDisplayNearestPoint(cursorPoint) || screen.getPrimaryDisplay();
+          const work = targetDisplay.workArea;
+          const bounds = notificationWindow.getBounds();
+          
+          if (isPlatformWindows) {
+            notificationWindow.setPosition(
+              Math.floor(work.x + work.width - bounds.width - margin),
+              Math.floor(work.y + work.height - bounds.height - margin)
+            );
+          } else {
+            notificationWindow.setPosition(
+              Math.floor(work.x + work.width - bounds.width - margin),
+              Math.floor(work.y + margin)
+            );
+          }
+        } catch (e) {}
+        
+        // Send payload first, then show window after a brief delay to ensure content is set
+        notificationWindow.webContents.send('background:notify', payload);
+        
+        // Small delay to ensure renderer has processed the message before showing
+        setTimeout(() => {
+          if (notificationWindow && !notificationWindow.isDestroyed()) {
+            // Show without taking focus (showInactive on macOS/Linux, show on Windows)
+            if (process.platform === 'darwin' || process.platform === 'linux') {
+              notificationWindow.showInactive();
+            } else {
+              notificationWindow.show();
+            }
+          }
+        }, 50);
+      };
+
+      if (!notificationWindow || notificationWindow.isDestroyed()) {
+        createNotificationWindow();
+        // Wait for window to be ready before showing
+        if (notificationWindow) {
+          notificationWindow.once('ready-to-show', () => {
+            showNotification();
+          });
+        }
+      } else {
+        // Window already exists, show immediately
+        showNotification();
+      }
+    } catch (e) {
+      log.error('Error showing background notification:', e);
+    }
+  });
+
+  ipcMain.on('background:hide', () => {
+    try {
+      if (notificationWindow && !notificationWindow.isDestroyed()) {
+        notificationWindow.hide();
+      }
+    } catch (e) {}
+  });
+
+  ipcMain.on('notification:action', (event, data) => {
+    try {
+      const { channel, payload } = data || {};
+      if (channel) {
+        // Forward action to main window for processing
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(channel, payload || null);
+        }
+      }
+    } catch (e) {
+      log.error('Error handling notification action:', e);
+    }
+  });
+
+  ipcMain.on('notification:close', () => {
+    try {
+      if (notificationWindow && !notificationWindow.isDestroyed()) {
+        notificationWindow.hide();
+      }
+    } catch (e) {}
+  });
+
+  ipcMain.on('notification:ready', () => {
+    try {
+      if (notificationWindow && !notificationWindow.isDestroyed()) {
+        // Window is ready, can adjust size if needed
+        const bounds = notificationWindow.getBounds();
+        notificationWindow.setSize(bounds.width, bounds.height, false);
+      }
+    } catch (e) {}
+  });
+
+  ipcMain.on('notification:content-height', (_event, contentHeight) => {
+    try {
+      if (notificationWindow && !notificationWindow.isDestroyed()) {
+        // Resize window to fit content (add small buffer for safety)
+        const width = notificationWindow.getBounds().width;
+        const newHeight = Math.max(100, contentHeight + 10); // min 100px, add 10px buffer
+        notificationWindow.setSize(width, newHeight, false);
+      }
+    } catch (e) {}
+  });
+
+  // Check if main window is focused
+  ipcMain.handle('check-main-window-focus', () => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        return { focused: mainWindow.isFocused(), visible: mainWindow.isVisible() };
+      }
+      return { focused: false, visible: false };
+    } catch (e) {
+      return { focused: false, visible: false };
     }
   });
 
@@ -1691,6 +1816,89 @@ function createOverlayWindow() {
   }
 }
 
+// Notification window setup
+function createNotificationWindow() {
+  if (!notificationWindow) {
+    const isPlatformMac = process.platform === 'darwin';
+    const isPlatformWindows = process.platform === 'win32';
+    const margin = 20;
+    const defaultWidth = 350;
+    const defaultHeight = 100; // Will be adjusted based on content
+    
+    let initX, initY;
+    try {
+      const cursorPoint = screen.getCursorScreenPoint();
+      const targetDisplay = screen.getDisplayNearestPoint(cursorPoint) || screen.getPrimaryDisplay();
+      const work = targetDisplay.workArea;
+      
+      if (isPlatformWindows) {
+        // Windows: bottom-right
+        initX = Math.floor(work.x + work.width - defaultWidth - margin);
+        initY = Math.floor(work.y + work.height - defaultHeight - margin);
+      } else {
+        // Mac/Linux: top-right
+        initX = Math.floor(work.x + work.width - defaultWidth - margin);
+        initY = Math.floor(work.y + margin);
+      }
+    } catch (e) {}
+
+    notificationWindow = new BrowserWindow({
+      width: defaultWidth,
+      height: defaultHeight,
+      x: initX,
+      y: initY,
+      frame: false,
+      resizable: false,
+      movable: false,
+      show: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      focusable: false,
+      fullscreenable: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        partition: 'persist:donethat',
+        sandbox: false,
+        backgroundThrottling: false
+      },
+      ...(isPlatformMac ? { visibleOnAllWorkspaces: true } : {})
+    });
+
+    notificationWindow.loadFile('./src/notification.html');
+
+    notificationWindow.on('closed', () => {
+      notificationWindow = null;
+    });
+
+    // Reposition on display changes
+    screen.on('display-metrics-changed', () => {
+      if (notificationWindow && !notificationWindow.isDestroyed()) {
+        try {
+          const cursorPoint = screen.getCursorScreenPoint();
+          const targetDisplay = screen.getDisplayNearestPoint(cursorPoint) || screen.getPrimaryDisplay();
+          const work = targetDisplay.workArea;
+          const bounds = notificationWindow.getBounds();
+          
+          if (isPlatformWindows) {
+            notificationWindow.setPosition(
+              Math.floor(work.x + work.width - bounds.width - margin),
+              Math.floor(work.y + work.height - bounds.height - margin)
+            );
+          } else {
+            notificationWindow.setPosition(
+              Math.floor(work.x + work.width - bounds.width - margin),
+              Math.floor(work.y + margin)
+            );
+          }
+        } catch (e) {}
+      }
+    });
+  }
+}
+
 function positionOverlayWindow() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   const margin = 16
@@ -1970,3 +2178,4 @@ function scheduleDailyAuthCheck() {
     scheduleDailyAuthCheck();
   }, timeUntilCheck);
 }
+
