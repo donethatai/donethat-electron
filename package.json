@@ -158,9 +158,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "multiLanguageInstaller": true,
-      "installerIcon": "resources/icon.png",
-      "uninstallerIcon": "resources/icon.png"
+      "multiLanguageInstaller": true
     },
     "linux": {
       "target": "AppImage",
