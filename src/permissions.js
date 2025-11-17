@@ -470,6 +470,14 @@ function requestWindowsPermission() {
   ipcRenderer.send("requestWindowsPermission");
 }
 
+// Helper function to check if running on Wayland
+function isWayland() {
+  if (process.platform !== 'linux') return false;
+  // Check for Wayland via environment variables (standard detection methods)
+  return !!(process.env.WAYLAND_DISPLAY || 
+           (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
+}
+
 // Function to update finish button visibility based on required permissions
 function updateFinishButtonVisibility() {
   const finishButtonContainer = document.getElementById('finishButtonContainer');
@@ -484,8 +492,11 @@ function updateFinishButtonVisibility() {
   const screenChecked = screenToggle.checked;
   const windowsChecked = windowsToggle.checked;
 
-  // Show finish button only when both toggles are checked
-  if (screenChecked && windowsChecked) {
+  // On Wayland, only require screen permission (windows detection doesn't work properly)
+  // On other platforms, require both permissions
+  const shouldShow = isWayland() ? screenChecked : (screenChecked && windowsChecked);
+
+  if (shouldShow) {
     finishButtonContainer.classList.remove('hidden');
   } else {
     finishButtonContainer.classList.add('hidden');

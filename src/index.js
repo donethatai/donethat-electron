@@ -189,10 +189,25 @@ function navigateToView(viewName) {
     // If not authenticated, always go to signin
     if (!isAuthenticated()) {
       viewName = 'signin';
-    } else if (!hasScreenCapturePermission() || !hasWindowsPermission()) {
-      viewName = 'settings';
     } else {
-      viewName = 'dashboard';
+      // Helper to check if running on Wayland
+      const isWayland = () => {
+        if (process.platform !== 'linux') return false;
+        return !!(process.env.WAYLAND_DISPLAY || 
+                 (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
+      };
+      
+      // On Wayland, only require screen permission (windows detection doesn't work properly)
+      // On other platforms, require both permissions
+      const needsSettings = isWayland() 
+        ? !hasScreenCapturePermission()
+        : (!hasScreenCapturePermission() || !hasWindowsPermission());
+      
+      if (needsSettings) {
+        viewName = 'settings';
+      } else {
+        viewName = 'dashboard';
+      }
     }
   }
 
@@ -259,8 +274,17 @@ function navigateToView(viewName) {
     const appTopbar = document.getElementById('appTopbar');
     const isAuthScreen = (viewName === 'signin' || viewName === 'signup' || viewName === 'reset');
     if (appTopbar) {
-      // Hide the entire topbar on auth screens or when screen permission or windows permission is missing
-      const shouldHideTopbar = isAuthScreen || !hasScreenCapturePermission() || !hasWindowsPermission();
+      // Helper to check if running on Wayland
+      const isWayland = () => {
+        if (process.platform !== 'linux') return false;
+        return !!(process.env.WAYLAND_DISPLAY || 
+                 (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
+      };
+      
+      // On Wayland, only require screen permission (windows detection doesn't work properly)
+      // On other platforms, require both permissions
+      const shouldHideTopbar = isAuthScreen || 
+        (isWayland() ? !hasScreenCapturePermission() : (!hasScreenCapturePermission() || !hasWindowsPermission()));
       if (shouldHideTopbar) appTopbar.classList.add('hidden');
       else appTopbar.classList.remove('hidden');
     }
@@ -951,8 +975,17 @@ function updateTopbarVisibility() {
   const isAuthScreen = (currentView === 'signin' || currentView === 'signup' || currentView === 'reset');
   
   if (appTopbar) {
-    // Hide the entire topbar on auth screens or when screen permission or windows permission is missing
-    const shouldHideTopbar = isAuthScreen || !hasScreenCapturePermission() || !hasWindowsPermission();
+    // Helper to check if running on Wayland
+    const isWayland = () => {
+      if (process.platform !== 'linux') return false;
+      return !!(process.env.WAYLAND_DISPLAY || 
+               (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
+    };
+    
+    // On Wayland, only require screen permission (windows detection doesn't work properly)
+    // On other platforms, require both permissions
+    const shouldHideTopbar = isAuthScreen || 
+      (isWayland() ? !hasScreenCapturePermission() : (!hasScreenCapturePermission() || !hasWindowsPermission()));
     if (shouldHideTopbar) appTopbar.classList.add('hidden');
     else appTopbar.classList.remove('hidden');
   }
