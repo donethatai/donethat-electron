@@ -159,7 +159,6 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "multiLanguageInstaller": true,
-      "include": "resources/installer-update-text.nsh",
       "installerIcon": "resources/icon.png",
       "uninstallerIcon": "resources/icon.png"
     },
