@@ -35,7 +35,6 @@ function calculateVisibleRegion(window, allWindows, screenBounds, display) {
   }
   
   if (clampedRect.width <= 0 || clampedRect.height <= 0) {
-    log.warn(`Window clamped to zero size:`, { windowRect, screenBounds, clampedRect })
     return []
   }
   
@@ -172,14 +171,10 @@ function calculateVisibleRegion(window, allWindows, screenBounds, display) {
       height: r.height
     }))
   
-  // If no visible regions remain, fallback to masking entire window (for privacy)
+  // If no visible regions remain, the window is completely covered by non-excluded windows
+  // In this case, we should mask nothing (return empty array) because the excluded window isn't visible
   if (finalRegions.length === 0) {
-    return [{
-      x: clampedRect.x - screenBounds.x,
-      y: clampedRect.y - screenBounds.y,
-      width: clampedRect.width,
-      height: clampedRect.height
-    }]
+    return []
   }
   
   return finalRegions

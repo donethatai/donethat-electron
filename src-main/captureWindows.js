@@ -10,12 +10,11 @@ function normalizeAppName(appName) {
 
 // Helper to create a unique window identifier for z-order tracking
 function getWindowId(window) {
-  if (!window || !window.bounds) return null
+  if (!window || !window.appName) return null
   const normalizedApp = normalizeAppName(window.appName)
-  const b = window.bounds
   const title = window.title || ''
-  // Use app name + title + bounds to uniquely identify a window
-  return `${normalizedApp}|${title}|${b.x},${b.y},${b.width},${b.height}`
+  // Use app name + title to uniquely identify a window (bounds excluded for stability)
+  return `${normalizedApp}|${title}`
 }
 
 /**
@@ -154,7 +153,7 @@ let stateManagerRef = null
 let mainWindowRef = null
 
 // Separate cache for z-order approximation: window ID -> last activity timestamp
-// Window ID is: normalizedAppName|bounds.x,bounds.y,bounds.width,bounds.height
+// Window ID is: normalizedAppName|title (bounds excluded for stability)
 // This is independent of the main timeline and never gets cleared
 let zOrderCache = new Map() // Map<windowId, timestamp>
 
@@ -296,54 +295,48 @@ async function startTracking() {
 function reconstructWindowsFromCache() {
   const reconstructed = []
   
-  // Parse windowId to extract app name, title, and bounds
-  // Format: normalizedAppName|title|bounds.x,bounds.y,bounds.width,bounds.height
+  // Parse windowId to extract app name and title
+  // Format: normalizedAppName|title
   for (const [windowId, timestamp] of zOrderCache) {
     try {
       const parts = windowId.split('|')
-      if (parts.length >= 3) {
+      if (parts.length >= 2) {
         const normalizedAppName = parts[0]
         const title = parts[1]
-        const boundsStr = parts[2]
-        const boundsParts = boundsStr.split(',')
         
-        if (boundsParts.length === 4) {
-          const bounds = {
-            x: parseInt(boundsParts[0], 10),
-            y: parseInt(boundsParts[1], 10),
-            width: parseInt(boundsParts[2], 10),
-            height: parseInt(boundsParts[3], 10)
-          }
-          
-          // Validate bounds
-          if (!isNaN(bounds.x) && !isNaN(bounds.y) && !isNaN(bounds.width) && !isNaN(bounds.height) &&
-              bounds.width > 0 && bounds.height > 0) {
-            // Get screen index from bounds
-            const screenIndex = getDisplayIndexForBounds(bounds)
-            
-            // Try to find matching entry in timeline for executable
-            let executable = 'unknown'
-            if (windowTimeline.length > 0) {
-              const matchingEntry = windowTimeline.find(entry => {
-                const entryAppName = normalizeAppName(entry.app || '')
-                const entryTitle = entry.title || 'Unknown'
-                return entryAppName === normalizedAppName && entryTitle === title
-              })
-              if (matchingEntry && matchingEntry.executable) {
-                executable = matchingEntry.executable
-              }
+        // Try to find matching entry in timeline for executable and bounds
+        let executable = 'unknown'
+        let bounds = null
+        let screenIndex = 0
+        
+        if (windowTimeline.length > 0) {
+          const matchingEntry = windowTimeline.find(entry => {
+            const entryAppName = normalizeAppName(entry.app || '')
+            const entryTitle = entry.title || 'Unknown'
+            return entryAppName === normalizedAppName && entryTitle === title
+          })
+          if (matchingEntry) {
+            if (matchingEntry.executable) {
+              executable = matchingEntry.executable
             }
-            
-            reconstructed.push({
-              appName: normalizedAppName,
-              title: title,
-              executable: executable,
-              bounds: bounds,
-              screen: screenIndex,
-              minimized: false,
-              hidden: false
-            })
+            if (matchingEntry.bounds) {
+              bounds = matchingEntry.bounds
+              screenIndex = matchingEntry.screen !== undefined ? matchingEntry.screen : getDisplayIndexForBounds(bounds)
+            }
           }
+        }
+        
+        // Only reconstruct if we have bounds from timeline
+        if (bounds && bounds.width > 0 && bounds.height > 0) {
+          reconstructed.push({
+            appName: normalizedAppName,
+            title: title,
+            executable: executable,
+            bounds: bounds,
+            screen: screenIndex,
+            minimized: false,
+            hidden: false
+          })
         }
       }
     } catch (err) {
@@ -809,14 +802,23 @@ async function getAllVisibleWindows() {
         const activeAppName = latestEntry.app
         const activeTitle = latestEntry.title || 'Unknown'
         
-        // Find matching window in processed windows (match by app name and title)
-        const matchingWindow = processedWindows.find(w => {
+        // Find all matching windows (multiple windows can have same app+title)
+        const matchingWindows = processedWindows.filter(w => {
           const appMatches = normalizeAppName(w.appName) === normalizeAppName(activeAppName)
           const titleMatches = (w.title || 'Unknown') === activeTitle
           return appMatches && titleMatches
         })
         
-        if (matchingWindow) {
+        if (matchingWindows.length > 0) {
+          // If multiple matches, be conservative: pick the one that appears first in original order
+          // (openWindows() returns windows in approximate z-order, so first = highest)
+          // Since all matching windows share the same windowId, they'll all get the same timestamp anyway
+          matchingWindows.sort((a, b) => {
+            // Sort by original position in processedWindows (earlier = higher z-order)
+            return processedWindows.indexOf(a) - processedWindows.indexOf(b)
+          })
+          
+          const matchingWindow = matchingWindows[0] // Take the first one (highest in original z-order)
           const windowId = getWindowId(matchingWindow)
           if (windowId) {
             zOrderCache.set(windowId, Date.now())
