@@ -20,12 +20,18 @@ function getWindowId(window) {
 
 /**
  * Convert window bounds from physical pixels (get-windows) to DIP (Electron screen API)
- * @param {Object} bounds Window bounds in physical pixels {x, y, width, height}
+ * On macOS, get-windows already returns DIP coordinates, so no conversion is applied.
+ * @param {Object} bounds Window bounds (physical pixels on Linux/Windows, DIP on macOS)
  * @param {Object} display Optional Electron display object with scaleFactor (if already known)
  * @returns {Object} Window bounds in DIP {x, y, width, height}
  */
 function convertBoundsToDIP(bounds, display) {
   if (!bounds) return bounds
+  
+  // On macOS, get-windows already returns DIP coordinates, so no conversion needed
+  if (process.platform === 'darwin') {
+    return bounds
+  }
   
   // If display is provided, use it directly (most efficient)
   if (display && display.scaleFactor) {
