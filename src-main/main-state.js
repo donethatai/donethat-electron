@@ -37,6 +37,10 @@ let manualOverrideWorkHours = false;
 let isScreenLocked = false;
 let isSystemSuspended = false;
 
+// Cache decrypted API keys/configs in memory to avoid decryption issues during hibernation
+let cachedGeminiApiKey = null;
+let cachedOpenAICompatibleConfig = null;
+
 /**
  * Periodic state validator that ensures consistency after sleep/wake cycles.
  * Runs every minute to catch timer failures and state drift.
@@ -1065,6 +1069,9 @@ function setupIPCHandlers() {
         }
       }, 'save encrypted Gemini API key');
 
+      // Cache the decrypted key in memory
+      cachedGeminiApiKey = apiKey;
+
       try { require('./processLocal').resetLLMModels(); } catch (_) {}
       return { success: true };
     } catch (error) {
@@ -1093,6 +1100,9 @@ function setupIPCHandlers() {
           throw new Error('Store not initialized');
         }
       }, 'delete Gemini API key');
+
+      // Clear cached key
+      cachedGeminiApiKey = null;
 
       try { require('./processLocal').resetLLMModels(); } catch (_) {}
       log.info('Gemini API key cleared successfully');
@@ -1139,6 +1149,13 @@ function setupIPCHandlers() {
         }
       }, 'save OpenAI-compatible config');
 
+      // Cache the decrypted config in memory
+      cachedOpenAICompatibleConfig = {
+        endpoint: endpoint || null,
+        model: config.model || null,
+        apiKey: apiKey || null
+      };
+
       try { require('./processLocal').resetLLMModels(); } catch (_) {}
       log.info('OpenAI-compatible config saved successfully');
       return { success: true };
@@ -1167,6 +1184,9 @@ function setupIPCHandlers() {
           throw new Error('Store not initialized');
         }
       }, 'delete OpenAI-compatible config');
+
+      // Clear cached config
+      cachedOpenAICompatibleConfig = null;
 
       try { require('./processLocal').resetLLMModels(); } catch (_) {}
       log.info('OpenAI-compatible config cleared successfully');
@@ -1700,6 +1720,11 @@ function setupPowerMonitorHandlers() {
  * Get Gemini API key (for internal use)
  */
 async function getGeminiApiKey() {
+  // Return cached key if available
+  if (cachedGeminiApiKey !== null) {
+    return { success: true, apiKey: cachedGeminiApiKey };
+  }
+
   try {
     const encryptedKey = safeStoreOperation(() => {
       if (store) {
@@ -1716,6 +1741,9 @@ async function getGeminiApiKey() {
     // Decrypt the API key
     const decryptedKey = decryptData(encryptedKey);
 
+    // Cache the decrypted key
+    cachedGeminiApiKey = decryptedKey;
+
     return { success: true, apiKey: decryptedKey };
   } catch (error) {
     log.error('Error retrieving Gemini API key:', error);
@@ -1728,6 +1756,8 @@ async function getGeminiApiKey() {
             store.delete('geminiApiKey');
           }
         }, 'delete corrupted Gemini API key');
+        // Clear cached key
+        cachedGeminiApiKey = null;
       } catch (e) {
         log.warn('Failed to clear corrupted Gemini API key:', e);
       }
@@ -1756,6 +1786,14 @@ async function getGeminiApiKey() {
  * Get OpenAI-compatible config (for internal use)
  */
 async function getOpenAICompatibleConfig() {
+  // Return cached config if available
+  if (cachedOpenAICompatibleConfig !== null) {
+    return {
+      success: true,
+      config: cachedOpenAICompatibleConfig
+    };
+  }
+
   try {
     const storedConfig = safeStoreOperation(() => {
       if (store) {
@@ -1785,6 +1823,8 @@ async function getOpenAICompatibleConfig() {
                 store.delete('openaiCompatibleConfig');
               }
             }, 'delete corrupted OpenAI-compatible config');
+            // Clear cached config
+            cachedOpenAICompatibleConfig = null;
           } catch (e) {
             log.warn('Failed to clear corrupted OpenAI-compatible config:', e);
           }
@@ -1809,13 +1849,18 @@ async function getOpenAICompatibleConfig() {
       }
     }
 
+    const config = {
+      endpoint: storedConfig.endpoint,
+      model: storedConfig.model,
+      apiKey: apiKey
+    };
+
+    // Cache the decrypted config
+    cachedOpenAICompatibleConfig = config;
+
     return {
       success: true,
-      config: {
-        endpoint: storedConfig.endpoint,
-        model: storedConfig.model,
-        apiKey: apiKey
-      }
+      config: config
     };
   } catch (error) {
     log.error('Error retrieving OpenAI-compatible config:', error);
