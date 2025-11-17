@@ -18,11 +18,72 @@ function getWindowId(window) {
   return `${normalizedApp}|${title}|${b.x},${b.y},${b.width},${b.height}`
 }
 
+/**
+ * Convert window bounds from physical pixels (get-windows) to DIP (Electron screen API)
+ * @param {Object} bounds Window bounds in physical pixels {x, y, width, height}
+ * @param {Object} display Optional Electron display object with scaleFactor (if already known)
+ * @returns {Object} Window bounds in DIP {x, y, width, height}
+ */
+function convertBoundsToDIP(bounds, display) {
+  if (!bounds) return bounds
+  
+  // If display is provided, use it directly (most efficient)
+  if (display && display.scaleFactor) {
+    const scaleFactor = display.scaleFactor
+    return {
+      x: bounds.x / scaleFactor,
+      y: bounds.y / scaleFactor,
+      width: bounds.width / scaleFactor,
+      height: bounds.height / scaleFactor
+    }
+  }
+  
+  // Try using Electron's built-in conversion if available (Electron 20+)
+  // This handles per-display DPI scaling automatically
+  if (screen.screenToDipRect) {
+    try {
+      const dipRect = screen.screenToDipRect(null, bounds)
+      if (dipRect && dipRect.x !== undefined && dipRect.y !== undefined) {
+        return dipRect
+      }
+      // Fallback if screenToDipRect returns undefined/null or invalid result
+    } catch (error) {
+      // Fall through to manual conversion
+    }
+  }
+  
+  // Fallback: manually convert using the display that matches the physical rect
+  // On some platforms, getDisplayMatching might work with physical pixels
+  // We use it to find the display, then convert using that display's scaleFactor
+  try {
+    const matchingDisplay = screen.getDisplayMatching(bounds)
+    if (matchingDisplay && matchingDisplay.scaleFactor) {
+      const scaleFactor = matchingDisplay.scaleFactor
+      return {
+        x: bounds.x / scaleFactor,
+        y: bounds.y / scaleFactor,
+        width: bounds.width / scaleFactor,
+        height: bounds.height / scaleFactor
+      }
+    }
+  } catch (error) {
+    // Fall through
+  }
+  
+  // If we can't determine the display, assume scale factor of 1.0 (no scaling)
+  return bounds
+}
+
 // Helper to get display index for window bounds
+// Bounds from get-windows are in physical pixels, but screen.getDisplayMatching expects DIP
 function getDisplayIndexForBounds(bounds) {
   if (!bounds) return 0
   try {
-    const matchingDisplay = screen.getDisplayMatching(bounds)
+    // Convert physical pixels to DIP first
+    const dipBounds = convertBoundsToDIP(bounds)
+    
+    // Now match using DIP coordinates
+    const matchingDisplay = screen.getDisplayMatching(dipBounds)
     if (matchingDisplay) {
       const displays = screen.getAllDisplays()
       const displayIndex = displays.findIndex(display => display.id === matchingDisplay.id)
@@ -849,5 +910,6 @@ module.exports = {
   getAllVisibleWindows,
   initWindowsPermissionHandling,
   normalizeAppName,
-  shouldExcludeWindow
+  shouldExcludeWindow,
+  convertBoundsToDIP
 } 

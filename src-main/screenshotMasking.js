@@ -1,26 +1,29 @@
 const log = require('electron-log')
 const windowsCapture = require('./captureWindows')
-const { shouldExcludeWindow } = windowsCapture
+const { shouldExcludeWindow, convertBoundsToDIP } = windowsCapture
+const { screen } = require('electron')
 
 /**
  * Calculate visible region of a window (not covered by allowed windows)
  * Assumes allWindows is already sorted by z-order (topmost first)
  * @param {Object} window Window to check
  * @param {Array} allWindows All windows (already sorted: activity windows, then excluded no-activity, then non-excluded no-activity)
- * @param {Object} screenBounds Screen bounds
+ * @param {Object} screenBounds Screen bounds in DIP
+ * @param {Object} display Electron display object (for scale factor conversion)
  * @returns {Array} Array of rectangles to mask [{x, y, width, height}]
  */
-function calculateVisibleRegion(window, allWindows, screenBounds) {
+function calculateVisibleRegion(window, allWindows, screenBounds, display) {
   if (!window.bounds) {
     return []
   }
   
-  const windowBounds = window.bounds
+  // Convert window bounds from physical pixels to DIP
+  const windowBoundsDIP = convertBoundsToDIP(window.bounds, display)
   const windowRect = {
-    x: windowBounds.x,
-    y: windowBounds.y,
-    width: windowBounds.width,
-    height: windowBounds.height
+    x: windowBoundsDIP.x,
+    y: windowBoundsDIP.y,
+    width: windowBoundsDIP.width,
+    height: windowBoundsDIP.height
   }
   
   // Clamp window to screen bounds
@@ -59,12 +62,13 @@ function calculateVisibleRegion(window, allWindows, screenBounds) {
   for (const topWindow of topWindows) {
     if (!topWindow.bounds) continue
     
-    const topBounds = topWindow.bounds
+    // Convert top window bounds from physical pixels to DIP
+    const topBoundsDIP = convertBoundsToDIP(topWindow.bounds, display)
     const topRect = {
-      x: topBounds.x,
-      y: topBounds.y,
-      width: topBounds.width,
-      height: topBounds.height
+      x: topBoundsDIP.x,
+      y: topBoundsDIP.y,
+      width: topBoundsDIP.width,
+      height: topBoundsDIP.height
     }
     
     // Check if top window overlaps with our window
@@ -363,11 +367,20 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
       
       // Calculate mask regions for each excluded window
       // Use merged bounds so coordinates are relative to the merged screenshot
+      // For merged screenshots, we need to find the appropriate display for each window
+      // Since we can't easily determine which display a window is on in merged mode,
+      // we'll use the primary display's scale factor as a fallback
+      const primaryDisplay = displayBounds.find(d => d.id === screen.getPrimaryDisplay().id) || displayBounds[0]
       const allMaskRegions = []
       for (const excludedWindow of excludedWindows) {
+        // Try to find the display that matches this window's screen index
+        const windowDisplay = excludedWindow.screen !== undefined && displayBounds[excludedWindow.screen]
+          ? displayBounds[excludedWindow.screen]
+          : primaryDisplay
+        
         // calculateVisibleRegion clamps to screenBounds and returns coordinates relative to it
         // For merged screenshot, pass mergedBounds so coordinates are relative to merged screenshot
-        const regions = calculateVisibleRegion(excludedWindow, reorderedWindows, mergedBounds)
+        const regions = calculateVisibleRegion(excludedWindow, reorderedWindows, mergedBounds, windowDisplay)
         allMaskRegions.push(...regions)
       }
       
@@ -436,7 +449,7 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
       // Calculate mask regions for each excluded window
       const allMaskRegions = []
       for (const excludedWindow of excludedWindows) {
-        const regions = calculateVisibleRegion(excludedWindow, reorderedWindows, screenBounds)
+        const regions = calculateVisibleRegion(excludedWindow, reorderedWindows, screenBounds, display)
         allMaskRegions.push(...regions)
       }
       
