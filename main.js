@@ -361,8 +361,8 @@ function setupAutoUpdater() {
             mainWindow.webContents.send('update:available');
             mainWindow.webContents.send('inapp:notify', {
               id: 'update-available',
-              title: 'DoneThat Update',
-              message: 'An update is ready. Click to install now. You may see a Windows prompt to confirm.',
+              title: 'DoneThat Update Available',
+              message: `Version ${info.version} is ready to install. The installer will update your existing installation - your settings and data will be preserved.`,
               sticky: true,
               action: { label: 'Install Update', channel: 'update:install', payload: { forceRunAfter: true } }
             });
