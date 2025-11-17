@@ -1738,7 +1738,7 @@ async function getGeminiApiKey() {
         mainWindow.webContents.send('inapp:notify', {
           id: 'gemini-key-decrypt-failed',
           title: 'Settings',
-          message: "We couldn't read your Gemini API key. Please set it again in Settings. For now we'll use cloud processing.",
+          message: "We couldn't read your Gemini API key. Please set it again in Permissions. For now we'll use cloud processing.",
           sticky: true
         });
       }
@@ -1776,13 +1776,36 @@ async function getOpenAICompatibleConfig() {
         apiKey = decryptData(storedConfig.apiKey);
       } catch (error) {
         log.error('Error decrypting OpenAI-compatible API key:', error);
-        // Clear corrupted config
-        safeStoreOperation(() => {
-          if (store) {
-            store.delete('openaiCompatibleConfig');
+        // If decryption failed, clear the config and notify the user to re-enter
+        if (error && typeof error.message === 'string' && error.message.includes('Failed to decrypt data')) {
+          try {
+            // Clear the stored config
+            safeStoreOperation(() => {
+              if (store) {
+                store.delete('openaiCompatibleConfig');
+              }
+            }, 'delete corrupted OpenAI-compatible config');
+          } catch (e) {
+            log.warn('Failed to clear corrupted OpenAI-compatible config:', e);
           }
-        }, 'delete corrupted OpenAI-compatible config');
-        return { success: true, config: null };
+          // Send a sticky in-app notification to prompt user
+          try {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              try { mainWindow.show(); mainWindow.focus(); } catch (e) {}
+              mainWindow.webContents.send('inapp:notify', {
+                id: 'openai-key-decrypt-failed',
+                title: 'Settings',
+                message: "We couldn't read your OpenAI-compatible API key. Please set it again in Permissions. For now we'll use cloud processing.",
+                sticky: true
+              });
+            }
+          } catch (notifyErr) {
+            log.warn('Failed to send in-app notification for OpenAI-compatible key reset:', notifyErr);
+          }
+          // Return success with null config to fall back to cloud processing
+          return { success: true, config: null };
+        }
+        return { success: false, error: error.message };
       }
     }
 
