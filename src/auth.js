@@ -339,6 +339,11 @@ onAuthStateChanged(auth, async (user) => {
 
 // Helper function to get user-friendly error messages
 function getErrorMessage(error) {
+  // Deadline exceeded (e.g. from backend) – show generic retry message
+  const msg = (error.message || '').toLowerCase();
+  if (msg.includes('deadline exceeded') || msg.includes('deadline-exceeded') || (error.code && String(error.code).toLowerCase().includes('deadline'))) {
+    return 'Please try again.';
+  }
   // Check for network-related errors first
   if (error.code?.includes('network') || error.message?.includes('network')) {
     return 'Network error. Please check your internet connection and try again.';
