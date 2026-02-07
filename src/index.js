@@ -2,7 +2,7 @@ const {
   onAuthStateChanged,
   onIdTokenChanged,
 } = require("firebase/auth");
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.electronAPI;
 
 const { auth } = require('./firebase.js');
 
@@ -35,6 +35,7 @@ require('./linux-screenshot');
 
 // Reference to embedded portal webview
 let portalView = null;
+let portalDomReady = false;
 let lastPortalTokenSent = null;
 let lastPortalTokenTs = 0;
 // Webview load watchdog/retry state
@@ -96,7 +97,10 @@ function startPortalLoadWatchdog(reason) {
           startPortalLoadWatchdog('timeout-retry-' + portalLoadRetries);
         } catch (e) {
           console.error('[Webview] Error reloading after timeout:', e);
+          clearPortalLoadWatchdog();
         }
+      } else {
+        clearPortalLoadWatchdog();
       }
     }, PORTAL_LOAD_TIMEOUT_MS);
   } catch (_) {}
@@ -152,6 +156,7 @@ function canReloadPortalNow() {
 function safePortalReload(reason) {
   try {
     if (!portalView) return;
+    if (!portalDomReady && reason !== 'window-open') return;
     if (!navigator.onLine) { showWebviewError(); return; }
     if (!canReloadPortalNow()) { return; }
     hideWebviewError();
@@ -166,8 +171,10 @@ function safePortalReload(reason) {
 
 // Add a small delay to check initial auth state
 setTimeout(() => {
-  const { ipcRenderer } = require('electron');
-  ipcRenderer.send('initialAuthCheck', !!auth.currentUser);
+  // Use the secure preload bridge instead of requiring electron in the renderer
+  try {
+    ipcRenderer.send('initialAuthCheck', !!auth.currentUser);
+  } catch (_) {}
   // Windows needed 3s, 1s was enough for mac
 }, 3000);
 
@@ -191,16 +198,10 @@ function navigateToView(viewName) {
     if (!isAuthenticated()) {
       viewName = 'signin';
     } else {
-      // Helper to check if running on Wayland
-      const isWayland = () => {
-        if (process.platform !== 'linux') return false;
-        return !!(process.env.WAYLAND_DISPLAY || 
-                 (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
-      };
-      
       // On Wayland, only require screen permission (windows detection doesn't work properly)
       // On other platforms, require both permissions
-      const needsSettings = isWayland() 
+      const isWayland = !!(window.electronAPI && window.electronAPI.isWayland);
+      const needsSettings = isWayland
         ? !hasScreenCapturePermission()
         : (!hasScreenCapturePermission() || !hasWindowsPermission());
       
@@ -264,7 +265,7 @@ function navigateToView(viewName) {
     }
     
     // Show custom screenshot section on Linux when settings view is displayed
-    if ((viewName === 'settings' || viewName === 'permissions') && process.platform === 'linux') {
+    if ((viewName === 'settings' || viewName === 'permissions') && window.electronAPI && window.electronAPI.platform === 'linux') {
       const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
       if (linuxScreenshotSection) {
         linuxScreenshotSection.classList.remove('hidden');
@@ -277,9 +278,8 @@ function navigateToView(viewName) {
     if (appTopbar) {
       // Helper to check if running on Wayland
       const isWayland = () => {
-        if (process.platform !== 'linux') return false;
-        return !!(process.env.WAYLAND_DISPLAY || 
-                 (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
+        if (!window.electronAPI) return false;
+        return !!window.electronAPI.isWayland;
       };
       
       // On Wayland, only require screen permission (windows detection doesn't work properly)
@@ -335,12 +335,16 @@ async function loadUserSettingsCallback() {
     updateStoreScreenshots(result.data?.storeScreenshots || false);
     updateDateCreated(result.data?.analytics?.createdAt);
 
-    // Send user status to main process
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.send('updateUserStatus', userStatus);
-
+    // Send user status to main process (via secure preload bridge)
+    try {
+      ipcRenderer.send('updateUserStatus', userStatus);
+    } catch (_) {}
+    
     // Fetch initial pause state from main process
-    const initialIsPaused = await ipcRenderer.invoke('getInitialPauseState');
+    let initialIsPaused = false;
+    try {
+      initialIsPaused = await ipcRenderer.invoke('getInitialPauseState');
+    } catch (_) {}
     
     // Update app-state with the initial value
     updatePauseState(initialIsPaused);
@@ -451,14 +455,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   } catch (e) {}
   
-  // Reload webview when window opens (only once)
+  // Track when the webview is ready; avoid reload loops triggered before dom-ready
   if (portalView) {
     try {
-      if (navigator.onLine) {
-        safePortalReload('window-open');
-      }
+      portalView.addEventListener('dom-ready', () => {
+        portalDomReady = true;
+      });
     } catch (e) {
-      console.error('[Webview] Error reloading on window open:', e);
+      console.error('[Webview] Error attaching dom-ready listener:', e);
+    }
+    // Reload webview when window opens (only once)
+    if (navigator.onLine) {
+      safePortalReload('window-open');
     }
   }
   
@@ -486,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (openChatBtn) {
     try {
-      const isMac = process.platform === 'darwin';
+      const isMac = window.electronAPI && window.electronAPI.platform === 'darwin';
       openChatBtn.textContent = `Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
       openChatBtn.title = `Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
     } catch (e) {}
@@ -530,6 +538,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Reload iframe button (manually reload when dashboard goes blank)
+  const reloadIframeBtn = document.getElementById('reloadIframeBtn');
+  if (reloadIframeBtn) {
+    reloadIframeBtn.addEventListener('click', () => {
+      if (getCurrentView && getCurrentView() === 'dashboard' && portalView) {
+        safePortalReload('manual-reload');
+        sendPortalLoginIfPossible();
+      }
+    });
+  }
+
   // Update button (only visible on Windows/Linux when update is available)
   const updateBtn = document.getElementById('updateBtn');
   if (updateBtn) {
@@ -553,7 +572,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Check update status on startup (only for Windows/Linux)
   (async () => {
-    if (process.platform === 'win32' || process.platform === 'linux') {
+    const platform = window.electronAPI?.platform || 'unknown';
+    if (platform === 'win32' || platform === 'linux') {
       try {
         const status = await ipcRenderer.invoke('update:check-status');
         if (status && status.available) {
@@ -933,17 +953,10 @@ function updateTopbarVisibility() {
   const isAuthScreen = (currentView === 'signin' || currentView === 'signup' || currentView === 'reset');
   
   if (appTopbar) {
-    // Helper to check if running on Wayland
-    const isWayland = () => {
-      if (process.platform !== 'linux') return false;
-      return !!(process.env.WAYLAND_DISPLAY || 
-               (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
-    };
-    
     // On Wayland, only require screen permission (windows detection doesn't work properly)
     // On other platforms, require both permissions
     const shouldHideTopbar = isAuthScreen || 
-      (isWayland() ? !hasScreenCapturePermission() : (!hasScreenCapturePermission() || !hasWindowsPermission()));
+      (window.electronAPI.isWayland ? !hasScreenCapturePermission() : (!hasScreenCapturePermission() || !hasWindowsPermission()));
     if (shouldHideTopbar) appTopbar.classList.add('hidden');
     else appTopbar.classList.remove('hidden');
   }

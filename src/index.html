@@ -26,10 +26,8 @@
       object-src 'self';
     ">
     <title>DoneThat</title>
-    <!-- Local Tailwind CSS -->
+    <!-- Compiled Tailwind + custom styles (from styles.css via Tailwind build) -->
     <link href="../build/output.css" rel="stylesheet" />
-    <!-- Custom styles -->
-    <link href="styles.css" rel="stylesheet" />
   </head>
   <body class="bg-white h-full w-full overflow-hidden" style="height:100vh;display:flex;flex-direction:column;">
     <!-- Global Top Bar (visible on all views except auth screens) -->
@@ -37,6 +35,11 @@
       <div class="topbar-left">
         <button id="openSettingsViewBtn" class="btn-secondary topbar-btn" title="Permissions">Permissions</button>
         <button id="openFeedbackBtn" class="btn-secondary topbar-btn" title="Feedback">Feedback</button>
+        <button id="reloadIframeBtn" class="btn-secondary topbar-btn" title="Reload Dashboard" style="padding: 0.5rem 0.75rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+          </svg>
+        </button>
         <button id="updateBtn" class="btn-primary topbar-btn hidden" title="Update">Install Update</button>
       </div>
       <div class="topbar-actions">
@@ -386,7 +389,14 @@
       <div class="dashboard-shell">
         <!-- Embedded web portal area -->
         <div class="dashboard-embed">
-          <webview id="portalView" src="https://app.donethat.ai" class="portal-frame" allowpopups partition="persist:donethat" preload="./portal-preload.js" webpreferences="contextIsolation=false"></webview>
+          <webview
+            id="portalView"
+            src="https://app.donethat.ai"
+            class="portal-frame"
+            partition="persist:donethat"
+            preload="./portal-preload.js"
+            webpreferences="contextIsolation=true, nodeIntegration=false"
+          ></webview>
         </div>
       </div>
       <div id="summaryLoadingSpinner" class="spinner-overlay hidden">

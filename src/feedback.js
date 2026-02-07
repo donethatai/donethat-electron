@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.electronAPI;
 const { httpsCallable } = require('firebase/functions');
 const { functions } = require('./firebase.js');
 const { showBanner } = require('./notify.js');

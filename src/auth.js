@@ -8,7 +8,7 @@ const {
     signInWithCustomToken
   } = require("firebase/auth");
 
-const { ipcRenderer } = require("electron");
+const ipcRenderer = window.electronAPI;
 
 // Import auth instance from firebase.js and analytics functions directly
 const { auth } = require('./firebase.js');
@@ -512,33 +512,40 @@ signInForm.addEventListener("submit", (e) => {
     e.preventDefault();
     
     try {
-      // Show spinner while we wait for the browser SSO flow and callback
       showSpinner();
-      // Guard against double-clicks
       try { googleSignInBtn.disabled = true; googleSignInBtn.classList.add('disabled-btn'); } catch (_) {}
-      // Call the Firebase function to start Google Sign In
-      const { httpsCallable } = require('firebase/functions');
-      const { functions } = require('./firebase.js');
-      
-      const googleSignInStart = httpsCallable(functions, 'authGoogleSignInStart');
-      
-      // Start the localhost auth server first
       const serverResult = await ipcRenderer.invoke('auth:start-server');
       if (!serverResult.success) {
         throw new Error(`Failed to start auth server: ${serverResult.error}`);
       }
 
-      // Call the Firebase function with the localhost port
-      googleSignInStart({ 
-        port: serverResult.port 
-      })
+      ipcRenderer.invoke('auth:get-google-signin-url', { port: serverResult.port })
         .then((result) => {
-          // The function should return a URL to open
+          if (!result || result.success === false) {
+            console.error('Google Sign In main-process error:', result && result.error);
+            showBanner(`Failed to start Google Sign In: ${result && result.error ? result.error : 'Unknown error'}`, { title: 'Google Sign In', sticky: true });
+            hideSpinner();
+            try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+            try { ipcRenderer.invoke('auth:stop-server'); } catch (_) {}
+            return;
+          }
+          // The main process returns the Cloud Function data under result.data
           const url = result.data?.authUrl || result.data?.url || result.data?.data?.url;
           if (url) {
-            // Open the URL in the default browser
-            const { shell } = require('electron');
-            shell.openExternal(url);
+            // Open the URL in the default browser using secure API
+            window.electronAPI.invoke('open-external', url).then((res) => {
+              if (!res || res.success === false) {
+                console.error('open-external failed:', res && res.error);
+                showBanner('Failed to open browser for Google Sign In.', { title: 'Google Sign In', sticky: true });
+                hideSpinner();
+                try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+              }
+            }).catch((err) => {
+              console.error('open-external threw error:', err);
+              showBanner('Failed to open browser for Google Sign In.', { title: 'Google Sign In', sticky: true });
+              hideSpinner();
+              try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+            });
           } else {
             console.error('No URL found in result:', JSON.stringify(result.data, null, 2));
             showBanner('No URL returned from Google Sign In function.', { title: 'Google Sign In', sticky: true });
@@ -570,9 +577,7 @@ signInForm.addEventListener("submit", (e) => {
 
   // Handle custom token from main process
   ipcRenderer.on('firebase-custom-token', (event, token) => {
-    // Request main process to focus the window
     ipcRenderer.send('focus-app-window');
-    
     signInWithCustomToken(auth, token)
       .then((userCredential) => {
         logAnalyticsEvent('google_sign_in_success');

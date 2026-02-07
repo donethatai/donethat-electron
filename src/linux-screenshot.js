@@ -1,4 +1,4 @@
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.electronAPI;
 
 // Linux screenshot command management
 class LinuxScreenshotManager {
@@ -9,7 +9,7 @@ class LinuxScreenshotManager {
     this.testResult = null;
     this.testIcon = null;
     this.testMessage = null;
-    this.isLinux = process.platform === 'linux';
+    this.isLinux = window.electronAPI && window.electronAPI.platform === 'linux';
     this.hideTimer = null;
     
     this.init();

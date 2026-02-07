@@ -1,6 +1,6 @@
 const { httpsCallable } = require("firebase/functions");
 const { functions } = require('./firebase.js');
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.electronAPI;
 const { logAnalyticsEvent } = require('./analytics.js');
 const { getIsPaused } = require('./app-state.js');
 const { showBanner } = require('./notify.js');

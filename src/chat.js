@@ -1,7 +1,11 @@
 
 
-const { ipcRenderer } = require('electron')
-const { routeLink } = require('./link-router.js')
+const ipcRenderer = window.electronAPI;
+// routeLink is now loaded globally via script tag in chat.html
+
+ipcRenderer.on('liquid-glass-active', () => {
+  document.documentElement.classList.add('liquid-glass-active')
+})
 
 const input0 = document.getElementById('chatInput')
 const includeScreenBtn = document.getElementById('includeScreenBtn')
@@ -13,15 +17,17 @@ const recentChatsContainer = document.getElementById('recentChatsContainer')
 const chatNotice = document.getElementById('chatNotice')
 
 // Event delegation for chat links - handle all link clicks at container level
-chatContainer.addEventListener('click', (e) => {
-  if (e.target.classList.contains('chat-link')) {
-    e.preventDefault()
-    const url = e.target.getAttribute('data-url')
-    if (url) {
-      routeLink(url, { source: 'chat' })
+if (chatContainer) {
+  chatContainer.addEventListener('click', (e) => {
+    if (e.target.classList.contains('chat-link')) {
+      e.preventDefault()
+      const url = e.target.getAttribute('data-url')
+      if (url) {
+        routeLink(url, { source: 'chat' })
+      }
     }
-  }
-})
+  })
+}
 
 let messages = []
 let chatVisible = false
@@ -719,8 +725,8 @@ ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
   
   // Auto-show and expand if new messages arrive
   if (newMessages.length > 0) {
-    // Always ensure the overlay window is visible first
-    ipcRenderer.send('overlay:show-if-hidden')
+    // Always ensure the overlay window is visible first, but don't steal focus
+    ipcRenderer.send('overlay:show-if-hidden', { noFocus: true })
     
     // Then expand the chat if it's collapsed (with a small delay to ensure window is ready)
     if (!chatVisible) {
@@ -816,7 +822,7 @@ window.addEventListener('keydown', (e) => {
 
 // Update close tooltip for platform
 try {
-  const isMac = process.platform === 'darwin'
+  const isMac = window.electronAPI && window.electronAPI.platform === 'darwin'
   const closeBtn = document.getElementById('closeOverlayBtn')
   if (closeBtn) {
     closeBtn.title = `Close chat (Esc, ${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`

@@ -1,4 +1,4 @@
-const { shell, ipcRenderer } = require('electron');
+const shell = { openExternal: window.electronAPI.openExternal };
 
 function parseInternalView(url) {
   try {
@@ -37,7 +37,7 @@ function routeLink(url, opts = {}) {
       const view = parseInternalView(url);
       
       // For internal links, always open the main overlay
-      try { ipcRenderer?.send?.('overlay:open-main', view) } catch (_) {}
+      try { window.electronAPI?.send?.('overlay:open-main', view) } catch (_) {}
       
       return { ok: true, type: 'internal', view };
     }
@@ -50,6 +50,11 @@ function routeLink(url, opts = {}) {
   }
 }
 
-module.exports = { routeLink };
+// Export for both CommonJS and Browser
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { routeLink };
+} else {
+  window.routeLink = routeLink;
+}
 
 

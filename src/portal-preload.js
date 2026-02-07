@@ -1,62 +1,37 @@
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, contextBridge } = require('electron');
 
-// Set up message listener for auth:logout messages
-window.addEventListener('message', (event) => {
-  if (event?.data && typeof event.data === 'object' && event.data.type === 'auth:logout') {
-    ipcRenderer.sendToHost('portal:logout');
-    return;
+// Listen for messages from the host renderer (main window)
+ipcRenderer.on('auth:setToken', (_event, token) => {
+  // Forward to webview page via postMessage
+  window.postMessage({ source: 'donethat-desktop', type: 'auth:setToken', payload: { token } }, '*');
+});
+
+ipcRenderer.on('auth:logout', () => {
+  // Forward to webview page
+  window.postMessage({ source: 'donethat-desktop', type: 'auth:logout' }, '*');
+  try { localStorage.clear(); } catch (e) {}
+  try { sessionStorage.clear(); } catch (e) {}
+});
+
+// Securely expose APIs to the webview page
+contextBridge.exposeInMainWorld('Donethat', {
+  openLink: (url) => {
+    try {
+      ipcRenderer.sendToHost('portal:open-link', url);
+    } catch (e) {}
   }
 });
 
-// Listen for auth messages from the host renderer
-window.addEventListener('DOMContentLoaded', () => {
-  try {
-    let desktopAuthState = 'unknown'; // 'unknown' | 'token' | 'logout'
-
-    // Provide a minimal bridge inside the webview page via postMessage
-    const sendToPage = (type, payload) => {
-      try {
-        window.postMessage({ source: 'donethat-desktop', type, payload }, '*');
-      } catch (e) {}
-    };
-
-    // Receive token updates
-    ipcRenderer.on('auth:setToken', (_event, token) => {
-      try { } catch (e) {}
-      sendToPage('auth:setToken', { token });
-      desktopAuthState = 'token';
-    });
-
-    // Receive logout command
-    ipcRenderer.on('auth:logout', () => {
-      try { } catch (e) {}
-      sendToPage('auth:logout');
-      try { localStorage.clear(); } catch (e) {}
-      try { sessionStorage.clear(); } catch (e) {}
-      desktopAuthState = 'logout';
-    });
-
-    // Also listen for direct IPC messages from the webapp
-    ipcRenderer.on('auth:logout', () => {
+// Expose a restricted mock of ipcRenderer for backward compatibility
+contextBridge.exposeInMainWorld('__realIpcRenderer', {
+  send: (channel, ...args) => {
+    if (channel === 'auth:logout') {
       ipcRenderer.sendToHost('portal:logout');
-    });
-
-    // Expose a minimal safe API for opening links
-    if (typeof window !== 'undefined') {
-      window.Donethat = window.Donethat || {};
-      window.Donethat.openLink = function(url) {
-        try {
-          ipcRenderer.sendToHost('portal:open-link', url);
-        } catch (e) {}
-      };
+    } else {
+      console.warn(`Blocked unauthorized IPC send from portal: ${channel}`);
     }
-
-    // Expose the real ipcRenderer to the webapp (needed for auth logout)
-    if (typeof window !== 'undefined') {
-      window.__realIpcRenderer = ipcRenderer;
-    }
-
-  } catch (e) {}
+  }
 });
 
-
+// Note: we intentionally do NOT expose a full ipcRenderer here to avoid
+// collisions with any variables defined by the embedded web app.

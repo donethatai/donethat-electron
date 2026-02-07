@@ -1,4 +1,4 @@
-const { ipcRenderer } = require("electron");
+const ipcRenderer = window.electronAPI;
 const { updateScreenCapturePermission, updateWindowsPermission, hasScreenCapturePermission, hasWindowsPermission } = require('./app-state.js');
 const { logAnalyticsEvent } = require('./analytics.js');
 
@@ -95,7 +95,7 @@ function setupPlatformSpecificListeners() {
 
 // Function to show Linux permission help
 function showLinuxPermissionHelp(permissionType) {
-  const platform = process.platform;
+  const platform = window.electronAPI.platform;
   if (platform !== 'linux') return;
 
   // Show inline notifications instead of modals
@@ -128,7 +128,7 @@ function showInlineLinuxNotification(sectionId) {
 
 // Function to show custom screenshot section on Linux
 function showLinuxScreenshotSection() {
-  const platform = process.platform;
+  const platform = window.electronAPI.platform;
   if (platform !== 'linux') return;
 
   const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
@@ -147,11 +147,11 @@ ipcRenderer.on('screenCapturePermission', (event, data) => {
   // Log screen capture permission status
   logAnalyticsEvent('screen_capture_permission', {
     status: hasPermission ? 'granted' : 'denied',
-    platform: process.platform
+    platform: window.electronAPI.platform
   });
 
   // Show custom screenshot section on Linux (regardless of permission status)
-  if (process.platform === 'linux') {
+  if (window.electronAPI.platform === 'linux') {
     showLinuxScreenshotSection();
   }
 
@@ -184,7 +184,7 @@ ipcRenderer.on('screenCapturePermission', (event, data) => {
 ipcRenderer.on('audioPermission', (event, hasPermission) => {
   logAnalyticsEvent('audio_permission', {
     status: hasPermission ? 'granted' : 'denied',
-    platform: process.platform
+    platform: window.electronAPI.platform
   });
   // Notify settings component about permission status
   document.dispatchEvent(new CustomEvent('permissionResult', {
@@ -196,7 +196,7 @@ ipcRenderer.on('audioPermission', (event, hasPermission) => {
 // ipcRenderer.on('keystrokesPermission', (event, hasPermission) => {
 //   logAnalyticsEvent('keystrokes_permission', {
 //     status: hasPermission ? 'granted' : 'denied',
-//     platform: process.platform
+//     platform: window.electronAPI.platform
 //   });
 //   // Notify settings component about permission status
 //   document.dispatchEvent(new CustomEvent('permissionResult', {
@@ -210,7 +210,7 @@ ipcRenderer.on('windowsPermission', (event, hasPermission) => {
   // Log windows permission status
   logAnalyticsEvent('windows_permission', {
     status: hasPermission ? 'granted' : 'denied',
-    platform: process.platform
+    platform: window.electronAPI.platform
   });
 
   // Update windows checkbox in settings if we're on settings view
@@ -333,7 +333,7 @@ function setupScreenCaptureCheckboxBehavior() {
         // Log and request permission via system settings
         logAnalyticsEvent('screen_capture_requested', {
           status: 'requested',
-          platform: process.platform
+          platform: window.electronAPI.platform
         });
         ipcRenderer.send('requestScreenCapturePermission');
       }
@@ -347,7 +347,7 @@ function setupScreenCaptureCheckboxBehavior() {
       // Log that user requested screen capture permission
       logAnalyticsEvent('screen_capture_requested', {
         status: 'requested',
-        platform: process.platform
+        platform: window.electronAPI.platform
       });
       ipcRenderer.send("requestScreenCapturePermission");
     });
@@ -370,7 +370,7 @@ function setupWindowsCheckboxBehavior() {
         // Log and request permission via system settings
         logAnalyticsEvent('windows_capture_requested', {
           status: 'requested',
-          platform: process.platform
+          platform: window.electronAPI.platform
         });
         ipcRenderer.send('requestWindowsPermission');
       }
@@ -448,7 +448,7 @@ function setupAudioCheckboxBehavior() {
 function requestAudioPermission() {
   logAnalyticsEvent('audio_capture_requested', {
     status: 'requested',
-    platform: process.platform
+    platform: window.electronAPI.platform
   });
   ipcRenderer.send("requestAudioPermission");
 }
@@ -457,7 +457,7 @@ function requestAudioPermission() {
 // function requestKeystrokesPermission() {
 //   logAnalyticsEvent('keystrokes_capture_requested', {
 //     status: 'requested',
-//     platform: process.platform
+//     platform: window.electronAPI.platform
 //   });
 //   ipcRenderer.send("requestKeystrokesPermission");
 // }
@@ -465,17 +465,14 @@ function requestAudioPermission() {
 function requestWindowsPermission() {
   logAnalyticsEvent('windows_capture_requested', {
     status: 'requested',
-    platform: process.platform
+    platform: window.electronAPI.platform
   });
   ipcRenderer.send("requestWindowsPermission");
 }
 
 // Helper function to check if running on Wayland
 function isWayland() {
-  if (process.platform !== 'linux') return false;
-  // Check for Wayland via environment variables (standard detection methods)
-  return !!(process.env.WAYLAND_DISPLAY || 
-           (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
+  return window.electronAPI.isWayland;
 }
 
 // Function to update finish button visibility based on required permissions
@@ -511,7 +508,7 @@ function setupFinishButtonHandler() {
   finishButton.addEventListener('click', () => {
     // Log analytics event
     logAnalyticsEvent('permissions_finished', {
-      platform: process.platform
+      platform: window.electronAPI.platform
     });
     
     // Navigate to dashboard

@@ -2,10 +2,10 @@
  * Analytics Implementation using Firebase Measurement Protocol
  * Direct implementation for Electron
  */
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.electronAPI;
 const { firebaseApp } = require('./firebase.js');
 const { auth } = require('./firebase.js');
-const os = require('os');
+// os module removed
 const { hasValidAccess, getState } = require('./app-state.js');
 
 // Disable Google Analytics event sending
@@ -29,17 +29,9 @@ const getClientId = () => {
   return clientId;
 };
 
-// Get detailed platform info
-const getPlatformInfo = () => {
-  return {
-    os_name: process.platform,
-    os_version: process.getSystemVersion ? process.getSystemVersion() : os.release(),
-    os_arch: process.arch,
-    memory_gb: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
-    cpu_cores: os.cpus().length,
-    hostname: os.hostname().replace(/\..+$/, '') // Remove domain part for privacy
-  };
-};
+// Get detailed platform info (async now)
+// function getPlatformInfo() removed
+
 
 // Class implementation for analytics
 class Analytics {
@@ -52,7 +44,16 @@ class Analytics {
     this.measurementId = firebaseApp.options.measurementId;
     this.apiSecret = firebaseApp.options.apiSecret;
     this.initialized = false;
-    this.platformInfo = getPlatformInfo();
+    this.initialized = false;
+    this.platformInfo = {
+      os_name: window.electronAPI.platform,
+      os_version: 'unknown',
+      os_arch: 'unknown',
+      memory_gb: 0,
+      cpu_cores: 0,
+      hostname: 'unknown'
+    };
+
     this.currentView = null;
     this.sessionStartTime = Date.now();
   }
@@ -64,12 +65,19 @@ class Analytics {
     if (this.initialized) return;
     
     try {
-      // Get app version from main process
       try {
         this.appVersion = await ipcRenderer.invoke('get-app-version');
       } catch (error) {
         console.error('Failed to get app version:', error);
         this.appVersion = 'unknown';
+      }
+
+      // Load platform info
+      try {
+        const info = await ipcRenderer.invoke('get-platform-info');
+        if (info) this.platformInfo = info;
+      } catch (e) {
+        console.error('Failed to get platform info:', e);
       }
 
       // Check if this is first launch after install

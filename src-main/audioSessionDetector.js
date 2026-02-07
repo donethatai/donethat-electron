@@ -101,6 +101,7 @@ class AudioSessionManager {
       path.resolve(process.cwd(), 'bin', 'micstatus'),
       path.resolve(__dirname, '..', 'bin', 'micstatus'),
       process.resourcesPath ? path.resolve(process.resourcesPath, 'bin', 'micstatus') : null,
+      process.resourcesPath ? path.resolve(process.resourcesPath, 'app.asar.unpacked', 'bin', 'micstatus') : null,
     ].filter(Boolean);
     for (const p of candidates) {
       try {

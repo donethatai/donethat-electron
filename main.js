@@ -45,7 +45,41 @@ const {
 } = require('./src-main/capture')
 const { initState } = require('./src-main/main-state')
 
-// Prevent multiple instances of the app
+// Conditionally load liquid glass with fallback
+let liquidGlass = null;
+let liquidGlassAvailable = false;
+try {
+  if (process.platform === 'darwin') {
+    // Support both ESM default and CJS export shapes
+    const raw = require('electron-liquid-glass');
+    liquidGlass = raw && raw.default ? raw.default : raw;
+    liquidGlassAvailable = !!(liquidGlass && typeof liquidGlass.addView === 'function');
+  }
+} catch (e) {
+  console.warn('Liquid glass not available, using standard windows:', e.message);
+}
+
+function applyLiquidGlass(win, opts = {}) {
+  if (process.platform !== 'darwin') return false;
+  if (!liquidGlassAvailable || !liquidGlass || typeof liquidGlass.addView !== 'function') return false;
+  if (!win || win.isDestroyed()) return false;
+  try {
+    const handle = win.getNativeWindowHandle();
+    if (!handle || !Buffer.isBuffer(handle)) return false;
+    const options = { cornerRadius: 16, tintColor: '#00000018', opaque: false, ...opts };
+    const glassId = liquidGlass.addView(handle, options);
+    if (typeof glassId === 'number' && glassId >= 0 && liquidGlass.unstable_setVariant) {
+      try { liquidGlass.unstable_setVariant(glassId, 2); } catch (_) {}
+    }
+    return typeof glassId === 'number' && glassId >= 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Prevent multiple instances of the app so deep-link auth (donethat://?token=...)
+// is always delivered back into the existing instance. This is important for
+// Google SSO flows that return to a running app after the browser step.
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   log.info('App already running - quitting this instance');
@@ -54,42 +88,36 @@ if (!gotTheLock) {
   return;
 }
 
-// Set up second-instance handler
-app.on('second-instance', (event, commandLine, workingDirectory) => {
-  // Check if the app was launched with a URL (for Google SSO)
-  const url = commandLine.find(arg => arg.startsWith('donethat://'));
-  if (url) {
-    try {
-      const urlObj = new URL(url);
-      const token = urlObj.searchParams.get('token');
-      if (token) {
-        enqueueDeepLinkToken(token);
-      }
-    } catch (error) {
-      log.error('Error parsing URL in second-instance:', error);
-    }
-  }
 
-  // Instead of showing a dialog, bring the existing window to foreground
-  if (mainWindow) {
-    // If window exists but is hidden, show it
-    if (!mainWindow.isVisible()) {
-      showWindowBelowTray();
-    } else {
-      // Focus the window to bring it to foreground
-      mainWindow.focus();
-    }
-  }
-  // Also ensure overlay is shown (only if authenticated)
-  try {
-    if (stateManager?.isAuthenticated()) {
-      if (!overlayWindow || overlayWindow.isDestroyed()) {
-        createOverlayWindow();
+// Set up second-instance handler (only relevant in production)
+if (true) {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Check if the app was launched with a URL (for Google SSO)
+    const url = commandLine.find(arg => arg.startsWith('donethat://'));
+    if (url) {
+      try {
+        const urlObj = new URL(url);
+        const token = urlObj.searchParams.get('token');
+        if (token) {
+          enqueueDeepLinkToken(token);
+        }
+      } catch (error) {
+        log.error('Error parsing URL in second-instance:', error);
       }
-      showOverlayOnCurrentSpace();
     }
-  } catch (e) {}
-});
+
+    // Instead of showing a dialog, bring the existing window to foreground
+    if (mainWindow) {
+      // If window exists but is hidden, show it
+      if (!mainWindow.isVisible()) {
+        showWindowBelowTray();
+      } else {
+        // Focus the window to bring it to foreground
+        mainWindow.focus();
+      }
+    }
+  });
+}
 
 // Handle macOS reactivation (when user clicks dock icon or reopens app)
 app.on('activate', () => {
@@ -139,7 +167,7 @@ function registerGlobalShortcut() {
           createOverlayWindow();
         }
         if (overlayWindow.isVisible()) {
-          overlayWindow.hide();
+          hideOverlayWithoutFocusingMain();
         } else {
           showOverlayOnCurrentSpace();
         }
@@ -188,6 +216,9 @@ let pendingDeepLinkToken = null;
 let rendererReadyForAuth = false;
 // Suppress disruptive webview reloads during active auth attempts
 let suppressWebviewReloadUntil = 0;
+let suppressMainFocusAfterOverlayHideUntil = 0;
+/** When true, closing overlay should leave/allow main window focus (opened from main). When false, suppress main focus so user returns to other app. */
+let returnFocusToMainOnOverlayClose = false;
 
 // Localhost server for OAuth callback
 let authServer = null;
@@ -224,6 +255,9 @@ async function startAuthServer() {
   const port = await authServer.start(enqueueDeepLinkToken);
   return port;
 }
+
+// Firebase Functions helper (main process)
+const { getGoogleSignInUrl } = require('./src-main/firebase-functions-main');
 
 // Stop the auth server
 function stopAuthServer() {
@@ -595,6 +629,21 @@ app.whenReady().then(async () => {
     }
   });
 
+  // IPC handler to call authGoogleSignInStart from main process
+  ipcMain.handle('auth:get-google-signin-url', async (_event, payload) => {
+    try {
+      const port = payload && payload.port;
+      if (!port || typeof port !== 'number') {
+        return { success: false, error: 'Invalid or missing port' };
+      }
+      const data = await getGoogleSignInUrl(port);
+      return { success: true, data };
+    } catch (error) {
+      log.error('Failed to get Google Sign In URL from main:', error);
+      return { success: false, error: error.message || String(error) };
+    }
+  });
+
   // Create window as early as possible (kept hidden) to avoid losing early deep-links
   createWindow()
 
@@ -911,8 +960,11 @@ ipcMain.handle('overlay:get-state', () => {
 
   // Chat message handling - main window handles all Firebase logic
   ipcMain.handle('chat:send-message', async (event, messageData) => {
-    // Forward to main window for Firebase processing
-    mainWindow.webContents.send('chat:process-message', messageData)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('chat:process-message', messageData)
+    } else {
+      return { success: false, error: 'Main window not available' }
+    }
     return { success: true, pending: true }
   })
 
@@ -1007,11 +1059,20 @@ ipcMain.on('create-overlay-if-needed', () => {
   }
 })
 
+function hideOverlayWithoutFocusingMain() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  if (returnFocusToMainOnOverlayClose) {
+    overlayWindow.hide();
+  } else {
+    suppressMainFocusAfterOverlayHideUntil = Date.now() + 500;
+    try { overlayWindow.blur(); } catch (e) {}
+    overlayWindow.hide();
+  }
+}
+
 ipcMain.on('overlay:hide', () => {
   try {
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.hide()
-    }
+    hideOverlayWithoutFocusingMain();
   } catch (e) {}
 })
 
@@ -1032,8 +1093,7 @@ ipcMain.on('overlay:toggle', () => {
     
     // Check if overlay is currently visible
     if (overlayWindow.isVisible()) {
-      // Hide the overlay
-      overlayWindow.hide();
+      hideOverlayWithoutFocusingMain();
     } else {
       // Show the overlay (ensure current Space on macOS)
       showOverlayOnCurrentSpace();
@@ -1050,30 +1110,19 @@ ipcMain.on('overlay:show', () => {
   } catch (e) {}
 });
 
-ipcMain.on('overlay:show-if-hidden', () => {
+ipcMain.on('overlay:show-if-hidden', (event, opts) => {
   try {
     const isAuthenticated = stateManager?.isAuthenticated();
     const hasValidAccess = stateManager?.hasValidAccess();
-    
-    // Check if user is authenticated and has valid access before showing overlay
-    if (!isAuthenticated) {
-      return;
-    }
-    if (!hasValidAccess) {
-      return;
-    }
-    
-    if (!overlayWindow || overlayWindow.isDestroyed()) {
-      createOverlayWindow();
-    }
-    
-    // Only show if the window is currently hidden
+    if (!isAuthenticated || !hasValidAccess) return;
+    if (!overlayWindow || overlayWindow.isDestroyed()) createOverlayWindow();
     if (!overlayWindow.isVisible()) {
+      returnFocusToMainOnOverlayClose = true; // opened from main app
       hideMainWindowIfVisible();
-      showOverlayOnCurrentSpace();
+      showOverlayOnCurrentSpace({ ...opts, returnFocusToMainOnClose: true });
     }
   } catch (e) {
-    console.error('[MAIN] Error in overlay:show-if-hidden:', e)
+    console.error('[MAIN] Error in overlay:show-if-hidden:', e);
   }
 });
 
@@ -1514,6 +1563,32 @@ ipcMain.on('resumeRecording', (event) => {
   createApplicationMenu(); // Update menu after resume
 });
 
+ipcMain.handle('get-platform-info', () => {
+  const os = require('os');
+  return {
+    os_name: process.platform,
+    os_version: process.getSystemVersion ? process.getSystemVersion() : os.release(),
+    os_arch: process.arch,
+    memory_gb: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
+    cpu_cores: os.cpus().length,
+    hostname: os.hostname().replace(/\..+$/, '') 
+  };
+});
+
+// Secure handler for opening external links
+ipcMain.handle('open-external', async (event, url) => {
+  if (url && (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:'))) {
+    try {
+      await require('electron').shell.openExternal(url);
+      return { success: true };
+    } catch (e) {
+      log.error('Failed to open external URL:', e);
+      return { success: false, error: e.message };
+    }
+  }
+  return { success: false, error: 'Invalid URL scheme' };
+});
+
 ////// WINDOWS /////
 
 // Separate window creation from showing
@@ -1539,21 +1614,37 @@ function createWindow() {
       fullscreenable: false, // Prevent full screen toggle
       // Enable high DPI scaling on all platforms
       enableHighDpiScaling: true,
+      // Keep main window opaque so the native titlebar/menu are always visible
+      backgroundColor: '#ffffff',
+      transparent: false,
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        nodeIntegration: false,    // SECURED
+        contextIsolation: true,    // SECURED
+        preload: path.join(__dirname, 'src-main', 'preload.js'), // NEW PRELOAD
         partition: 'persist:donethat',
         webSecurity: true,
         webviewTag: true,
         // Add these to ensure proper persistence
         enableRemoteModule: false,
-        sandbox: false,
+        sandbox: true,             // SECURED
         // This is important for IndexedDB persistence
         backgroundThrottling: false,
         // Enable context menus and copy-paste
         spellcheck: false
       }
     })
+
+    // Sandboxed renderer needs explicit approval for 'media' so audio-recorder.js getUserMedia works.
+    mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+      const allowedPermissions = ['media']; 
+      
+      if (allowedPermissions.includes(permission)) {
+        callback(true); // Approve
+      } else {
+        console.warn(`Blocked permission request for: ${permission}`);
+        callback(false); // Deny
+      }
+    });
 
     mainWindow.loadFile('./src/index.html')
 
@@ -1599,6 +1690,12 @@ function createWindow() {
       if (!app.isQuitting) {
         event.preventDefault();
         mainWindow.hide();
+        // On all platforms: only hide from dock/taskbar when user explicitly closes to tray (not on minimize)
+        if (process.platform === 'darwin') {
+          try { app.dock.hide(); } catch (e) {}
+        } else {
+          try { mainWindow.setSkipTaskbar(true); } catch (e) {}
+        }
         return false;
       }
       return true;
@@ -1630,26 +1727,20 @@ function createWindow() {
     // Conditionally request webview reload when the main window gains focus
     mainWindow.on('focus', () => {
       try {
-        const now = Date.now();
-        // Skip reloads if we're within an active auth sequence suppression window
-        if (now < suppressWebviewReloadUntil) {
+        if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+          returnFocusToMainOnOverlayClose = true; // user brought main forward while chat open
+        }
+        if (Date.now() < suppressMainFocusAfterOverlayHideUntil) {
+          mainWindow.blur();
           return;
         }
+        const now = Date.now();
+        if (now < suppressWebviewReloadUntil) return;
         if (!lastWebviewReloadAt || (now - lastWebviewReloadAt) > RELOAD_MIN_INTERVAL_MS) {
           try { mainWindow.webContents.send('webview:reload'); } catch (e) {}
           lastWebviewReloadAt = now;
         }
       } catch (e) {}
-    });
-
-    // Hide Dock icon when main window is hidden (macOS)
-    mainWindow.on('hide', () => {
-      if (process.platform === 'darwin') {
-        try { app.dock.hide(); } catch (e) {}
-      } else {
-        // Hide from taskbar on Windows/Linux when main window is hidden
-        try { mainWindow.setSkipTaskbar(true); } catch (e) {}
-      }
     });
 
     // Enable context menus
@@ -1683,7 +1774,7 @@ function createOverlayWindow() {
     // Compute an initial position explicitly to avoid Electron's default centering
     const margin = 16;
     const defaultWidth = 390; // Increased from 260 to 390 (1.5x wider)
-    const defaultHeight = 40;
+    const defaultHeight = DEBUG ? 260 : 40; // Taller in debug so chat/debug output is visible
     let initX;
     let initY;
     try {
@@ -1725,20 +1816,22 @@ function createOverlayWindow() {
       transparent: true,
       backgroundColor: '#00000000',
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        nodeIntegration: false,    // SECURED
+        contextIsolation: true,    // SECURED
         partition: 'persist:donethat',
-        sandbox: false,
+        sandbox: true,             // SECURED
+        preload: path.join(__dirname, 'src-main', 'preload.js'), // NEW PRELOAD
         backgroundThrottling: false,
         spellcheck: true
       },
       ...(isPlatformMac ? { visibleOnAllWorkspaces: true, acceptFirstMouse: true } : {})
     })
 
-    overlayWindow.loadFile('./src/chat.html')
+    overlayWindow.loadFile(path.join(__dirname, 'src', 'chat.html'))
 
-    // Log any overlay webContents console messages (only in debug mode)
+    // Debug inspector and console piping for overlay (same as main window)
     if (DEBUG) {
+      overlayWindow.webContents.openDevTools();
       overlayWindow.webContents.on('console-message', (event) => {
         console.log('Overlay Console:', event.message);
       });
@@ -1749,6 +1842,13 @@ function createOverlayWindow() {
 
       sendOverlayState()
     })
+
+    overlayWindow.webContents.once('did-finish-load', () => {
+      if (applyLiquidGlass(overlayWindow)) {
+        try { overlayWindow.setHasShadow(false); } catch (_) {}
+        try { overlayWindow.webContents.send('liquid-glass-active'); } catch (_) {}
+      }
+    });
 
     overlayWindow.on('blur', () => {
       try { overlayWindow.setAlwaysOnTop(true) } catch (e) {}
@@ -1848,16 +1948,21 @@ function createNotificationWindow() {
       transparent: true,
       backgroundColor: '#00000000',
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        nodeIntegration: false,    // SECURED
+        contextIsolation: true,    // SECURED
         partition: 'persist:donethat',
-        sandbox: false,
+        sandbox: true,             // SECURED
+        preload: path.join(__dirname, 'src-main', 'preload.js'), // NEW PRELOAD
         backgroundThrottling: false
       },
       ...(isPlatformMac ? { visibleOnAllWorkspaces: true } : {})
     });
 
     notificationWindow.loadFile('./src/notification.html');
+
+    notificationWindow.webContents.once('did-finish-load', () => {
+      applyLiquidGlass(notificationWindow, { cornerRadius: 12 });
+    });
 
     notificationWindow.on('closed', () => {
       notificationWindow = null;
@@ -1926,20 +2031,38 @@ function positionOverlayWindow() {
 }
 
 // Helper: Show overlay on the current Space (macOS) without switching Spaces
-function showOverlayOnCurrentSpace() {
+function showOverlayOnCurrentSpace(opts = {}) {
+  const { noFocus = false, returnFocusToMainOnClose } = opts;
   try {
+    if (returnFocusToMainOnClose !== undefined) {
+      returnFocusToMainOnOverlayClose = returnFocusToMainOnClose;
+    } else {
+      returnFocusToMainOnOverlayClose = !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused());
+    }
     if (!overlayWindow || overlayWindow.isDestroyed()) {
       createOverlayWindow();
     }
     positionOverlayWindow();
     if (process.platform === 'darwin') {
       try { overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (e) {}
-      try { overlayWindow.show(); } catch (e) {}
-      try { overlayWindow.focus(); } catch (e) {}
+      try { 
+        if (noFocus) {
+          overlayWindow.showInactive();
+        } else {
+          overlayWindow.show(); 
+          overlayWindow.focus();
+        }
+      } catch (e) {}
       try { overlayWindow.setVisibleOnAllWorkspaces(false); } catch (e) {}
     } else {
-      try { overlayWindow.show(); } catch (e) {}
-      try { overlayWindow.focus(); } catch (e) {}
+      try { 
+        if (noFocus) {
+          overlayWindow.showInactive();
+        } else {
+          overlayWindow.show();
+          overlayWindow.focus();
+        }
+      } catch (e) {}
     }
   } catch (e) {}
 }
@@ -1960,6 +2083,15 @@ function sendOverlayState() {
 function showWindowBelowTray() {
   // Show the main window centered and focused on all platforms
   try { mainWindow.center(); } catch (e) {}
+  
+  // Explicitly ensure dock/taskbar visibility BEFORE showing
+  // This redundancy fixes cases where the 'show' event might not fire if already visible
+  if (process.platform === 'darwin') {
+    try { app.dock.show(); } catch (e) {}
+  } else {
+    try { mainWindow.setSkipTaskbar(false); } catch (e) {}
+  }
+
   try { mainWindow.show(); } catch (e) {}
   try { mainWindow.focus(); } catch (e) {}
 }

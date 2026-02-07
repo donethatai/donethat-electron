@@ -49,5 +49,7 @@ export default {
   },
   
   // Configure target environment
-  target: 'electron-renderer'
+  // Use a browser-style target so the bundled code does not rely on Node.js
+  // globals like `require` in the sandboxed renderer.
+  target: 'web'
 };

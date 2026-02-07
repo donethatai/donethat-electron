@@ -58,8 +58,8 @@ window.initAudioRecorder = function(config = {}) {
       }
       
       // Notify main process about device change
-      if (window.electron && window.electron.ipcRenderer) {
-        window.electron.ipcRenderer.send('audio-device-changed', {
+      if (window.electronAPI) {
+        window.electronAPI.send('audio-device-changed', {
           event: 'devicechange'
         });
       }

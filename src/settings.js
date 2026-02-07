@@ -4,10 +4,10 @@ const { httpsCallable } = require("firebase/functions");
 const { firebaseApp, functions } = require("./firebase.js");
 const { logAnalyticsEvent } = require('./analytics.js');
 const { hasWindowsPermission } = require('./app-state.js');
-const { ipcRenderer } = require("electron");
+const ipcRenderer = window.electronAPI;
 
 const { refreshAuthToken } = require('./auth.js');
-const os = require('os');
+// os module removed
 const packageInfo = require('../package.json');
 const { showBanner } = require('./notify.js');
 
@@ -225,7 +225,7 @@ function setupPermissionResultListener() {
       
       logAnalyticsEvent(`permission_${hasPermission ? 'granted' : 'denied'}_setting_updated`, {
         type: type,
-        platform: process.platform
+        platform: window.electronAPI.platform
       });
     } catch (error) {
       console.error(`Error updating settings after ${type} permission ${hasPermission ? 'granted' : 'denied'}:`, error);
@@ -931,7 +931,7 @@ function setupHotkeyConfiguration() {
     if (res && res.success) {
       try { input.value = (res.suffix || 'D'); } catch (_) {}
       // Update Cmd/Ctrl label depending on platform
-      try { cmdCap.textContent = (process.platform === 'darwin' ? 'Cmd' : 'Ctrl'); } catch (_) {}
+      try { cmdCap.textContent = (window.electronAPI.platform === 'darwin' ? 'Cmd' : 'Ctrl'); } catch (_) {}
     }
   }).catch(() => {});
 
@@ -1300,7 +1300,7 @@ function setupAppExclusionsListeners() {
 // Set up Wayland detection and show note if on Wayland
 function setupWaylandDetection() {
   // Only check on Linux
-  if (os.platform() !== 'linux') return;
+  if (window.electronAPI.platform !== 'linux') return;
   
   const waylandNote = document.getElementById('waylandNote');
   if (!waylandNote) return;
@@ -1308,8 +1308,7 @@ function setupWaylandDetection() {
   // Check for Wayland via environment variables (standard detection methods)
   // WAYLAND_DISPLAY is set when running on Wayland
   // XDG_SESSION_TYPE is also commonly set to 'wayland' on Wayland sessions
-  const isWayland = !!(process.env.WAYLAND_DISPLAY || 
-                       (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
+  const isWayland = window.electronAPI.isWayland;
   
   if (isWayland) {
     waylandNote.classList.remove('hidden');
