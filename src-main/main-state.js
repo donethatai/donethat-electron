@@ -30,6 +30,9 @@ let overlayWindow = null;
 // State validation heartbeat
 let stateValidationIntervalId = null;
 
+// Last known system timezone (for detecting TZ change and rescheduling work-hours)
+let lastKnownSystemTimezone = null;
+
 // Track manual resume override for work hours
 let manualOverrideWorkHours = false;
 
@@ -48,6 +51,20 @@ let cachedOpenAICompatibleConfig = null;
  */
 function _validateState() {
   try {
+    // Detect system timezone change (e.g. user traveled) and reschedule work-hours
+    try {
+      const currentTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (lastKnownSystemTimezone !== null && currentTz !== lastKnownSystemTimezone) {
+        log.info('System timezone changed, rescheduling work-hours', { from: lastKnownSystemTimezone, to: currentTz });
+        lastKnownSystemTimezone = currentTz;
+        _scheduleNextWorkEndCheck();
+      } else if (lastKnownSystemTimezone === null) {
+        lastKnownSystemTimezone = currentTz;
+      }
+    } catch (e) {
+      log.warn('Could not detect system timezone for change check:', e);
+    }
+
     // Safety check: detect user activity to clear potentially stuck suspend flag
     // Note: We can't use idle time for lock screen (user can move mouse on lock screen)
     // but we CAN use it for suspend (system activity = not suspended)
