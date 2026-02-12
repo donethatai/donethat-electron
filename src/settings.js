@@ -30,7 +30,6 @@ let workdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
 let workhours = { start: "09:00", end: "17:00" }; // Default 9 AM to 5 PM
 let inputData = {
   windows: false,
-  keystrokes: false,
   audio: false
 };
 
@@ -116,7 +115,8 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupMeetingScreenshotsDependency();
   // Set up app exclusions listeners
   setupAppExclusionsListeners();
-  
+  setupSaveCaptureDataListeners();
+
   // Set up Wayland detection
   setupWaylandDetection();
   
@@ -151,16 +151,6 @@ function setupDisableCaptureListener() {
       await forceDisableScreenshotsInMeetings();
     }
     
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    // if (disabledSettings.keystrokes === false) {
-    //   const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
-    //   if (keystrokesCheckbox && keystrokesCheckbox.checked) {
-    //     keystrokesCheckbox.checked = false;
-    //     // Update local state
-    //     inputData.keystrokes = false;
-    //   }
-    // }
-    
     if (disabledSettings.windows === false) {
       const windowsCheckbox = document.getElementById('windowsCheckbox');
       if (windowsCheckbox && windowsCheckbox.checked) {
@@ -171,8 +161,7 @@ function setupDisableCaptureListener() {
     }
     
     // Save the updated settings - only if changes were made
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    if (disabledSettings.audio === false || /* disabledSettings.keystrokes === false || */ disabledSettings.windows === false) {
+    if (disabledSettings.audio === false || disabledSettings.windows === false) {
       try {
         await saveUserSettings('inputData', inputData);
       } catch (error) {
@@ -194,8 +183,6 @@ function setupPermissionResultListener() {
     
     const checkboxMap = {
       'audio': 'audioCheckbox',
-      // DISABLED: Keystroke tracking removed to avoid antivirus flags
-      // 'keystrokes': 'keystrokesCheckbox',
       'windows': 'windowsCheckbox'
     };
     
@@ -351,16 +338,12 @@ async function saveUserSettings(type, value) {
           delete partial.__partial;
           const merged = {
             windows: partial.windows !== undefined ? !!partial.windows : !!current.windows,
-            // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value
-            keystrokes: partial.keystrokes !== undefined ? !!partial.keystrokes : !!current.keystrokes,
             audio: partial.audio !== undefined ? !!partial.audio : !!current.audio
           };
           settingsData.inputData = merged;
           logAnalyticsEvent('settings_updated', {
             type: 'inputData',
             windows: merged.windows,
-            // DISABLED: Keystroke tracking removed to avoid antivirus flags
-            // keystrokes: merged.keystrokes,
             audio: merged.audio,
             mode: 'partial-merge'
           });
@@ -368,46 +351,26 @@ async function saveUserSettings(type, value) {
           console.warn('Partial inputData merge failed, falling back to local value:', mergeErr);
           const fallback = { ...value };
           delete fallback.__partial;
-          // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value if not provided
-          if (fallback.keystrokes === undefined) {
-            // Keep existing value from current settings if not in partial update
-            try {
-              const result = await getUserSettingsFunction();
-              const current = result?.data?.inputData || {};
-              fallback.keystrokes = !!current.keystrokes;
-            } catch (_) {
-              fallback.keystrokes = false;
-            }
-          }
-          settingsData.inputData = fallback;
+          settingsData.inputData = {
+            windows: fallback.windows !== undefined ? !!fallback.windows : false,
+            audio: fallback.audio !== undefined ? !!fallback.audio : false
+          };
           logAnalyticsEvent('settings_updated', {
             type: 'inputData',
-            windows: fallback.windows,
-            // DISABLED: Keystroke tracking removed to avoid antivirus flags
-            // keystrokes: fallback.keystrokes,
-            audio: fallback.audio,
+            windows: settingsData.inputData.windows,
+            audio: settingsData.inputData.audio,
             mode: 'partial-fallback'
           });
         }
       } else {
-        // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value if not provided
-        const fullValue = { ...value };
-        // If keystrokes is not provided in full update, keep existing value
-        if (fullValue.keystrokes === undefined) {
-          try {
-            const result = await getUserSettingsFunction();
-            const current = result?.data?.inputData || {};
-            fullValue.keystrokes = !!current.keystrokes;
-          } catch (_) {
-            fullValue.keystrokes = false;
-          }
-        }
-        settingsData.inputData = fullValue; // Full replace
+        const fullValue = {
+          windows: value.windows !== undefined ? !!value.windows : false,
+          audio: value.audio !== undefined ? !!value.audio : false
+        };
+        settingsData.inputData = fullValue;
         logAnalyticsEvent('settings_updated', {
           type: 'inputData',
           windows: fullValue.windows,
-          // DISABLED: Keystroke tracking removed to avoid antivirus flags
-          // keystrokes: fullValue.keystrokes,
           audio: fullValue.audio,
           mode: 'full'
         });
@@ -498,29 +461,21 @@ async function updateSettingsUI(settings) {
   // Passive windows: do not read persisted windows; use live OS permission for local state only
   inputData = {
     windows: (typeof hasWindowsPermission === 'function') ? hasWindowsPermission() : prevInputData.windows,
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags - keep existing value
-    keystrokes: !!loadedInputData.keystrokes,
     audio: !!loadedInputData.audio
   };
-
 
   // Compute and send only changed flags to main to avoid clobbering
   const delta = {};
   // IMPORTANT: Do not include windows in delta from settings load.
   // Windows permission state is managed by permissions.js via system events.
-  // DISABLED: Keystroke tracking removed to avoid antivirus flags
-  // if (prevInputData.keystrokes !== inputData.keystrokes) delta.keystrokes = inputData.keystrokes;
   if (prevInputData.audio !== inputData.audio) delta.audio = inputData.audio;
   if (Object.keys(delta).length > 0) {
     ipcRenderer.send('updateInputDataSettings', delta);
   }
 
-  // DISABLED: Keystroke tracking removed to avoid antivirus flags
-  // const keystrokesCheckbox = document.getElementById('keystrokesCheckbox');
   const audioCheckbox = document.getElementById('audioCheckbox');
 
   // Do not set windowsCheckbox state here; permissions.js updates checked/disabled based on system permission
-  // if (keystrokesCheckbox) keystrokesCheckbox.checked = inputData.keystrokes;
   if (audioCheckbox) audioCheckbox.checked = inputData.audio; // Keep disabled state from HTML
 
   // Recompute dependency for meeting screenshots toggle now that audio state is applied
@@ -1316,6 +1271,38 @@ function setupWaylandDetection() {
   } else {
     waylandNote.classList.add('hidden');
   }
+}
+
+// Set up save capture data to folder toggle and path (same pattern as other main-process settings)
+function setupSaveCaptureDataListeners() {
+  const checkbox = document.getElementById('saveCaptureDataCheckbox');
+  const pathSection = document.getElementById('saveCaptureDataPathSection');
+  const pathInput = document.getElementById('saveCaptureDataPathInput');
+
+  if (!checkbox || !pathSection || !pathInput) return;
+
+  ipcRenderer.invoke('get-save-capture-data').then(({ enabled, path }) => {
+    checkbox.checked = !!enabled;
+    pathSection.classList.toggle('hidden', !enabled);
+    pathInput.value = path || 'Browse';
+  }).catch((e) => console.error('Error loading save capture data:', e));
+
+  checkbox.addEventListener('change', () => {
+    pathSection.classList.toggle('hidden', !checkbox.checked);
+    ipcRenderer.send('updateSaveCaptureData', checkbox.checked);
+  });
+
+  pathInput.addEventListener('click', async () => {
+    try {
+      const selected = await ipcRenderer.invoke('choose-capture-dump-folder');
+      if (selected) {
+        pathInput.value = selected;
+        ipcRenderer.send('updateSaveCaptureDataPath', selected);
+      }
+    } catch (e) {
+      console.error('Error choosing capture dump folder:', e);
+    }
+  });
 }
 
 // Set up test local processing button

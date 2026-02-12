@@ -313,6 +313,12 @@ function validateAndProcessImage(imageData) {
 
 /**
  * Build content blocks based on config spec (mirror online version)
+ * @param {Object} config - Config spec
+ * @param {Array<string>} validScreenshots - Current screenshot data URLs
+ * @param {Array<string>} previousScreenshots - Previous snapshot data URLs for context (optional)
+ * @param {string} applicationActivity - Activity text
+ * @param {string} audioTranscript - Audio transcript text
+ * @param {number} idleTime - Idle time in seconds
  * @param {string} provider - 'gemini' or 'openai' to determine image format
  */
 function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioTranscript, idleTime, provider = 'gemini') {
@@ -333,29 +339,28 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
     blocks.push({ type: 'text', text: `System Idle Time: ${idleMinutes}m ${idleSeconds}s` });
   }
 
-  // Add previous screenshots if available (mirror online version)
-  if (previousScreenshots && previousScreenshots.images && previousScreenshots.images.length > 0) {
-    blocks.push({ type: 'text', text: spec.previousLabel || 'PREVIOUS SCREENSHOTS (from 5 minutes ago):' });
-    previousScreenshots.images.forEach((img, idx) => {
-      if (img && img.base64Data) {
-        const url = img.base64Data.startsWith('data:image') ? img.base64Data : `data:image/jpeg;base64,${img.base64Data}`;
-        const validatedImage = validateAndProcessImage(url);
-        if (validatedImage) {
-          const imageBlock = { type: 'image_url' };
-          // OpenAI-compatible APIs need { url: '...' }, Gemini needs just the string
-          if (provider === 'openai') {
-            imageBlock[imageKey] = { url: validatedImage };
-          } else {
-            imageBlock[imageKey] = validatedImage;
-          }
-          blocks.push(imageBlock);
-        }
+  // Previous screenshots as context (from ~5 min ago)
+  const prevArr = Array.isArray(previousScreenshots)
+    ? previousScreenshots
+    : previousScreenshots?.images?.map(i => i?.base64Data ?? i)?.filter(Boolean) ?? [];
+  const validPrevScreenshots = (prevArr || [])
+    .filter(img => img && typeof img === 'string' && img.startsWith('data:image/'))
+    .map(img => validateAndProcessImage(img))
+    .filter(img => img !== null);
+  if (validPrevScreenshots.length > 0) {
+    blocks.push({ type: 'text', text: 'Previous screenshots (from ~5 minutes ago):' });
+    validPrevScreenshots.forEach(img => {
+      const imageBlock = { type: 'image_url' };
+      if (provider === 'openai') {
+        imageBlock[imageKey] = { url: img };
+      } else {
+        imageBlock[imageKey] = img;
       }
+      blocks.push(imageBlock);
     });
-    blocks.push({ type: 'text', text: spec.currentLabel || 'CURRENT SCREENSHOTS:' });
+    blocks.push({ type: 'text', text: 'Current screenshots:' });
   }
 
-  // Process current screenshots (mirror online version's approach)
   const processedScreenshots = validScreenshots
     .map((img, idx) => {
       const validatedImage = validateAndProcessImage(img);
@@ -377,9 +382,7 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
   // Log summary of what's being sent to LLM
   const imageBlocks = blocks.filter(b => b.type === 'image_url');
 
-  // If no screenshots are provided, add a note about activity-only processing (mirror online)
-  if (processedScreenshots.length === 0 && 
-      (!previousScreenshots || !previousScreenshots.images || previousScreenshots.images.length === 0)) {
+  if (processedScreenshots.length === 0) {
     blocks.push({ type: 'text', text: 'NO SCREENSHOTS PROVIDED - Processing based on activity data, audio, and other inputs only.' });
   }
 
@@ -388,6 +391,13 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
 
 /**
  * Analyze screenshots using local LLM processing
+ * @param {Array<string>} screenshots - Current screenshot data URLs
+ * @param {Array<string>} previousScreenshots - Previous snapshot data URLs for context (optional)
+ * @param {string} activity - Application activity text
+ * @param {string} audioTranscript - Audio transcript text
+ * @param {number} idleTime - Idle time in seconds
+ * @param {string} idToken - Firebase ID token
+ * @param {boolean} testMode - If true, skip Firebase submission
  */
 async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioTranscript, idleTime, idToken, testMode = false) {
   try {
@@ -499,12 +509,11 @@ async function submitResults(idToken, timestamp, structured, parameters) {
 /**
  * Main function to process data locally
  * @param {string} idToken Firebase ID token
- * @param {Array} screenshots Screenshot data
- * @param {Array} previousScreenshots Previous screenshot data
- * @param {Object} inputData Input data (audio, keystrokes, etc.)
+ * @param {Array} screenshots Screenshot data (with diff bounding boxes already applied)
+ * @param {Object} inputData Input data (audio, windows, etc.). May include previousScreenshotData for LLM context.
  * @param {boolean} testMode If true, skip Firebase submission
  */
-async function processDataLocally(idToken, screenshots, previousScreenshots, inputData, testMode = false) {
+async function processDataLocally(idToken, screenshots, inputData, testMode = false) {
   try {
     // Check if local processing is available
     if (!await isLocalProcessingAvailable()) {
@@ -515,7 +524,7 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
     let applicationActivity = 'No application activity data available';
     if (inputData.activity && inputData.activity.length > 0) {
       applicationActivity = inputData.activity.map(item => 
-        `${item.appName}: ${item.formattedDuration || 'active'}`
+        `${item.name || 'Unknown'}: ${item.formattedDuration || (item.duration ? `${Math.round(item.duration / 1000)}s` : 'active')}`
       ).join(', ');
     }
 
@@ -537,12 +546,12 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
       return { success: false, skipped: true, reason: 'idle' };
     }
 
-    // Analyze screenshots locally
+    const prevImages = inputData?.previousScreenshotData?.images?.map(i => i.base64Data) ?? [];
     let structured;
     try {
       structured = await analyzeScreenshots(
         screenshots,
-        previousScreenshots,
+        prevImages,
         applicationActivity,
         audioTranscript,
         idleTime,
@@ -589,7 +598,7 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
 
     // Skip Firebase submission in test mode
     if (testMode) {
-      return { success: true, test: true };
+      return { success: true, test: true, structured, parameters: paramsToSend };
     }
 
     // Submit results to Firebase using current time
@@ -601,7 +610,7 @@ async function processDataLocally(idToken, screenshots, previousScreenshots, inp
       paramsToSend
     );
 
-    return result;
+    return { ...result, structured, parameters: paramsToSend };
   } catch (error) {
     log.error('Error in local processing:', error);
     throw error;

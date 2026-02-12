@@ -1,7 +1,10 @@
 const log = require('electron-log')
+const { Jimp } = require('jimp')
 const windowsCapture = require('./captureWindows')
 const { shouldExcludeWindow, convertBoundsToDIP } = windowsCapture
 const { screen } = require('electron')
+
+const GRAY = 0x808080ff
 
 /**
  * Calculate visible region of a window (not covered by allowed windows)
@@ -192,95 +195,37 @@ async function applyMaskToImage(imageDataUrl, maskRegions, screenBounds) {
     if (!maskRegions || maskRegions.length === 0) {
       return imageDataUrl
     }
-    
-    // Convert data URL to buffer
+
     const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, '')
     const buffer = Buffer.from(base64Data, 'base64')
-    
-    const sharp = require('sharp')
-    
-    // Convert to sharp image and get actual dimensions
-    let sharpImg = sharp(buffer)
-    const metadata = await sharpImg.metadata()
-    const imageWidth = metadata.width
-    const imageHeight = metadata.height
-    
-    // Calculate scale factors (screenshots are thumbnails, may be scaled)
+
+    const img = await Jimp.read(buffer)
+    const imageWidth = img.bitmap.width
+    const imageHeight = img.bitmap.height
+
     const screenWidth = screenBounds.width
     const screenHeight = screenBounds.height
     const scaleX = imageWidth / screenWidth
     const scaleY = imageHeight / screenHeight
-    
-    // Create a single mask image with all regions drawn as gray rectangles
-    // This is more reliable than compositing multiple small images
-    const maskImage = sharp({
-      create: {
-        width: imageWidth,
-        height: imageHeight,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent background
-      }
-    })
-    
-    // Draw all gray rectangles on the mask image
-    const maskComposites = []
+
     for (const region of maskRegions) {
-      // Scale region coordinates to match screenshot dimensions
       const x = Math.round(region.x * scaleX)
       const y = Math.round(region.y * scaleY)
       const regionWidth = Math.round(region.width * scaleX)
       const regionHeight = Math.round(region.height * scaleY)
-      
-      // Ensure region coordinates are within image bounds
+
       const clampedX = Math.max(0, Math.min(x, imageWidth - 1))
       const clampedY = Math.max(0, Math.min(y, imageHeight - 1))
       const clampedWidth = Math.max(1, Math.min(regionWidth, imageWidth - clampedX))
       const clampedHeight = Math.max(1, Math.min(regionHeight, imageHeight - clampedY))
-      
-      if (clampedWidth <= 0 || clampedHeight <= 0) {
-        continue
-      }
-      
-      // Create gray rectangle
-      const grayRectBuffer = await sharp({
-        create: {
-          width: clampedWidth,
-          height: clampedHeight,
-          channels: 4,
-          background: { r: 128, g: 128, b: 128, alpha: 1.0 }
-        }
-      }).png().toBuffer()
-      
-      maskComposites.push({
-        input: grayRectBuffer,
-        left: clampedX,
-        top: clampedY,
-        blend: 'over'
-      })
+
+      if (clampedWidth <= 0 || clampedHeight <= 0) continue
+
+      const grayRect = new Jimp({ width: clampedWidth, height: clampedHeight, color: GRAY })
+      img.composite(grayRect, clampedX, clampedY, { mode: 'srcOver' })
     }
-    
-    if (maskComposites.length === 0) {
-      log.warn('No valid mask regions after scaling/clamping')
-      return imageDataUrl
-    }
-    
-    // Create the complete mask image with all gray rectangles
-    const maskBuffer = await maskImage
-      .composite(maskComposites)
-      .png()
-      .toBuffer()
-    
-    // Now composite the mask onto the original image
-    const maskedBuffer = await sharpImg
-      .composite([{
-        input: maskBuffer,
-        left: 0,
-        top: 0,
-        blend: 'over'
-      }])
-      .jpeg({ quality: 70 })
-      .toBuffer()
-    
+
+    const maskedBuffer = await img.getBuffer('image/jpeg', { quality: 70 })
     return `data:image/jpeg;base64,${maskedBuffer.toString('base64')}`
   } catch (error) {
     log.error('Error in applyMaskToImage:', error)

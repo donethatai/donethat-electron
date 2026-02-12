@@ -81,7 +81,8 @@
     "firebase": "^12.9.0",
     "get-windows": "^9.2.3",
     "node-fetch": "^3.3.2",
-    "sharp": "^0.34.5",
+    "jimp": "^1.6.0",
+    "looks-same": "^10.0.1",
     "tailwindcss": "^4.1.18"
   },
   "build": {

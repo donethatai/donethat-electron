@@ -1,4 +1,4 @@
-const { ipcMain, Notification, app, dialog } = require('electron');
+const { ipcMain, app, dialog, BrowserWindow } = require('electron');
 const log = require('electron-log');
 const path = require('path');
 const { encryptData, decryptData } = require('./encryption');
@@ -1242,7 +1242,7 @@ function setupIPCHandlers() {
       // Attempt with current token; on FIREBASE auth error, request refresh and retry once
       let token = idToken || null;
       try {
-        await processDataLocally(token, screenshots, null, inputData, true);
+        await processDataLocally(token, screenshots, inputData, true);
         return { success: true, message: `${providerName} test successful` };
       } catch (err) {
         const isFirebase = err && err.source === 'FIREBASE';
@@ -1275,7 +1275,7 @@ function setupIPCHandlers() {
         }
 
         // Retry once with refreshed token
-        await processDataLocally(token, screenshots, null, inputData, true);
+        await processDataLocally(token, screenshots, inputData, true);
         return { success: true, message: `${providerName} test successful` };
       }
     } catch (error) {
@@ -1356,15 +1356,15 @@ function setupIPCHandlers() {
       const maskedScreenshots = await applyAppExclusions(screenshots);
 
       // Scale down to thumbnails (max 200px width)
-      const sharp = require('sharp');
+      const { Jimp } = require('jimp');
       const thumbnails = await Promise.all(maskedScreenshots.map(async (screenshot) => {
         try {
-          const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '');
-          const buffer = Buffer.from(base64Data, 'base64');
-          const thumbnailBuffer = await sharp(buffer)
-            .resize(200, null, { withoutEnlargement: true })
-            .jpeg({ quality: 70 })
-            .toBuffer();
+          const img = await Jimp.read(screenshot);
+          if (img.bitmap.width > 200) {
+            const h = Math.round(200 * img.bitmap.height / img.bitmap.width);
+            img.resize({ w: 200, h });
+          }
+          const thumbnailBuffer = await img.getBuffer('image/jpeg', { quality: 70 });
           return `data:image/jpeg;base64,${thumbnailBuffer.toString('base64')}`;
         } catch (error) {
           log.error('Error creating thumbnail:', error);
@@ -1376,6 +1376,51 @@ function setupIPCHandlers() {
     } catch (error) {
       log.error('Error testing app exclusions:', error);
       return { success: false, message: error.message };
+    }
+  });
+
+  // Capture dump (save data to folder)
+  ipcMain.handle('get-save-capture-data', async () => {
+    try {
+      const { getBasePath } = require('./captureDump');
+      const enabled = safeStoreOperation(() => store?.get('saveCaptureDataToFolder') || false, 'get saveCaptureDataToFolder');
+      let dumpPath = await getBasePath();
+      if (!dumpPath || typeof dumpPath !== 'string') {
+        dumpPath = path.join(app.getPath('userData'), 'donethat');
+      }
+      return { enabled: !!enabled, path: dumpPath };
+    } catch (error) {
+      log.error('Error getting save capture data:', error);
+      const fallback = path.join(app.getPath('userData'), 'donethat');
+      return { enabled: false, path: fallback };
+    }
+  });
+
+  ipcMain.on('updateSaveCaptureData', (event, enabled) => {
+    safeStoreOperation(() => {
+      if (store) store.set('saveCaptureDataToFolder', !!enabled);
+    }, 'save saveCaptureDataToFolder');
+  });
+
+  ipcMain.on('updateSaveCaptureDataPath', (event, dumpPath) => {
+    safeStoreOperation(() => {
+      if (store && typeof dumpPath === 'string') store.set('saveCaptureDataPath', dumpPath.trim());
+    }, 'save saveCaptureDataPath');
+  });
+
+  ipcMain.handle('choose-capture-dump-folder', async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+      const bw = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
+      const result = await dialog.showOpenDialog(bw || null, {
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Select folder for capture dumps'
+      });
+      if (result.canceled || !result.filePaths?.length) return null;
+      return result.filePaths[0];
+    } catch (error) {
+      log.error('Error choosing capture dump folder:', error);
+      return null;
     }
   });
 }

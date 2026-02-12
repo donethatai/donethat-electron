@@ -10,8 +10,8 @@ let linuxScreenshotCommand = null
 let lastScreenshots = null
 let lastScreenshotTimestamp = null
 
-// Scale factor for previous screenshot (25% = 0.25)
-const PREVIOUS_SCREENSHOT_SCALE_FACTOR = 0.25
+// Scale factor for previous screenshot (50% = 0.5)
+const PREVIOUS_SCREENSHOT_SCALE_FACTOR = 0.5
 // Maximum age factor for previous screenshot (1.5x the capture interval)
 const PREVIOUS_SCREENSHOT_MAX_AGE_FACTOR = 1.5
 
@@ -62,26 +62,22 @@ function getPreviousScreenshots(captureIntervalMinutes = null) {
   const screenshotAge = now - lastScreenshotTimestamp
   const maxAge = captureIntervalMinutes * 60 * 1000 * PREVIOUS_SCREENSHOT_MAX_AGE_FACTOR
   
-  // Only return the previous screenshots if they're not too old
-  if (screenshotAge < maxAge) {
-    // Return object with timestamp and scaled screenshots
-    return {
-      timestamp: lastScreenshotTimestamp,
-      scale: PREVIOUS_SCREENSHOT_SCALE_FACTOR,
-      images: lastScreenshots.map((screenshot, index) => ({
-        base64Data: scaleScreenshotToPreviousSize(screenshot),
-        index
-      }))
-    }
+  if (screenshotAge >= maxAge) {
+    return null
   }
   
-  return null
+  return {
+    timestamp: lastScreenshotTimestamp,
+    images: lastScreenshots.map((screenshot, index) => ({
+      base64Data: screenshot,
+      index
+    }))
+  }
 }
 
 // Function to save the current screenshots for next upload
 function saveCurrentScreenshot(screenshots) {
   if (screenshots && screenshots.length > 0) {
-    // Save all screenshots
     lastScreenshots = screenshots
     lastScreenshotTimestamp = Date.now()
   }
@@ -266,9 +262,6 @@ async function captureScreenshot() {
       log.warn('No screenshots captured');
       return [];
     }
-
-    // Save the current screenshot for next upload
-    saveCurrentScreenshot(screenshots);
 
     return screenshots;
   } catch (error) {
@@ -468,6 +461,7 @@ module.exports = {
   checkScreenCapturePermission,
   getPreviousScreenshots,
   saveCurrentScreenshot,
+  scaleScreenshotToPreviousSize,
   PREVIOUS_SCREENSHOT_SCALE_FACTOR,
   initScreenCapturePermissionHandling,
   setLinuxScreenshotCommand,

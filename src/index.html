@@ -560,28 +560,6 @@
                 </div>
                 <label class="toggle"><input type="checkbox" id="disableScreenshotsInMeetings"><span class="slider"></span></label>
               </div>
-              <!-- DISABLED: Keystroke tracking removed to avoid antivirus flags -->
-              <div class="hidden">
-                <div>
-                  <div class="text-base font-semibold text-gray-800">Keystrokes</div>
-                  <div class="text-xs text-gray-500">Similar to your voice in meetings, understanding what you type helps us understand your work. This is especially useful to understand which shortcuts you use so we can coach you better.</div>
-                </div>
-                <label class="toggle"><input type="checkbox" id="keystrokesCheckbox"><span class="slider"></span></label>
-              </div>
-              
-              <!-- Linux-specific keystrokes limitation notification (hidden by default) -->
-              <div id="linuxKeystrokesSection" class="hidden mt-4">
-                <h3 class="linux-section-heading">Keystroke Tracking Not Available</h3>
-                <p class="instruction-text">Keystroke tracking is currently not supported on Linux.</p>
-                <div class="p-4 bg-gray-100 rounded-lg">
-                  <p class="font-medium mb-2">Limitations on Linux:</p>
-                  <ul class="list-disc pl-5 mt-2 space-y-1 text-xs">
-                    <li>Keystroke tracking is not available when running as an AppImage on Linux</li>
-                    <li>Other features of DoneThat will continue to work normally</li>
-                    <li>You can still use window tracking and audio recording features</li>
-                  </ul>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -698,6 +676,23 @@
             </div>
             <div class="mt-6 text-xs text-gray-500 text-center">
               Version: <span id="appVersion"></span>
+            </div>
+          </div>
+
+          <div class="auth-card">
+            <div class="section-divider"><span class="section-divider-label">Logs</span></div>
+            <p class="text-sm text-gray-600 mb-4">Save all capture data (screenshots, activity, etc.) to a folder for logging.</p>
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <div class="text-base font-semibold text-gray-800">Save capture data to folder</div>
+                <div class="text-xs text-gray-500">Writes one folder per send, organized by day.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="saveCaptureDataCheckbox"><span class="slider"></span></label>
+            </div>
+            <div id="saveCaptureDataPathSection" class="hidden">
+              <div class="mt-3">
+                <input type="text" id="saveCaptureDataPathInput" readonly class="form-input w-full text-sm py-2 px-3 text-gray-500 leading-none cursor-pointer hover:bg-gray-50" />
+              </div>
             </div>
           </div>
         </div>

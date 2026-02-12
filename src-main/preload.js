@@ -23,6 +23,8 @@ const validSendChannels = [
   'requestAudioPermission',
   'updateInputDataSettings',
   'updateDisableScreenshotsInMeetings',
+  'updateSaveCaptureData',
+  'updateSaveCaptureDataPath',
   'updateWorkhours',
   'updateWorkdays',
   'pause-capture-due-to-permission',
@@ -83,6 +85,8 @@ const validInvokeChannels = [
   'save-app-exclusions',
   'test-app-exclusions',
   'test-local-processing',
+  'get-save-capture-data',
+  'choose-capture-dump-folder',
 
   // Chat / capture
   'chat:reset',
@@ -115,6 +119,7 @@ const validReceiveChannels = [
   'firebase-custom-token',
   'auth:custom-token-for-portal',
   'auth:reauth-result-for-portal',
+  'auth:calendar-linked',
 
   // Chat
   'chat:receive-messages',

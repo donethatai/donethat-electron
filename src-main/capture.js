@@ -1,15 +1,16 @@
 const log = require('electron-log');
-const { captureScreenshot, getPreviousScreenshots } = require('./captureScreenshots');
+const { captureScreenshot, getPreviousScreenshots, saveCurrentScreenshot, scaleScreenshotToPreviousSize } = require('./captureScreenshots');
 const { ipcMain, powerMonitor } = require('electron');
 const { isLocalProcessingAvailable, processDataLocally } = require('./processLocal');
 const { applyAppExclusions } = require('./screenshotMasking');
+const { applyImageDiffBoundingBoxes } = require('./imageDiff');
+const { saveCaptureDump, appendCaptureDump } = require('./captureDump');
 
 // Firebase URL constant
 const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/captureScreenshot';
 
 // Import capture modules
 const audioCapture = require('./captureAudio');
-// const keystrokesCapture = require('./captureKeystrokes'); // Disabled to avoid antivirus flags
 const windowsCapture = require('./captureWindows');
 
 // Variable to track the capture interval
@@ -24,7 +25,6 @@ let getIdTokenFunction = null; // Store the getIdToken function reference
 // Track input data settings
 let inputDataSettings = {
   audio: false,
-  keystrokes: false,
   windows: false
 };
 
@@ -113,45 +113,6 @@ async function _startAudioTracking() {
 }
 
 /**
- * Helper function to start keystroke tracking
- * @returns {Promise<boolean>} Success status
- */
-// DISABLED: Keystroke tracking removed to avoid antivirus flags
-// async function _startKeystrokeTracking() {
-//   try {
-//     const trackingStarted = await keystrokesCapture.startTracking();
-//     if (!trackingStarted) {
-//       const error = new Error('Keystroke tracking permission denied or failed to start');
-//       log.warn(error.message);
-//       
-//       // Use handleCaptureError with specific keystrokes error
-//       handleCaptureError(
-//         error, 
-//         'keystrokes-permission', 
-//         { keystrokes: true },
-//         false // Don't stop capturing, just disable this feature
-//       );
-//       
-//       return false;
-//     }
-//     
-//     return true;
-//   } catch (error) {
-//     log.error('Failed to start keystroke tracking:', error);
-//     
-//     // Use handleCaptureError with specific keystrokes error
-//     handleCaptureError(
-//       error, 
-//       'keystrokes-error', 
-//       { keystrokes: true },
-//       false // Don't stop capturing, just disable this feature
-//     );
-//     
-//     return false;
-//   }
-// }
-
-/**
  * Helper function to start window tracking
  * @returns {Promise<boolean>} Success status
  */
@@ -207,7 +168,7 @@ async function _startWindowTracking() {
 
 /**
  * Updates input data settings
- * @param {Object} settings Settings with audio, keystrokes, windows flags
+ * @param {Object} settings Settings with audio, windows flags
  * @returns {Object} Updated settings
  */
 function updateInputDataSettings(settings) {
@@ -219,7 +180,6 @@ function updateInputDataSettings(settings) {
     inputDataSettings = {
       ...inputDataSettings,
       ...(settings.audio !== undefined ? { audio: !!settings.audio } : {}),
-      ...(settings.keystrokes !== undefined ? { keystrokes: !!settings.keystrokes } : {}),
       ...(settings.windows !== undefined ? { windows: !!settings.windows } : {})
     };
     
@@ -230,11 +190,6 @@ function updateInputDataSettings(settings) {
       });
     }
     
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    // if (previousSettings.keystrokes && !inputDataSettings.keystrokes) {
-    //   keystrokesCapture.stopTracking();
-    // }
-    
     if (previousSettings.windows && !inputDataSettings.windows) {
       windowsCapture.stopTracking();
     }
@@ -244,11 +199,6 @@ function updateInputDataSettings(settings) {
       if (!previousSettings.audio && inputDataSettings.audio) {
         _startAudioTracking();
       }
-      
-      // DISABLED: Keystroke tracking removed to avoid antivirus flags
-      // if (!previousSettings.keystrokes && inputDataSettings.keystrokes) {
-      //   _startKeystrokeTracking();
-      // }
       
       if (!previousSettings.windows && inputDataSettings.windows) {
         // Reset window start retry state on fresh enable
@@ -323,10 +273,6 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
   audioCapture.initialize(mainWindow, {
     bufferDurationMs: captureIntervalMinutes * 60 * 1000
   });
-  
-  // DISABLED: Keystroke tracking removed to avoid antivirus flags
-  // Initialize keystrokes capture with main window
-  // keystrokesCapture.initialize(mainWindow);
   
   // Handler for updating input data settings
   ipcMain.on('updateInputDataSettings', (event, settings) => {
@@ -405,119 +351,7 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     app.on('browser-window-focus', focusListener);
   });
 
-  // DISABLED: Keystroke tracking removed to avoid antivirus flags
-  // ipcMain.on('requestKeystrokesPermission', async (event) => {
-  //   const { shell } = require('electron');
-  //   const { checkPermissions } = require('./captureKeystrokes');
-  //   
-  //   const hasPermission = await checkPermissions();
-  //   
-  //   if (hasPermission) {
-  //     if (mainWindow) {
-  //       mainWindow.webContents.send('keystrokesPermission', true);
-  //     }
-  //     return;
-  //   }
-  //   
-  //   // Open system settings based on platform
-  //   if (process.platform === 'darwin') {
-  //     shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
-  //   } else if (process.platform === 'win32') {
-  //     shell.openExternal('ms-settings:privacy');
-  //   } else if (process.platform === 'linux') {
-  //     if (mainWindow) {
-  //       mainWindow.webContents.send('linux-keystrokes-permission-notice');
-  //     }
-  //   }
-  //   
-  //   // Check permission on focus
-  //   const app = require('electron').app;
-  //   const focusListener = async () => {
-  //     app.removeListener('browser-window-focus', focusListener);
-  //     
-  //     const newHasPermission = await checkPermissions();
-  //     
-  //     if (mainWindow) {
-  //       mainWindow.webContents.send('keystrokesPermission', newHasPermission);
-  //     }
-  //   };
-  //   
-  //   app.on('browser-window-focus', focusListener);
-  // });
-
   // Windows permission IPC is handled in captureWindows.js to centralize logic
-}
-
-/**
- * Process keystroke data into segments
- * @param {Array} keystrokeData Array of keystroke events
- * @returns {Array} Processed keystroke segments
- */
-function processKeystrokeSegments(keystrokeData) {
-  const segments = [];
-  let processedKeystrokes = '';
-  let lastTimestamp = 0;
-  let currentSegmentStart = 0;
-  
-  // Sort by timestamp
-  const sortedKeystrokes = [...keystrokeData].sort((a, b) => {
-    const aTime = typeof a.timestamp === 'string' ? new Date(a.timestamp).getTime() : a.timestamp;
-    const bTime = typeof b.timestamp === 'string' ? new Date(b.timestamp).getTime() : b.timestamp;
-    return aTime - bTime;
-  });
-  
-  if (sortedKeystrokes.length === 0) {
-    return segments;
-  }
-  
-  // Set initial segment start time
-  const firstTime = typeof sortedKeystrokes[0].timestamp === 'string' 
-    ? new Date(sortedKeystrokes[0].timestamp).getTime() 
-    : sortedKeystrokes[0].timestamp;
-  currentSegmentStart = firstTime;
-  
-  // Process keystroke segments with gaps > 5 seconds
-  for (let i = 0; i < sortedKeystrokes.length; i++) {
-    const ks = sortedKeystrokes[i];
-    const ksTime = typeof ks.timestamp === 'string' 
-      ? new Date(ks.timestamp).getTime() 
-      : ks.timestamp;
-    
-    // Start a new segment if there's a significant gap
-    if (lastTimestamp === 0 || (ksTime - lastTimestamp > 5000)) {
-      if (lastTimestamp > 0 && processedKeystrokes.length > 0) {
-        // Add the completed segment
-        segments.push({
-          type: 'keystrokes',
-          startTime: currentSegmentStart,
-          endTime: lastTimestamp,
-          duration: lastTimestamp - currentSegmentStart,
-          keystrokes: processedKeystrokes
-        });
-        
-        // Reset for new segment
-        processedKeystrokes = '';
-        currentSegmentStart = ksTime;
-      }
-    }
-    
-    // Add the key to the current segment
-    processedKeystrokes += ks.key;
-    lastTimestamp = ksTime;
-  }
-  
-  // Add the final segment if there's data
-  if (processedKeystrokes.length > 0) {
-    segments.push({
-      type: 'keystrokes',
-      startTime: currentSegmentStart,
-      endTime: lastTimestamp,
-      duration: lastTimestamp - currentSegmentStart,
-      keystrokes: processedKeystrokes
-    });
-  }
-  
-  return segments;
 }
 
 /**
@@ -529,7 +363,6 @@ async function collectInputData(resetBuffers = true) {
   let inputData = {};
   let captureErrors = {
     audio: false,
-    keystrokes: false,
     windows: false
   };
   
@@ -555,36 +388,8 @@ async function collectInputData(resetBuffers = true) {
     }
   }
   
-  // Get keystroke and window data
-  // DISABLED: Keystroke tracking removed to avoid antivirus flags
-  let keystrokeData = [];
-  let windowData = [];
-  
-  // Get keystroke data
-  // if (inputDataSettings.keystrokes) {
-  //   try {
-  //     // Reset timeline after collection
-  //     keystrokeData = keystrokesCapture.getKeystrokeTimeline(
-  //       captureIntervalMinutes * 60 * 1000, 
-  //       resetBuffers 
-  //     );
-  //     
-  //     if (keystrokeData.length === 0 && keystrokesCapture.isTracking()) {        
-  //       // Try to restart keystroke tracking
-  //       try {
-  //         await keystrokesCapture.stopTracking();
-  //         await keystrokesCapture.startTracking();
-  //       } catch (restartError) {
-  //         log.error('Failed to restart keystroke tracking:', restartError);
-  //       }
-  //     }
-  //   } catch (error) {
-  //     captureErrors.keystrokes = true;
-  //     log.error('Error capturing keystroke data:', error);
-  //   }
-  // }
-  
   // Get window data
+  let windowData = [];
   let hadWindowDataBeforeFiltering = false;
   if (inputDataSettings.windows) {
     try {
@@ -628,41 +433,7 @@ async function collectInputData(resetBuffers = true) {
   inputData.activity = [];
   
   try {
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    // if (inputDataSettings.keystrokes && keystrokeData.length > 0) {
-    //   if (inputDataSettings.windows && windowData.length > 0) {
-    //     // Attach keystrokes to window periods
-    //     windowData.forEach(windowPeriod => {
-    //       const windowKeystrokes = keystrokeData.filter(ks => {
-    //         if (!ks.timestamp) return false;
-    //         const ksTime = typeof ks.timestamp === 'string' 
-    //           ? new Date(ks.timestamp).getTime() 
-    //           : ks.timestamp;
-    //         return ksTime >= windowPeriod.startTime && ksTime <= windowPeriod.endTime;
-    //       });
-    //       
-    //       const keystrokeString = windowKeystrokes
-    //         .map(ks => ks.key)
-    //         .join('');
-    //       
-    //       inputData.activity.push({
-    //         type: 'window',
-    //         name: windowPeriod.name,
-    //         title: windowPeriod.title,
-    //         startTime: windowPeriod.startTime,
-    //         endTime: windowPeriod.endTime,
-    //         duration: windowPeriod.duration,
-    //         keystrokes: keystrokeString
-    //       });
-    //     });
-    //   } else {
-    //     // Process keystrokes into segments
-    //     const keystrokeSegments = processKeystrokeSegments(keystrokeData);
-    //     inputData.activity = inputData.activity.concat(keystrokeSegments);
-    //   }
-    // } else 
     if (inputDataSettings.windows && windowData.length > 0) {
-      // Just include window data
       windowData.forEach(window => {
         inputData.activity.push({
           type: 'window',
@@ -670,15 +441,12 @@ async function collectInputData(resetBuffers = true) {
           title: window.title,
           startTime: window.startTime,
           endTime: window.endTime,
-          duration: window.duration,
-          keystrokes: ''
+          duration: window.duration
         });
       });
     }
   } catch (error) {
     log.error('Error processing activity data:', error);
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    // if (inputDataSettings.keystrokes) captureErrors.keystrokes = true;
     if (inputDataSettings.windows) captureErrors.windows = true;
   }
   
@@ -695,7 +463,7 @@ async function collectInputData(resetBuffers = true) {
 /**
  * Captures all input data and sends it to Firebase
  * @param {string} idToken The Firebase ID token
- * @param {Object} inputData Additional input data to send (audio, keystrokes, windows)
+ * @param {Object} inputData Additional input data to send (audio, windows)
  * @returns {Promise<Object|boolean>} Response status
  */
 async function _sendToServer(idToken, screenshots, inputData = {}, previousScreenshotData = null) {
@@ -712,14 +480,8 @@ async function _sendToServer(idToken, screenshots, inputData = {}, previousScree
     const localProcessingAvailable = await isLocalProcessingAvailable();
     
     if (localProcessingAvailable) {
-      // Process data locally (previousScreenshotData passed from captureAndSend)
       try {
-        const result = await processDataLocally(
-          idToken,
-          screenshots,
-          previousScreenshotData,
-          inputData
-        );
+        const result = await processDataLocally(idToken, screenshots, { ...inputData, previousScreenshotData });
         return result;
       } catch (error) {
         // Handle local processing auth errors consistently with cloud path
@@ -747,21 +509,14 @@ async function _sendToServer(idToken, screenshots, inputData = {}, previousScree
         throw error;
       }
     } else {
-      // Fall back to cloud processing (previousScreenshotData passed from captureAndSend)
       const fetch = await import('node-fetch').then(module => module.default);
       
-      // Create payload with screenshots and timestamp
       const payload = {
         timestamp: Date.now(),
-        screenshots: screenshots
+        screenshots: screenshots,
+        previousScreenshotData: previousScreenshotData || null
       };
       
-      // Add previous screenshot data if available
-      if (previousScreenshotData) {
-        payload.previousScreenshotData = previousScreenshotData;
-      }
-      
-      // Add input data if provided
       if (inputData) {
         if (inputData.audioTranscript) {
           payload.audioTranscript = inputData.audioTranscript;
@@ -862,6 +617,16 @@ async function captureAndSend(idToken) {
         // Non-critical: if masking fails, continue with unmasked screenshots
         log.warn('Error applying app exclusions to screenshots:', error);
       }
+
+      // Save for next cycle's diff comparison (must be after exclusions, before bounding boxes)
+      saveCurrentScreenshot(screenshots);
+
+      // Apply image diff bounding boxes (compare with previous, draw red boxes on changes)
+      try {
+        screenshots = await applyImageDiffBoundingBoxes(screenshots, previousScreenshotData);
+      } catch (error) {
+        log.warn('Error applying image diff bounding boxes:', error);
+      }
     }
 
     if (!screenshots || screenshots.length === 0) {
@@ -873,8 +638,7 @@ async function captureAndSend(idToken) {
 
     // Check if any capture errors occurred
     const captureErrors = inputData.captureErrors;
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    if (captureErrors && (captureErrors.audio || /* captureErrors.keystrokes || */ captureErrors.windows)) {
+    if (captureErrors && (captureErrors.audio || captureErrors.windows)) {
       // Pass the specific errors to the handler
       handleCaptureError(new Error('Capture module error detected'), 'module-specific', captureErrors);
       delete inputData.captureErrors; // Remove this property before sending
@@ -899,9 +663,41 @@ async function captureAndSend(idToken) {
       return false;
     }
     
-    // Send all collected data to the server
-    const sendResult = await _sendToServer(idToken, screenshots, inputData, previousScreenshotData);
-    return sendResult;
+    const timestamp = Date.now()
+    let dumpDir = null
+    const localProcessingAvailable = await isLocalProcessingAvailable()
+    const pathType = localProcessingAvailable ? 'local' : 'cloud'
+    const scaledPreviousScreenshotData = previousScreenshotData?.images?.length
+      ? {
+          timestamp: previousScreenshotData.timestamp,
+          images: previousScreenshotData.images.map((img) => {
+            const dataUrl = img?.base64Data ?? img
+            if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return { ...img }
+            try {
+              return { ...img, base64Data: scaleScreenshotToPreviousSize(dataUrl) }
+            } catch {
+              return { ...img }
+            }
+          })
+        }
+      : previousScreenshotData
+    try {
+      dumpDir = await saveCaptureDump(screenshots, inputData, timestamp, pathType, scaledPreviousScreenshotData)
+    } catch (e) {
+      log.warn('Capture dump save failed:', e?.message)
+    }
+
+    const sendResult = await _sendToServer(idToken, screenshots, inputData, scaledPreviousScreenshotData)
+
+    if (dumpDir && sendResult?.structured) {
+      try {
+        appendCaptureDump(dumpDir, sendResult.structured, sendResult.parameters)
+      } catch (e) {
+        log.warn('Capture dump append failed:', e?.message)
+      }
+    }
+
+    return sendResult
   } catch (error) {
     // Handle errors specifically from captureScreenshot or collectInputData
     handleCaptureError(error, 'unknown');
@@ -924,8 +720,6 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
   // Map of feature types to their friendly names
   const featureNames = {
     audio: 'Audio recording',
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    // keystrokes: 'Keystroke tracking',
     windows: 'Window tracking'
   };
   
@@ -958,8 +752,6 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
     log.warn('Unknown capture error source - disabling all capture features');
     updatedSettings = {
       audio: false,
-      // DISABLED: Keystroke tracking removed to avoid antivirus flags
-      // keystrokes: false,
       windows: false
     };
     
@@ -1014,12 +806,6 @@ async function _runCaptureCycle() {
     if (inputDataSettings.audio && !audioCapture.getStatus().recording) {
       await _startAudioTracking();
     }
-    
-    // DISABLED: Keystroke tracking removed to avoid antivirus flags
-    // Start keystroke tracking if needed
-    // if (inputDataSettings.keystrokes && !keystrokesCapture.isTracking()) {
-    //   await _startKeystrokeTracking();
-    // }
     
     // Start window tracking if needed
     if (inputDataSettings.windows && !windowsCapture.isTracking()) {
@@ -1105,11 +891,6 @@ function stopCaptureInterval() {
       log.error('Error shutting down audio recording:', error);
     });
   }
-  
-  // DISABLED: Keystroke tracking removed to avoid antivirus flags
-  // if (inputDataSettings.keystrokes) {
-  //   keystrokesCapture.stopTracking();
-  // }
   
   if (inputDataSettings.windows) {
     windowsCapture.stopTracking();
