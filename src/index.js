@@ -961,28 +961,13 @@ function updateTopbarVisibility() {
   const currentView = getCurrentView();
   const isAuthScreen = (currentView === 'signin' || currentView === 'signup' || currentView === 'reset');
   
-  console.log('[TOPBAR] updateTopbarVisibility called');
-  console.log('[TOPBAR] currentView:', currentView);
-  console.log('[TOPBAR] isAuthScreen:', isAuthScreen);
-  console.log('[TOPBAR] hasScreenCapturePermission():', hasScreenCapturePermission());
-  console.log('[TOPBAR] hasWindowsPermission():', hasWindowsPermission());
-  console.log('[TOPBAR] isWayland:', window.electronAPI.isWayland);
-  
   if (appTopbar) {
     // On Wayland, only require screen permission (windows detection doesn't work properly)
     // On other platforms, require both permissions
     const shouldHideTopbar = isAuthScreen || 
       (window.electronAPI.isWayland ? !hasScreenCapturePermission() : (!hasScreenCapturePermission() || !hasWindowsPermission()));
-    console.log('[TOPBAR] shouldHideTopbar:', shouldHideTopbar);
-    if (shouldHideTopbar) {
-      console.log('[TOPBAR] HIDING topbar');
-      appTopbar.classList.add('hidden');
-    } else {
-      console.log('[TOPBAR] SHOWING topbar');
-      appTopbar.classList.remove('hidden');
-    }
-  } else {
-    console.log('[TOPBAR] appTopbar element not found!');
+    if (shouldHideTopbar) appTopbar.classList.add('hidden');
+    else appTopbar.classList.remove('hidden');
   }
 }
 

@@ -445,16 +445,13 @@ async function startRecordingInternal() {
   try {
     let sourceIds = [];
     if (currentConfig.systemAudio) {
-      log.info('[AudioCapture] System audio enabled, retrieving desktop sources...');
       try {
         const sources = await desktopCapturer.getSources({ types: ['screen'] });
-        log.info(`[AudioCapture] Found ${sources.length} screen sources`);
         
         if (process.platform === 'darwin') {
           // On macOS, system audio loopbacks can be tied to specific monitors.
           // We collect all of them to mix them in the renderer.
           sourceIds = sources.map(s => s.id);
-          log.info(`[AudioCapture] macOS detected: collecting all ${sourceIds.length} sources for mixing`);
         } else {
           // On Windows/Linux, typically one system loopback exists via the primary display capture.
           // Multiple captures might trigger multiple permission prompts or redundant streams.
@@ -467,19 +464,15 @@ async function startRecordingInternal() {
             ) || sources[0];
             
             sourceIds = [primary.id];
-            log.info(`[AudioCapture] ${process.platform} detected: using primary source ${primary.id}`);
           }
         }
         
         // Log details about each source
         sources.forEach((source, index) => {
-          log.info(`[AudioCapture]   Source ${index}: id=${source.id}, name="${source.name}"`);
         });
       } catch (err) {
         log.error('[AudioCapture] Error getting desktop sources for system audio:', err);
       }
-    } else {
-      log.info('[AudioCapture] System audio not enabled in config');
     }
 
     // Ask renderer to start continuous recording

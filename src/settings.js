@@ -1382,7 +1382,7 @@ function setupContextCaptureListeners() {
       const titlePatternInput = document.createElement('input');
       titlePatternInput.type = 'text';
       titlePatternInput.className = 'flex-1 min-w-[120px] border-0 outline-none bg-transparent text-xs';
-      titlePatternInput.placeholder = titlePatterns.length === 0 ? 'e.g. budget, meetings' : 'Add another...';
+      titlePatternInput.placeholder = titlePatterns.length === 0 ? 'e.g. todos, projects' : 'Add another...';
       titlePatternInput.dataset.index = index;
       titlePatternInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter' && titlePatternInput.value.trim()) {
