@@ -10,11 +10,18 @@ function normalizeAppName(appName) {
 
 // Helper to create a unique window identifier for z-order tracking
 function getWindowId(window) {
-  if (!window || !window.appName) return null
+  if (!window) return null
+  
+  // Prefer native window ID if available (most unique)
+  if (window.id !== undefined && window.id !== null) {
+    return `id:${window.id}`
+  }
+
+  // Fallback to app name + title for cases where ID might be missing
+  if (!window.appName) return null
   const normalizedApp = normalizeAppName(window.appName)
   const title = window.title || ''
-  // Use app name + title to uniquely identify a window (bounds excluded for stability)
-  return `${normalizedApp}|${title}`
+  return `sig:${normalizedApp}|${title}`
 }
 
 /**
@@ -374,6 +381,7 @@ function processWindows(windows) {
       const executable = window.owner?.path || 'unknown'
       
       processedWindows.push({
+        id: window.id,
         appName,
         title,
         executable,
@@ -480,6 +488,7 @@ async function recordCurrentWindow() {
     const appName = activeWindowInfo.owner?.name || activeWindowInfo.owner?.processName || 'Unknown'
     
     windowTimeline.push({
+      id: activeWindowInfo.id,
       timestamp: new Date().toISOString(),
       title: activeWindowInfo.title || 'Unknown',
       app: appName,
@@ -491,6 +500,7 @@ async function recordCurrentWindow() {
     // Update z-order cache with this specific window (never cleared, just updated with latest activity)
     if (bounds) {
       const windowObj = {
+        id: activeWindowInfo.id,
         appName: appName,
         title: activeWindowInfo.title || 'Unknown',
         bounds: bounds
@@ -852,8 +862,13 @@ async function getAllVisibleWindows() {
         const activeAppName = latestEntry.app
         const activeTitle = latestEntry.title || 'Unknown'
         
-        // Find all matching windows (multiple windows can have same app+title)
+        // Find all matching windows
         const matchingWindows = processedWindows.filter(w => {
+          // Primary match: Window ID (most accurate)
+          if (latestEntry.id !== undefined && w.id !== undefined && latestEntry.id !== null) {
+            return w.id === latestEntry.id
+          }
+          // Secondary fallback: app name + title (for any entries/windows missing IDs)
           const appMatches = normalizeAppName(w.appName) === normalizeAppName(activeAppName)
           const titleMatches = (w.title || 'Unknown') === activeTitle
           return appMatches && titleMatches
