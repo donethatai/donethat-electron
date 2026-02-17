@@ -368,17 +368,57 @@ async function processScreenshotForUpload(dataUrl) {
 
 // Initialize screen capture permission handling
 function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndAdjustRecording, sendOverlayState) {
-  ipcMain.on('requestScreenCapturePermission', async () => {
-    // On macOS this would open System Preferences > Security & Privacy > Screen Recording
-    // On Windows there isn't a direct way to open system settings for this
+  ipcMain.on('requestScreenCapturePermission', async (_event, shouldOpenSettings = true) => {
+    // Never open system settings if permission is already granted.
+    try {
+      let alreadyGranted = await checkScreenCapturePermission();
+      if (alreadyGranted === undefined) {
+        alreadyGranted = stateManager?.hasScreenCapturePermission();
+      }
+      if (!alreadyGranted) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        let secondCheck = await checkScreenCapturePermission();
+        if (secondCheck === undefined) {
+          secondCheck = stateManager?.hasScreenCapturePermission();
+        }
+        alreadyGranted = !!(alreadyGranted || secondCheck);
+      }
+      if (alreadyGranted) {
+        stateManager?.updateScreenCapturePermission(true);
+        if (mainWindow) {
+          mainWindow.webContents.send('screenCapturePermission', {
+            hasPermission: true,
+            source: 'request'
+          });
+        }
+        return;
+      }
+    } catch (_) {}
+
+    if (shouldOpenSettings !== true) {
+      stateManager?.updateScreenCapturePermission(false);
+      if (mainWindow) {
+        mainWindow.webContents.send('screenCapturePermission', {
+          hasPermission: false,
+          source: 'request'
+        });
+      }
+      return;
+    }
+
+    // Only macOS has a meaningful direct deep-link for this permission flow.
     if (process.platform === 'darwin') {
-      // macOS
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
-    } else if (process.platform === 'win32') {
-      // Windows - open general privacy settings
-      shell.openExternal('ms-settings:privacy')
     } else {
-      // Linux or other platforms
+      // Windows/Linux: do not force-open settings. Report current denied state only.
+      stateManager?.updateScreenCapturePermission(false);
+      if (mainWindow) {
+        mainWindow.webContents.send('screenCapturePermission', {
+          hasPermission: false,
+          source: 'request'
+        });
+      }
+      return;
     }
 
     // After opening settings, we should check permission again when app regains focus
@@ -392,7 +432,8 @@ function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndA
 
       if (stateManager?.hasScreenCapturePermission() !== oldPermission && mainWindow) { // Check if permission *changed*
         mainWindow.webContents.send('screenCapturePermission', {
-          hasPermission: stateManager?.hasScreenCapturePermission()
+          hasPermission: stateManager?.hasScreenCapturePermission(),
+          source: 'request'
         });
 
         // Re-evaluate recording state based on permission change

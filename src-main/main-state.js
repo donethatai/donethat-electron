@@ -868,7 +868,8 @@ function setupIPCHandlers() {
       // Send permission status to renderer
       if (mainWindow) {
         mainWindow.webContents.send('screenCapturePermission', {
-          hasPermission: hasScreenCapturePermission
+          hasPermission: hasScreenCapturePermission,
+          source: 'login'
         });
       }
     }

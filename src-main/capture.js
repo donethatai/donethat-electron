@@ -35,6 +35,30 @@ let windowStartRetryCount = 0;
 const WINDOW_START_MAX_RETRIES = 5;
 let windowStartRetryTimer = null;
 
+const failureStreaks = {
+  audio: 0,
+  windows: 0
+};
+
+const AUTO_DISABLE_THRESHOLDS = {
+  audio: 4,
+  windows: 6
+};
+
+function resetFailureStreak(feature) {
+  if (Object.prototype.hasOwnProperty.call(failureStreaks, feature)) {
+    failureStreaks[feature] = 0;
+  }
+}
+
+function incrementFailureStreak(feature) {
+  if (!Object.prototype.hasOwnProperty.call(failureStreaks, feature)) {
+    return 0;
+  }
+  failureStreaks[feature] += 1;
+  return failureStreaks[feature];
+}
+
 // Track disable screenshots in meetings setting
 
 
@@ -98,6 +122,7 @@ async function _startAudioTracking() {
       return false;
     }
     
+    resetFailureStreak('audio');
     return true;
     
   } catch (error) {
@@ -153,6 +178,7 @@ async function _startWindowTracking() {
     
     // Success: reset retry state
     windowStartRetryCount = 0;
+    resetFailureStreak('windows');
     return true;
   } catch (error) {
     log.error('Failed to start window tracking:', error);
@@ -190,12 +216,14 @@ function updateInputDataSettings(settings) {
     
     // Stop tracking for disabled options
     if (previousSettings.audio && !inputDataSettings.audio) {
+      resetFailureStreak('audio');
       audioCapture.shutdownRecording().catch(error => {
         log.error('Error shutting down audio recording:', error);
       });
     }
     
     if (previousSettings.windows && !inputDataSettings.windows) {
+      resetFailureStreak('windows');
       windowsCapture.stopTracking();
     }
     
@@ -302,28 +330,40 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
   });
 
   // Add other capture-related IPC handlers here as needed
-  ipcMain.on('requestAudioPermission', async (event) => {
+  ipcMain.on('requestMicrophonePermission', async (_event, shouldOpenSettings = true) => {
     const { shell } = require('electron');
-    const { checkPermission } = require('./captureAudio');
+    const { checkMicrophonePermission } = require('./captureAudio');
     
-    const hasPermission = await checkPermission();
+    const hasPermission = await checkMicrophonePermission(true);
     
     if (hasPermission) {
       if (mainWindow) {
-        mainWindow.webContents.send('audioPermission', true);
+        mainWindow.webContents.send('microphonePermission', { hasPermission: true, source: 'request' });
       }
       return;
     }
     
+    if (shouldOpenSettings !== true) {
+      if (mainWindow) {
+        mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'request' });
+      }
+      return;
+    }
+
     // Open system settings based on platform
     if (process.platform === 'darwin') {
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
-    } else if (process.platform === 'win32') {
-      shell.openExternal('ms-settings:privacy-microphone');
     } else if (process.platform === 'linux') {
       if (mainWindow) {
         mainWindow.webContents.send('linux-audio-permission-notice');
       }
+      return;
+    } else {
+      // Windows/other: do not force-open settings.
+      if (mainWindow) {
+        mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'request' });
+      }
+      return;
     }
     
     // Check permission on focus
@@ -331,10 +371,10 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     const focusListener = async () => {
       app.removeListener('browser-window-focus', focusListener);
       
-      const newHasPermission = await checkPermission();
+      const newHasPermission = await checkMicrophonePermission(true);
       
       if (mainWindow) {
-        mainWindow.webContents.send('audioPermission', newHasPermission);
+        mainWindow.webContents.send('microphonePermission', { hasPermission: !!newHasPermission, source: 'request' });
       }
     };
     
@@ -342,20 +382,36 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
   });
 
   // System Audio Permission Request Handler
-  ipcMain.on('requestSystemAudioPermission', async (event) => {
+  ipcMain.on('requestSystemAudioPermission', async (_event, shouldOpenSettings = true) => {
     const { shell } = require('electron');
+    const { checkSystemAudioPermission } = require('./captureAudio');
     
     // System audio is part of screen recording permission on macOS
-    // Open system settings based on platform
     if (process.platform === 'darwin') {
+      const hasSystemAudioPermission = await checkSystemAudioPermission();
+      if (hasSystemAudioPermission) {
+        if (mainWindow) {
+          mainWindow.webContents.send('systemAudioPermission', { hasPermission: true, source: 'request' });
+        }
+        return;
+      }
+      if (shouldOpenSettings !== true) {
+        if (mainWindow) {
+          mainWindow.webContents.send('systemAudioPermission', { hasPermission: false, source: 'request' });
+        }
+        return;
+      }
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
     } else if (process.platform === 'win32') {
-      // Windows - system audio capture works differently
-      shell.openExternal('ms-settings:privacy');
+      // Windows system audio capture does not use a dedicated OS permission dialog.
+      if (mainWindow) {
+        mainWindow.webContents.send('systemAudioPermission', { hasPermission: true, source: 'request' });
+      }
+      return;
     } else if (process.platform === 'linux') {
       // Linux - no specific permission needed for system audio
       if (mainWindow) {
-        mainWindow.webContents.send('systemAudioPermission', true);
+        mainWindow.webContents.send('systemAudioPermission', { hasPermission: true, source: 'request' });
       }
       return;
     }
@@ -365,11 +421,9 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     const focusListener = async () => {
       app.removeListener('browser-window-focus', focusListener);
       
-      // On macOS, system audio permission is tied to screen recording
-      // We'll send a message to trigger a re-check in the renderer
-      if (mainWindow) {
-        mainWindow.webContents.send('systemAudioPermission-recheck');
-      }
+      if (!mainWindow) return;
+      const hasSystemAudioPermission = await checkSystemAudioPermission();
+      mainWindow.webContents.send('systemAudioPermission', { hasPermission: !!hasSystemAudioPermission, source: 'request' });
     };
     
     app.on('browser-window-focus', focusListener);
@@ -406,6 +460,7 @@ async function collectInputData(resetBuffers = true) {
       if (audioInfo && audioInfo.audioChunks && audioInfo.audioChunks.length > 0) {
         inputData.audioChunks = audioInfo.audioChunks;
       }
+      resetFailureStreak('audio');
     } catch (error) {
       captureErrors.audio = true;
       log.error('Error capturing audio chunks:', error);
@@ -447,6 +502,7 @@ async function collectInputData(resetBuffers = true) {
           log.error('Failed to restart window tracking:', restartError);
         }
       }
+      resetFailureStreak('windows');
     } catch (error) {
       captureErrors.windows = true;
       log.error('Error capturing window data:', error);
@@ -682,6 +738,13 @@ async function captureAndSend(idToken) {
     const hasAudioChunks = inputData && inputData.audioChunks && inputData.audioChunks.length > 0;
     const hasActivity = inputData && inputData.activity && inputData.activity.length > 0;
 
+    // Screen and active-apps are required sources for baseline recording quality.
+    // If neither produced data this cycle, skip upload even if audio exists.
+    if (!hasScreenshots && !hasActivity) {
+      log.info('[capture] Skipping upload: required sources unavailable (screenshare/active apps)');
+      return false;
+    }
+
     if (!hasScreenshots && !hasAudioChunks && !hasActivity) {
       log.debug('[capture] No data to upload (screenshots=', screenshots?.length ?? 0, 'audio=', hasAudioChunks, 'activity=', hasActivity, ')');
       return false;
@@ -748,43 +811,50 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
   };
   
   if (captureErrors) {
+    let shouldNotifyRenderer = false;
     // Check which features need to be disabled
     Object.keys(captureErrors).forEach(feature => {
       if (captureErrors[feature] && featureNames[feature]) {
-        // Disable the feature
-        updatedSettings[feature] = false;
-        
-        // If context matches this feature, set dialog options
-        if (context.includes(feature)) {
-          const isPermissionError = context.includes('permission');
-          
-          dialogOptions = {
-            type: 'warning',
-            title: isPermissionError ? 'Permission Denied' : 'Capture Error',
-            message: `${featureNames[feature]} ${isPermissionError ? 'permission denied' : 'failed'}`,
-            detail: `${featureNames[feature]} has been disabled. ${
-              isPermissionError 
-                ? `Check ${feature === 'audio' ? 'microphone' : 'accessibility'} permissions in system settings.`
-                : `Error: ${error.message}`
-            }`
-          };
+        const streak = incrementFailureStreak(feature);
+        const threshold = AUTO_DISABLE_THRESHOLDS[feature] || 4;
+
+        if (streak >= threshold) {
+          updatedSettings[feature] = false;
+          resetFailureStreak(feature);
+          shouldNotifyRenderer = true;
+
+          // If context matches this feature, set dialog options
+          if (context.includes(feature)) {
+            const isPermissionError = context.includes('permission');
+
+            dialogOptions = {
+              type: 'warning',
+              title: isPermissionError ? 'Permission Denied' : 'Capture Error',
+              message: `${featureNames[feature]} ${isPermissionError ? 'permission denied' : 'failed'}`,
+              detail: `${featureNames[feature]} has been disabled after repeated failures. ${
+                isPermissionError
+                  ? `Check ${feature === 'audio' ? 'microphone' : 'accessibility'} permissions in system settings.`
+                  : `Error: ${error.message}`
+              }`
+            };
+          }
+        } else {
+          log.warn(`[capture] ${feature} failure ${streak}/${threshold}; keeping toggle enabled`);
         }
       }
     });
+
+    if (!shouldNotifyRenderer) {
+      return;
+    }
   } else {
-    // Unknown source, disable all
-    log.warn('Unknown capture error source - disabling all capture features');
-    updatedSettings = {
-      audio: false,
-      windows: false
-    };
-    
-    // Generic error dialog
+    // Unknown source: keep user toggles unchanged and retry next cycle.
+    log.warn('Unknown capture error source - preserving capture settings');
     dialogOptions = {
       type: 'warning',
       title: 'Capture Error',
-      message: 'Capture features disabled',
-      detail: 'All capture features have been disabled due to an error: ' + error.message
+      message: 'Capture issue detected',
+      detail: 'Capture will retry automatically. Error: ' + error.message
     };
   }
   

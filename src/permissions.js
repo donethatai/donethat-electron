@@ -1,64 +1,100 @@
 const ipcRenderer = window.electronAPI;
-const { updateScreenCapturePermission, updateWindowsPermission, hasScreenCapturePermission, hasWindowsPermission } = require('./app-state.js');
+const {
+  updateScreenCapturePermission,
+  updateWindowsPermission,
+  updateMicrophonePermission,
+  updatePermissionsReady,
+  hasScreenCapturePermission,
+  hasWindowsPermission,
+  hasMicrophonePermission
+} = require('./app-state.js');
 const { logAnalyticsEvent } = require('./analytics.js');
-
-const openSettingsBtn = document.getElementById("openSettingsBtn");
+const { handleCaptureToggleIntent } = require('./settings.js');
 
 let navigateToView;
-let getCurrentView;
 let updateTopbarVisibility;
-let lastWindowsPermFocusTs = 0; // throttle focusing app on permission loss
 
-// Initialize permissions module
-function initializePermissions(viewNavigator, currentViewGetter, topbarVisibilityUpdater) {
+const permissionStartupLoaded = {
+  screen: false,
+  windows: false
+};
+
+function emitCaptureStateUpdated() {
+  document.dispatchEvent(new CustomEvent('capture-state-updated'));
+}
+
+function parsePermissionPayload(data, fallbackSource = 'unknown') {
+  if (data && typeof data === 'object') {
+    return {
+      hasPermission: !!data.hasPermission,
+      source: typeof data.source === 'string' && data.source ? data.source : fallbackSource
+    };
+  }
+
+  return {
+    hasPermission: !!data,
+    source: fallbackSource
+  };
+}
+
+function handleIncomingPermissionEvent(type, data, applyUpdate, options = {}) {
+  const { defaultSource = 'unknown', fromStartup = false } = options;
+  const parsed = parsePermissionPayload(data, defaultSource);
+
+  logAnalyticsEvent('permission_event_received', {
+    type,
+    source: parsed.source,
+    status: parsed.hasPermission ? 'granted' : 'denied',
+    platform: window.electronAPI.platform
+  });
+
+  applyUpdate(parsed.hasPermission, fromStartup, parsed.source);
+}
+
+function markPermissionLoaded(type) {
+  permissionStartupLoaded[type] = true;
+  const ready = permissionStartupLoaded.screen && permissionStartupLoaded.windows;
+  updatePermissionsReady(ready);
+  emitCaptureStateUpdated();
+}
+
+function initializePermissions(viewNavigator, _currentViewGetter, topbarVisibilityUpdater) {
   navigateToView = viewNavigator;
-  getCurrentView = currentViewGetter;
   updateTopbarVisibility = topbarVisibilityUpdater;
 
-  // Set up event listeners for platform-specific permission issues
   setupPlatformSpecificListeners();
-
-  // Set up screen capture checkbox behavior
   setupScreenCaptureCheckboxBehavior();
-
-  // Set up windows checkbox behavior
   setupWindowsCheckboxBehavior();
-
-  // Set up audio checkbox behavior
   setupAudioCheckboxBehavior();
-
-  // Check permissions on startup
-  checkPermissionsOnStartup();
-  
-  // Set up finish button handler
   setupFinishButtonHandler();
+
+  checkPermissionsOnStartup();
 }
 
-// Check all permissions on startup to update state
 function checkPermissionsOnStartup() {
-  // NEW, TODO CHECK
-  ipcRenderer.send('requestScreenCapturePermission');
+  ipcRenderer.send('checkScreenCapturePermission');
 
-  // Check Windows permission (don't open settings, just check current status)
-  ipcRenderer.send('requestWindowsPermission', false);
-
-  // Check other permissions as needed
-  // (Audio might need different handling)
+  retryWindowsPermissionStartupCheck().then((hasPermission) => {
+    applyWindowsPermissionUpdate(!!hasPermission, true, 'startup-passive-check');
+  });
 }
 
-// Set up event listeners for platform-specific permission troubleshooting
+async function retryWindowsPermissionStartupCheck() {
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const hasPermission = await ipcRenderer.invoke('checkWindowsPermission');
+      if (hasPermission) return true;
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
 function setupPlatformSpecificListeners() {
-  // Listen for Linux-specific permission notices
   ipcRenderer.on('linux-windows-permission-notice', () => {
     showLinuxPermissionHelp('windows');
-    // Uncheck the windows checkbox since permission is required
-    const windowsCheckbox = document.getElementById('windowsCheckbox');
-    if (windowsCheckbox) {
-      windowsCheckbox.checked = false;
-      // Don't disable - allow user to try again after granting permission
-    }
-    // Functionally disable windows tracking
-    ipcRenderer.send('updateInputDataSettings', { windows: false });
   });
 
   ipcRenderer.on('linux-audio-permission-notice', () => {
@@ -67,27 +103,20 @@ function setupPlatformSpecificListeners() {
 
   ipcRenderer.on('linux-pactl-missing-notice', () => {
     showLinuxPermissionHelp('pactl');
-    // Uncheck the audio checkbox since audio session detection won't work
     const audioCheckbox = document.getElementById('audioCheckbox');
     if (audioCheckbox) {
       audioCheckbox.checked = false;
-      // Don't disable - allow user to try again after installing pactl
     }
-    // Functionally disable audio tracking
-    ipcRenderer.send('updateInputDataSettings', { audio: false });
+    handleCaptureToggleIntent('audio', false).catch(() => {});
   });
 }
 
-// Function to show Linux permission help
 function showLinuxPermissionHelp(permissionType) {
   const platform = window.electronAPI.platform;
   if (platform !== 'linux') return;
 
-  // Show inline notifications instead of modals
   switch (permissionType) {
     case 'audio':
-      showInlineLinuxNotification('linuxWindowsSection');
-      break;
     case 'windows':
       showInlineLinuxNotification('linuxWindowsSection');
       break;
@@ -95,11 +124,10 @@ function showLinuxPermissionHelp(permissionType) {
       showInlineLinuxNotification('linuxPactlSection');
       break;
     default:
-      return;
+      break;
   }
 }
 
-// Function to show inline Linux notifications
 function showInlineLinuxNotification(sectionId) {
   const section = document.getElementById(sectionId);
   if (section) {
@@ -107,346 +135,247 @@ function showInlineLinuxNotification(sectionId) {
   }
 }
 
-// Function to show custom screenshot section on Linux
 function showLinuxScreenshotSection() {
-  const platform = window.electronAPI.platform;
-  if (platform !== 'linux') return;
-
+  if (window.electronAPI.platform !== 'linux') return;
   const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
   if (linuxScreenshotSection) {
     linuxScreenshotSection.classList.remove('hidden');
   }
 }
 
-// Screen capture permission listener
-ipcRenderer.on('screenCapturePermission', (event, data) => {
-  // Extract permission status
-  const hasPermission = typeof data === 'object' ? data.hasPermission : data;
-
+function applyScreenPermissionUpdate(hasPermission, fromStartup = false, source = 'unknown') {
   updateScreenCapturePermission(hasPermission);
 
-  // Log screen capture permission status
   logAnalyticsEvent('screen_capture_permission', {
     status: hasPermission ? 'granted' : 'denied',
-    platform: window.electronAPI.platform
+    platform: window.electronAPI.platform,
+    source
   });
 
-  // Show custom screenshot section on Linux (regardless of permission status)
   if (window.electronAPI.platform === 'linux') {
     showLinuxScreenshotSection();
   }
 
-  // Update screen capture checkbox in settings if we're on settings view
   updateScreenCaptureCheckbox(hasPermission);
-
-  // Update finish button visibility
   updateFinishButtonVisibility();
-
-  // Update topbar visibility
   if (updateTopbarVisibility) updateTopbarVisibility();
 
-  // If screen recording permission is missing, ensure app window is shown
-  try {
-    if (!hasPermission) {
-      ipcRenderer.send('focus-app-window');
-    }
-  } catch (_) {}
-
-  // Navigate to signup-next only when screen recording is missing
-  if (!hasPermission) {
-    const currentView = getCurrentView ? getCurrentView() : null;
-    if (currentView !== 'settings') {
-      navigateToView('signup-next');
-    }
+  if (fromStartup) {
+    markPermissionLoaded('screen');
   }
-});
 
-// Add listeners for other permission types
-ipcRenderer.on('audioPermission', (event, hasPermission) => {
-  logAnalyticsEvent('audio_permission', {
-    status: hasPermission ? 'granted' : 'denied',
-    platform: window.electronAPI.platform
-  });
-  // Notify settings component about permission status
-  document.dispatchEvent(new CustomEvent('permissionResult', {
-    detail: { type: 'audio', hasPermission }
-  }));
-});
+  emitCaptureStateUpdated();
+}
 
-ipcRenderer.on('windowsPermission', (event, hasPermission) => {
+function applyWindowsPermissionUpdate(hasPermission, fromStartup = false, source = 'unknown') {
   updateWindowsPermission(hasPermission);
 
-  // Log windows permission status
   logAnalyticsEvent('windows_permission', {
     status: hasPermission ? 'granted' : 'denied',
-    platform: window.electronAPI.platform
+    platform: window.electronAPI.platform,
+    source
   });
 
-  // Update windows checkbox in settings if we're on settings view
   updateWindowsCheckbox(hasPermission);
-
-  // Update finish button visibility
   updateFinishButtonVisibility();
 
-  // Notify settings component about permission status
   document.dispatchEvent(new CustomEvent('permissionResult', {
     detail: { type: 'windows', hasPermission }
   }));
 
-  // Update topbar visibility
   if (updateTopbarVisibility) updateTopbarVisibility();
-  // Bring app to front on permission loss, but throttle to avoid churn during revocation
-  if (!hasPermission) {
-    const now = Date.now();
-    if (now - lastWindowsPermFocusTs > 2000) {
-      lastWindowsPermFocusTs = now;
-      // Fail silently
-      // try { ipcRenderer.send('focus-app-window'); } catch (_) {}
-      // Navigate to settings if not already there (slight delay to avoid event ordering issues)
-      try {
-        const currentView = getCurrentView ? getCurrentView() : null;
-        if (currentView !== 'settings') {
-          setTimeout(() => { try { navigateToView('settings'); } catch (_) {} }, 150);
-        }
-      } catch (_) {}
-    }
-    // Tell main to keep the capture interval paused for a short duration
-    try { ipcRenderer.send('pause-capture-due-to-permission', { source: 'windows', ms: 3000 }); } catch (_) {}
+
+  if (fromStartup) {
+    markPermissionLoaded('windows');
   }
+
+  emitCaptureStateUpdated();
+}
+
+function applyMicrophonePermissionUpdate(hasPermission, _fromStartup = false, source = 'unknown') {
+  updateMicrophonePermission(hasPermission);
+
+  logAnalyticsEvent('microphone_permission', {
+    status: hasPermission ? 'granted' : 'denied',
+    platform: window.electronAPI.platform,
+    source
+  });
+
+  document.dispatchEvent(new CustomEvent('permissionResult', {
+    detail: { type: 'audio', hasPermission: !!hasPermission }
+  }));
+
+  emitCaptureStateUpdated();
+}
+
+ipcRenderer.on('screenCapturePermission', (_event, data) => {
+  handleIncomingPermissionEvent('screen', data, applyScreenPermissionUpdate, {
+    defaultSource: 'screen-channel',
+    fromStartup: true
+  });
 });
 
+ipcRenderer.on('microphonePermission', (_event, data) => {
+  handleIncomingPermissionEvent('microphone', data, applyMicrophonePermissionUpdate, {
+    defaultSource: 'microphone-channel',
+    fromStartup: false
+  });
+});
 
-// Function to update screen capture checkbox in settings
+ipcRenderer.on('windowsPermission', (_event, data) => {
+  handleIncomingPermissionEvent('windows', data, applyWindowsPermissionUpdate, {
+    defaultSource: 'windows-channel',
+    fromStartup: false
+  });
+});
+
 function updateScreenCaptureCheckbox(hasPermission) {
   const checkbox = document.getElementById('screenCheckbox');
   if (!checkbox) return;
 
+  checkbox.dataset.permissionGranted = hasPermission ? 'true' : 'false';
+
   const toggleLabel = checkbox.closest('.toggle');
-
-  try {
-    // Show checked when we have permission; unchecked when not.
-    checkbox.checked = !!hasPermission;
-
-    if (!hasPermission) {
-      // Permission missing: enable toggle and make it look clickable
-      checkbox.disabled = false;
-      if (toggleLabel) {
-        // Rely on CSS for visuals; reset any inline styles from prior state
-        toggleLabel.style.opacity = '';
-        toggleLabel.style.cursor = 'pointer';
-        toggleLabel.title = 'Grant screen recording permission';
-      }
-    } else {
-      // Permission granted: disable toggle and use CSS-driven disabled visuals
-      checkbox.disabled = true;
-      if (toggleLabel) {
-        // Reset inline opacity to ensure consistent color with other toggles
-        toggleLabel.style.opacity = '';
-        toggleLabel.style.cursor = 'not-allowed';
-        toggleLabel.title = 'Screen recording enabled (managed by system)';
-      }
-    }
-  } catch (error) {
-    console.error('Error updating screen capture checkbox:', error);
+  if (toggleLabel) {
+    toggleLabel.title = hasPermission
+      ? 'Screen permission granted'
+      : 'Screen permission required for effective capture';
   }
 }
 
-// Function to update windows checkbox in settings
 function updateWindowsCheckbox(hasPermission) {
   const checkbox = document.getElementById('windowsCheckbox');
   if (!checkbox) return;
 
+  checkbox.dataset.permissionGranted = hasPermission ? 'true' : 'false';
+
   const toggleLabel = checkbox.closest('.toggle');
-
-  try {
-    // Show checked when we have permission; unchecked when not.
-    checkbox.checked = !!hasPermission;
-
-    if (!hasPermission) {
-      // Permission missing: enable toggle and make it look clickable
-      checkbox.disabled = false;
-      if (toggleLabel) {
-        // Rely on CSS for visuals; reset any inline styles from prior state
-        toggleLabel.style.opacity = '';
-        toggleLabel.style.cursor = 'pointer';
-        toggleLabel.title = 'Grant active applications permission';
-      }
-    } else {
-      // Permission granted: disable toggle and use CSS-driven disabled visuals
-      checkbox.disabled = true;
-      if (toggleLabel) {
-        // Reset inline opacity to ensure consistent color with other toggles
-        toggleLabel.style.opacity = '';
-        toggleLabel.style.cursor = 'not-allowed';
-        toggleLabel.title = 'Active applications enabled (managed by system)';
-      }
-    }
-  } catch (error) {
-    console.error('Error updating windows checkbox:', error);
+  if (toggleLabel) {
+    toggleLabel.title = hasPermission
+      ? 'Active applications permission granted'
+      : 'Active applications permission required for effective capture';
   }
 }
 
-// Set up screen capture checkbox behavior
 function setupScreenCaptureCheckboxBehavior() {
   const checkbox = document.getElementById('screenCheckbox');
   if (!checkbox) return;
 
-  const toggleLabel = checkbox.closest('.toggle');
+  checkbox.addEventListener('change', async () => {
+    const enabled = !!checkbox.checked;
+    const result = await handleCaptureToggleIntent('screen', enabled);
+    if (result?.reverted) {
+      checkbox.checked = !enabled;
+      updateFinishButtonVisibility();
+      emitCaptureStateUpdated();
+      return;
+    }
 
-  // When user clicks the toggle area, open system settings
-  if (toggleLabel) {
-    toggleLabel.addEventListener('click', (e) => {
-      if (!hasScreenCapturePermission()) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Log and request permission via system settings
-        logAnalyticsEvent('screen_capture_requested', {
-          status: 'requested',
-          platform: window.electronAPI.platform
-        });
-        ipcRenderer.send('requestScreenCapturePermission');
-      }
-      // When permission exists, the toggle is disabled so clicks are ignored
-    });
-  }
+    if (enabled && !hasScreenCapturePermission()) {
+      requestScreenCapturePermission();
+    }
 
-  // Handle permission buttons
-  if (openSettingsBtn) {
-    openSettingsBtn.addEventListener("click", () => {
-      // Log that user requested screen capture permission
-      logAnalyticsEvent('screen_capture_requested', {
-        status: 'requested',
-        platform: window.electronAPI.platform
-      });
-      ipcRenderer.send("requestScreenCapturePermission");
-    });
-  }
+    updateFinishButtonVisibility();
+    emitCaptureStateUpdated();
+  });
+
 }
 
-// Set up windows checkbox behavior
 function setupWindowsCheckboxBehavior() {
   const checkbox = document.getElementById('windowsCheckbox');
   if (!checkbox) return;
 
-  const toggleLabel = checkbox.closest('.toggle');
+  checkbox.addEventListener('change', async () => {
+    const enabled = !!checkbox.checked;
+    const result = await handleCaptureToggleIntent('windows', enabled);
+    if (result?.reverted) {
+      checkbox.checked = !enabled;
+      updateFinishButtonVisibility();
+      emitCaptureStateUpdated();
+      return;
+    }
 
-  // When user clicks the toggle area, open system settings
-  if (toggleLabel) {
-    toggleLabel.addEventListener('click', (e) => {
-      if (!hasWindowsPermission()) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Log and request permission via system settings
-        logAnalyticsEvent('windows_capture_requested', {
-          status: 'requested',
-          platform: window.electronAPI.platform
-        });
-        ipcRenderer.send('requestWindowsPermission');
-      }
-      // When permission exists, the toggle is disabled so clicks are ignored
-    });
-  }
+    if (enabled && !hasWindowsPermission()) {
+      requestWindowsPermission(true);
+    }
+
+    updateFinishButtonVisibility();
+    emitCaptureStateUpdated();
+  });
 }
 
-// Set up audio checkbox behavior
 function setupAudioCheckboxBehavior() {
   const checkbox = document.getElementById('audioCheckbox');
   if (!checkbox) return;
 
-  const handleCheckboxChange = async (isChecked) => {
-    const originalValue = checkbox.checked;
-
-    if (isChecked) {
-      // Revert checkbox state immediately - will be re-enabled by permission listener if granted
-      checkbox.checked = false;
-      // Request permission and wait for the result
-      requestAudioPermission();
-    } else {
-      // If turning OFF, update setting immediately - no permission needed
-      try {
-        // Dispatch custom event to notify settings.js to save the state
-        document.dispatchEvent(new CustomEvent('permissionResult', {
-          detail: { type: 'audio', hasPermission: false }
-        }));
-      } catch (error) {
-        // Revert UI on error
-        checkbox.checked = originalValue;
-      }
+  checkbox.addEventListener('change', async () => {
+    const enabled = !!checkbox.checked;
+    const result = await handleCaptureToggleIntent('audio', enabled);
+    if (result?.reverted) {
+      checkbox.checked = !enabled;
+      emitCaptureStateUpdated();
+      return;
     }
-  };
 
-  checkbox.addEventListener('change', () => {
-    handleCheckboxChange(checkbox.checked);
+    if (enabled && !hasMicrophonePermission()) {
+      requestMicrophonePermission();
+    }
+
+    emitCaptureStateUpdated();
   });
 }
 
-// Functions to request permissions for each capture type
-function requestAudioPermission() {
-  logAnalyticsEvent('audio_capture_requested', {
+function requestMicrophonePermission() {
+  logAnalyticsEvent('microphone_capture_requested', {
     status: 'requested',
     platform: window.electronAPI.platform
   });
-  ipcRenderer.send("requestAudioPermission");
+  ipcRenderer.send('requestMicrophonePermission', true);
 }
 
-function requestWindowsPermission() {
+function requestWindowsPermission(shouldOpenSettings = true) {
   logAnalyticsEvent('windows_capture_requested', {
     status: 'requested',
     platform: window.electronAPI.platform
   });
-  ipcRenderer.send("requestWindowsPermission");
+  ipcRenderer.send('requestWindowsPermission', shouldOpenSettings);
 }
 
-function requestSystemAudioPermission() {
+function requestScreenCapturePermission() {
+  logAnalyticsEvent('screen_capture_requested', {
+    status: 'requested',
+    platform: window.electronAPI.platform
+  });
+  ipcRenderer.send('requestScreenCapturePermission', true);
+}
+
+function requestSystemAudioPermission(shouldOpenSettings = true) {
   logAnalyticsEvent('system_audio_capture_requested', {
     status: 'requested',
     platform: window.electronAPI.platform
   });
-  ipcRenderer.send("requestSystemAudioPermission");
+  ipcRenderer.send('requestSystemAudioPermission', shouldOpenSettings);
 }
 
-// Helper function to check if running on Wayland
 function isWayland() {
   return window.electronAPI.isWayland;
 }
 
-// Function to update finish button visibility based on required permissions
 function updateFinishButtonVisibility() {
   const finishButtonContainer = document.getElementById('finishButtonContainer');
   if (!finishButtonContainer) return;
-
-  // Check the actual checkbox states
-  const screenToggle = document.getElementById('screenCheckbox');
-  const windowsToggle = document.getElementById('windowsCheckbox');
-  
-  if (!screenToggle || !windowsToggle) return;
-
-  const screenChecked = screenToggle.checked;
-  const windowsChecked = windowsToggle.checked;
-
-  // On Wayland, only require screen permission (windows detection doesn't work properly)
-  // On other platforms, require both permissions
-  const shouldShow = isWayland() ? screenChecked : (screenChecked && windowsChecked);
-
-  if (shouldShow) {
-    finishButtonContainer.classList.remove('hidden');
-  } else {
-    finishButtonContainer.classList.add('hidden');
-  }
+  finishButtonContainer.classList.remove('hidden');
 }
 
-// Set up finish button click handler
 function setupFinishButtonHandler() {
   const finishButton = document.getElementById('finishButton');
   if (!finishButton) return;
 
   finishButton.addEventListener('click', () => {
-    // Log analytics event
     logAnalyticsEvent('permissions_finished', {
       platform: window.electronAPI.platform
     });
-    
-    // Navigate to dashboard
+
     if (navigateToView) {
       navigateToView('dashboard');
     }
@@ -455,9 +384,8 @@ function setupFinishButtonHandler() {
 
 module.exports = {
   initializePermissions,
-  requestAudioPermission,
+  requestMicrophonePermission,
   requestWindowsPermission,
   requestSystemAudioPermission,
   updateFinishButtonVisibility
 };
-

@@ -13,6 +13,9 @@ const state = {
   // Permission state
   hasScreenCapturePermission: false,
   hasWindowsPermission: false,
+  hasMicrophonePermission: false,
+  hasSystemAudioPermission: false,
+  permissionsReady: false,
 
   // User status
   userStatus: 'active',
@@ -20,6 +23,7 @@ const state = {
   // Settings state
   isPublic: false,
   storeScreenshots: false,
+  settingsReady: false,
   lastSummary: null,
 
   // Navigation state
@@ -74,8 +78,28 @@ function hasWindowsPermission() {
   return state.hasWindowsPermission;
 }
 
+function hasMicrophonePermission() {
+  return state.hasMicrophonePermission;
+}
+
+function hasSystemAudioPermission() {
+  return state.hasSystemAudioPermission;
+}
+
 function hasValidAccess() {
   return state.userStatus === 'active';
+}
+
+function isPermissionsReady() {
+  return !!state.permissionsReady;
+}
+
+function isSettingsReady() {
+  return !!state.settingsReady;
+}
+
+function isCaptureReadinessReady() {
+  return !!state.permissionsReady && !!state.settingsReady;
 }
 
 function isPublic() {
@@ -116,6 +140,18 @@ function updateWindowsPermission(hasPermission) {
   state.hasWindowsPermission = hasPermission;
 }
 
+function updateMicrophonePermission(hasPermission) {
+  state.hasMicrophonePermission = hasPermission;
+}
+
+function updateSystemAudioPermission(hasPermission) {
+  state.hasSystemAudioPermission = hasPermission;
+}
+
+function updatePermissionsReady(isReady) {
+  state.permissionsReady = !!isReady;
+}
+
 function updateUserStatus(status) {
   state.userStatus = status;
 }
@@ -126,6 +162,10 @@ function updateIsPublic(isPublic) {
 
 function updateStoreScreenshots(storeScreenshots) {
   state.storeScreenshots = storeScreenshots;
+}
+
+function updateSettingsReady(isReady) {
+  state.settingsReady = !!isReady;
 }
 
 function updateCurrentView(view) {
@@ -386,7 +426,12 @@ module.exports = {
   isAuthenticated,
   hasScreenCapturePermission,
   hasWindowsPermission,
+  hasMicrophonePermission,
+  hasSystemAudioPermission,
   hasValidAccess,
+  isPermissionsReady,
+  isSettingsReady,
+  isCaptureReadinessReady,
   isPublic,
   isStoreScreenshots,
   getCurrentView,
@@ -396,9 +441,13 @@ module.exports = {
   updateAuthState,
   updateScreenCapturePermission,
   updateWindowsPermission,
+  updateMicrophonePermission,
+  updateSystemAudioPermission,
+  updatePermissionsReady,
   updateUserStatus,
   updateIsPublic,
   updateStoreScreenshots,
+  updateSettingsReady,
   updateCurrentView,
   updateLastSummary,
   updatePauseState,

@@ -68,7 +68,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 
 ## IPC Contract (non-exhaustive)
 
-- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestAudioPermission`, `updateInputDataSettings`, `updateDisableScreenshotsInMeetings`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`.
+- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestMicrophonePermission`, `updateInputDataSettings`, `updateDisableScreenshotsInMeetings`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`.
 - Main → Renderer: `inapp:notify`, `screenCapturePermission`, `windowsPermission`, `overlay:state`, `chat:receive-messages`, `hotkey:updated`, `chat:message-update`, `chat:reset-state`, `webview:reload`, `router:open-link`, `firebase-custom-token`, `refresh-token`, `auth-error`.
 
 ## Build/Run

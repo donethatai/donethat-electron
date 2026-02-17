@@ -215,8 +215,12 @@ async function handleDeviceSwitch(_deviceInfo) {
  * Check microphone permission once
  * @returns {Promise<boolean>} Permission status
  */
-async function checkPermission() {
+async function checkMicrophonePermission(forceRefresh = false) {
   if (!mainWindow) return false
+
+  if (forceRefresh) {
+    hasMicrophonePermission = null
+  }
 
   if (hasMicrophonePermission !== null) {
     return hasMicrophonePermission
@@ -244,19 +248,70 @@ async function checkPermission() {
     hasMicrophonePermission = hasPermission
 
     if (!hasPermission && mainWindow && !mainWindow.isDestroyed()) {
-      try { mainWindow.webContents.send('audioPermission', false) } catch (_) {}
+      try { mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'runtime-check' }) } catch (_) {}
     }
     return hasPermission
   } catch (error) {
-    log.error('Error checking audio permission:', error)
+    log.error('Error checking microphone permission:', error)
     hasMicrophonePermission = false
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('audioPermission', false)
+        mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'runtime-check' })
       }
     } catch (_) {}
     return false
   }
+}
+
+/**
+ * Passive microphone permission check that avoids triggering getUserMedia prompts.
+ * Returns true only when permission is already granted.
+ * @returns {Promise<boolean>}
+ */
+async function checkMicrophonePermissionPassive() {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+
+  if (hasMicrophonePermission !== null) {
+    return hasMicrophonePermission
+  }
+
+  try {
+    const status = await mainWindow.webContents.executeJavaScript(
+      `new Promise((resolve) => {
+        try {
+          if (!navigator.permissions || !navigator.permissions.query) {
+            resolve('unknown');
+            return;
+          }
+          navigator.permissions.query({ name: 'microphone' })
+            .then((result) => resolve(result && result.state ? result.state : 'unknown'))
+            .catch(() => resolve('unknown'));
+        } catch (_) {
+          resolve('unknown');
+        }
+      })`
+    )
+
+    const granted = status === 'granted'
+    hasMicrophonePermission = granted
+    return granted
+  } catch (_) {
+    return false
+  }
+}
+
+async function checkSystemAudioPermission() {
+  if (process.platform === 'darwin') {
+    const { checkScreenCapturePermission } = require('./captureScreenshots')
+    try {
+      return !!(await checkScreenCapturePermission())
+    } catch (_) {
+      return false
+    }
+  }
+
+  // Windows/Linux do not expose a dedicated system-audio privacy gate we can query.
+  return true
 }
 
 /**
@@ -460,7 +515,7 @@ async function startAudioTracking(config) {
     }
   }
 
-  const hasPermission = await checkPermission()
+  const hasPermission = await checkMicrophonePermission()
   if (!hasPermission) {
     log.warn('No microphone permission, cannot start audio tracking')
     isAudioTrackingActive = false
@@ -576,7 +631,9 @@ function getStatus() {
 
 module.exports = {
   initialize,
-  checkPermission,
+  checkMicrophonePermission,
+  checkMicrophonePermissionPassive,
+  checkSystemAudioPermission,
   startRecording,
   pauseRecording,
   resumeRecording,

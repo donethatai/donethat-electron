@@ -152,7 +152,6 @@ let lastBackoffTime = 0 // Track when we last applied backoff
 let processingRecordWindow = false // Flag to prevent overlapping calls
 let permissionCooldownUntil = 0 // Timestamp in ms; skip probes until this time when permission flips false
 let lastEmittedPermission = null // Track last emitted permission state to avoid repeated emissions
-let capturePausedDueToWindowsPermission = false // Circuit breaker: pause capture interval once on permission loss
 let firstPermissionDeniedAt = 0 // Timestamp when permission first went false; 0 means not currently denied
 
 // References to communicate permission/state changes without prompting the OS
@@ -445,19 +444,10 @@ async function recordCurrentWindow() {
 
       // Persistent denial: perform the original strong actions
       try { stopTracking() } catch (_) {}
-      if (!capturePausedDueToWindowsPermission) {
-        capturePausedDueToWindowsPermission = true
-        try {
-          const captureModule = require('./capture')
-          if (captureModule && typeof captureModule.stopCaptureInterval === 'function') {
-            captureModule.stopCaptureInterval()
-          }
-        } catch (_) {}
-      }
       if (lastEmittedPermission !== false) {
         lastEmittedPermission = false
         try { stateManagerRef?.updateWindowsPermission(false) } catch (_) {}
-        try { if (mainWindowRef) mainWindowRef.webContents.send('windowsPermission', false) } catch (_) {}
+        try { if (mainWindowRef) mainWindowRef.webContents.send('windowsPermission', { hasPermission: false, source: 'runtime-loss' }) } catch (_) {}
       }
       processingRecordWindow = false
       return
@@ -933,14 +923,28 @@ function initWindowsPermissionHandling(mainWindow, stateManager, checkAndAdjustR
   ipcMain.on('requestWindowsPermission', async (event, shouldOpenSettings = true) => {
     // Only open system settings if explicitly requested (user clicked toggle)
     if (shouldOpenSettings === true) {
+      try {
+        let alreadyGranted = await checkPermissions()
+        if (!alreadyGranted) {
+          await new Promise((resolve) => setTimeout(resolve, 400))
+          const secondCheck = await checkPermissions()
+          alreadyGranted = !!(alreadyGranted || secondCheck)
+        }
+        stateManager?.updateWindowsPermission(!!alreadyGranted)
+        if (mainWindow) {
+          mainWindow.webContents.send('windowsPermission', { hasPermission: !!alreadyGranted, source: 'request' })
+        }
+        if (alreadyGranted) {
+          return
+        }
+      } catch (_) {}
+
       if (process.platform === 'darwin') {
         // macOS
         shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')
-      } else if (process.platform === 'win32') {
-        // Windows - open general privacy settings
-        shell.openExternal('ms-settings:privacy')
       } else {
-        // Linux or other platforms
+        // Windows/Linux: do not force-open settings.
+        return
       }
       // After opening settings, re-check permission exactly once when the app regains focus
       const focusListener = async () => {
@@ -949,7 +953,7 @@ function initWindowsPermissionHandling(mainWindow, stateManager, checkAndAdjustR
           const hasPermission = await checkPermissions();
           stateManager?.updateWindowsPermission(hasPermission);
           if (mainWindow) {
-            mainWindow.webContents.send('windowsPermission', hasPermission);
+            mainWindow.webContents.send('windowsPermission', { hasPermission: !!hasPermission, source: 'request' });
           }
         } catch (e) {}
       };
@@ -965,7 +969,7 @@ function initWindowsPermissionHandling(mainWindow, stateManager, checkAndAdjustR
       }
       stateManager?.updateWindowsPermission(hasPermission);
       if (mainWindow) {
-        mainWindow.webContents.send('windowsPermission', hasPermission);
+        mainWindow.webContents.send('windowsPermission', { hasPermission: !!hasPermission, source: 'passive-check' });
       }
     }
   });

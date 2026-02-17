@@ -421,6 +421,12 @@
     <!-- Dashboard View -->
     <div id="dashboardView" class="view-container hidden">
       <div class="dashboard-shell">
+        <div id="dashboardCaptureWarning" class="hidden mx-4 mt-2 mb-2 rounded-lg border border-gray-300 bg-gray-100 px-3 py-2">
+          <div class="flex items-center justify-between gap-3">
+            <div id="dashboardCaptureWarningText" class="dashboard-warning-text text-sm text-gray-700 leading-5 flex-1 min-w-0">We couldn't record Screenshare. That impacts the accuracy of your data. Please check your permissions.</div>
+            <button id="dashboardCaptureWarningSetupBtn" class="btn-secondary topbar-btn whitespace-nowrap">Open Setup</button>
+          </div>
+        </div>
         <!-- Embedded web portal area -->
         <div class="dashboard-embed">
           <webview
@@ -446,10 +452,11 @@
       <div class="auth-page">
         
         <div class="auth-container">
-            <div class="auth-card">
+            <div class="auth-card" id="requiredPermissionsCard">
             <div class="section-divider"><span class="section-divider-label">Required permissions</span></div>
             <p class="text-sm text-gray-600 mb-4">
               To understand your work, we need to see what you are working on. We never store any of the raw data requested here, all data is immediately deleted after processing, including screenshots shared in the chat.
+              <a href="https://donethat.ai/data" target="_blank" rel="noopener noreferrer" class="underline">Learn how data is processed</a>.
             </p>
             <div class="space-y-5 mb-6">
               <div class="flex items-center justify-between">
@@ -532,7 +539,7 @@
             </div>
           </div>
 
-            <div class="auth-card">
+            <div class="auth-card" id="microphonePermissionsCard">
             <div class="section-divider"><span class="section-divider-label">Audio permissions</span></div>
             <p class="text-sm text-gray-600 mb-4">These inputs help us understand your work better but are not required. You can enable or disable them at any time.</p>
             <div class="space-y-5">
@@ -565,7 +572,7 @@
             </div>
           </div>
 
-          <div class="auth-card">
+          <div class="auth-card" id="appMaskingCard">
             <div class="section-divider"><span class="section-divider-label">App masking</span></div>
             <p class="text-sm text-gray-600 mb-4">Mask apps with gray fill to protect sensitive data. Use keywords to ignore specific windows or fully exclude an app's activity. Use this for meeting apps (Zoom, Teams, etc.) to keep them private.</p>
             <div id="appExclusionsList" class="space-y-3 mb-3">
@@ -594,7 +601,7 @@
             </div>
           </div>
 
-          <div class="auth-card">
+          <div class="auth-card" id="contextCaptureCard">
             <div class="section-divider"><span class="section-divider-label">Context capture (experimental)</span></div>
             <p class="text-sm text-gray-600 mb-4">Capture specific app windows when you work in them and send cropped screenshots to our context API for extra context. Data is sent to our servers. Requires screen capture and active applications permissions.</p>
             <div class="flex items-center justify-between mb-4">
@@ -724,8 +731,7 @@
           </div>
         </div>
         
-        <!-- Finish Button (hidden by default) -->
-        <div id="finishButtonContainer" class="finish-button-container hidden">
+        <div id="finishButtonContainer" class="finish-button-container">
           <button id="finishButton" class="btn-primary finish-button">
             Finish
           </button>

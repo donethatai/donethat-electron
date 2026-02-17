@@ -17,6 +17,7 @@ const { showBanner } = require('./notify.js');
 const { 
   hasScreenCapturePermission,
   hasWindowsPermission,
+  isCaptureReadinessReady,
   updateStoreScreenshots,
   updateCurrentView,
   getCurrentView,
@@ -201,18 +202,7 @@ function navigateToView(viewName) {
     if (!isAuthenticated()) {
       viewName = 'signin';
     } else {
-      // On Wayland, only require screen permission (windows detection doesn't work properly)
-      // On other platforms, require both permissions
-      const isWayland = !!(window.electronAPI && window.electronAPI.isWayland);
-      const needsSettings = isWayland
-        ? !hasScreenCapturePermission()
-        : (!hasScreenCapturePermission() || !hasWindowsPermission());
-      
-      if (needsSettings) {
-        viewName = 'settings';
-      } else {
-        viewName = 'dashboard';
-      }
+      viewName = 'dashboard';
     }
   }
 
@@ -282,16 +272,7 @@ function navigateToView(viewName) {
     const appTopbar = document.getElementById('appTopbar');
     const isAuthScreen = (viewName === 'signin' || viewName === 'signup' || viewName === 'reset' || viewName === 'mfa');
     if (appTopbar) {
-      // Helper to check if running on Wayland
-      const isWayland = () => {
-        if (!window.electronAPI) return false;
-        return !!window.electronAPI.isWayland;
-      };
-      
-      // On Wayland, only require screen permission (windows detection doesn't work properly)
-      // On other platforms, require both permissions
-      const shouldHideTopbar = isAuthScreen || 
-        (isWayland() ? !hasScreenCapturePermission() : (!hasScreenCapturePermission() || !hasWindowsPermission()));
+      const shouldHideTopbar = isAuthScreen;
       if (shouldHideTopbar) appTopbar.classList.add('hidden');
       else appTopbar.classList.remove('hidden');
     }
@@ -319,6 +300,7 @@ function navigateToView(viewName) {
   
   // Track page view in analytics with all necessary details
   trackPageView(viewName);
+  updateDashboardCaptureWarning();
   } else {
     console.error('View not found:', viewName);
   }
@@ -435,6 +417,55 @@ function hideWebviewError() {
   } catch (_) {}
 }
 
+function updateDashboardCaptureWarning() {
+  const warningEl = document.getElementById('dashboardCaptureWarning');
+  const warningText = document.getElementById('dashboardCaptureWarningText');
+  if (!warningEl || !warningText) return;
+
+  if (!isCaptureReadinessReady()) {
+    warningEl.classList.add('hidden');
+    return;
+  }
+
+  const screenToggle = document.getElementById('screenCheckbox');
+  const windowsToggle = document.getElementById('windowsCheckbox');
+
+  const screenEnabledByToggle = !!screenToggle?.checked;
+  const windowsEnabledByToggle = !!windowsToggle?.checked;
+  const screenPermissionGranted = !!hasScreenCapturePermission();
+  const windowsPermissionGranted = !!hasWindowsPermission();
+
+  const screenEffective = screenEnabledByToggle && screenPermissionGranted;
+  const windowsEffective = windowsEnabledByToggle && windowsPermissionGranted;
+
+  if (screenEffective && windowsEffective) {
+    warningEl.classList.add('hidden');
+    return;
+  }
+
+  const missingSources = [];
+  if (!screenEffective) missingSources.push('Screenshare');
+  if (!windowsEffective) missingSources.push('Active applications');
+  const missingLabel = missingSources.join(' and ');
+
+  if (!screenEffective && !windowsEffective) {
+    const bothDisabledByToggle = !screenEnabledByToggle && !windowsEnabledByToggle;
+    const anyPermissionMissing = (screenEnabledByToggle && !screenPermissionGranted) || (windowsEnabledByToggle && !windowsPermissionGranted);
+
+    if (bothDisabledByToggle) {
+      warningText.textContent = `We couldn't start recording because ${missingLabel} are turned off in Setup. Please enable them to start recording.`;
+    } else if (anyPermissionMissing) {
+      warningText.textContent = `We couldn't start recording because ${missingLabel} are unavailable. Please review your permissions to start recording.`;
+    } else {
+      warningText.textContent = `We couldn't start recording because ${missingLabel} are unavailable. Please check Setup to start recording.`;
+    }
+  } else {
+    warningText.textContent = `We couldn't record ${missingLabel}. That impacts the accuracy of your data. Please check your permissions.`;
+  }
+
+  warningEl.classList.remove('hidden');
+}
+
 // Update the document ready handler
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize all modules
@@ -444,6 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializePermissions(navigateToView, getCurrentView, updateTopbarVisibility);
   initializeFeedback();
   initializeAnalytics();
+  document.addEventListener('capture-state-updated', updateDashboardCaptureWarning);
 
   // Grab the portal webview if present
   portalView = document.getElementById('portalView');
@@ -541,6 +573,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // When not on settings, navigate to settings
         navigateToView('settings');
       }
+    });
+  }
+
+  const dashboardCaptureWarningSetupBtn = document.getElementById('dashboardCaptureWarningSetupBtn');
+  if (dashboardCaptureWarningSetupBtn) {
+    dashboardCaptureWarningSetupBtn.addEventListener('click', () => {
+      navigateToView('settings');
     });
   }
 
@@ -745,6 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Sync initial labels
   updateSettingsToggleLabelGlobal();
+  updateDashboardCaptureWarning();
 
   // Keep settings/back icon accurate on load
   updateSettingsIcon();
@@ -959,13 +999,10 @@ function hideBlockingSpinner() {
 function updateTopbarVisibility() {
   const appTopbar = document.getElementById('appTopbar');
   const currentView = getCurrentView();
-  const isAuthScreen = (currentView === 'signin' || currentView === 'signup' || currentView === 'reset');
+  const isAuthScreen = (currentView === 'signin' || currentView === 'signup' || currentView === 'reset' || currentView === 'mfa');
   
   if (appTopbar) {
-    // On Wayland, only require screen permission (windows detection doesn't work properly)
-    // On other platforms, require both permissions
-    const shouldHideTopbar = isAuthScreen || 
-      (window.electronAPI.isWayland ? !hasScreenCapturePermission() : (!hasScreenCapturePermission() || !hasWindowsPermission()));
+    const shouldHideTopbar = isAuthScreen;
     if (shouldHideTopbar) appTopbar.classList.add('hidden');
     else appTopbar.classList.remove('hidden');
   }

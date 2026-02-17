@@ -450,6 +450,19 @@ textarea::placeholder {
   color: var(--color-neutral-500);
 }
 
+.dashboard-warning-text {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 960px) {
+  .dashboard-warning-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
 /* Link style */
 .link {
   @apply text-sm;

@@ -43,7 +43,8 @@ const {
   checkScreenCapturePermission: moduleCheckPermission,
   initScreenCapturePermissionHandling
 } = require('./src-main/captureScreenshots')
-const { initWindowsPermissionHandling } = require('./src-main/captureWindows')
+const { initWindowsPermissionHandling, checkPermissions: checkWindowsPermission } = require('./src-main/captureWindows')
+const { checkMicrophonePermissionPassive } = require('./src-main/captureAudio')
 
 const {
   startCaptureInterval,
@@ -529,6 +530,58 @@ ipcMain.on('focus-app-window', (event) => {
   }
 });
 
+ipcMain.handle('checkWindowsPermission', async () => {
+  try {
+    let hasPermission = await checkWindowsPermission();
+    if (!hasPermission) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        hasPermission = await checkWindowsPermission();
+        if (hasPermission) break;
+      }
+    }
+    return hasPermission;
+  } catch (error) {
+    log.warn('Passive Windows permission check failed:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('checkMicrophonePermission', async () => {
+  try {
+    const passive = !!(await checkMicrophonePermissionPassive());
+    if (passive) return true;
+
+    // Fallback for startup ordering: query microphone permission directly from renderer context
+    // even before captureAudio.initialize() has bound its mainWindow reference.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        const status = await mainWindow.webContents.executeJavaScript(
+          `new Promise((resolve) => {
+            try {
+              if (!navigator.permissions || !navigator.permissions.query) {
+                resolve('unknown');
+                return;
+              }
+              navigator.permissions.query({ name: 'microphone' })
+                .then((result) => resolve(result && result.state ? result.state : 'unknown'))
+                .catch(() => resolve('unknown'));
+            } catch (_) {
+              resolve('unknown');
+            }
+          })`
+        );
+        return status === 'granted';
+      } catch (_) {}
+    }
+
+    return false;
+  } catch (error) {
+    log.warn('Passive microphone permission check failed:', error);
+    return false;
+  }
+});
+
 ////// AUTOSTART /////
 
 // Fix autostart implementation with platform-specific logic
@@ -721,8 +774,8 @@ app.whenReady().then(async () => {
         // Small delay to ensure renderer has processed the message before showing
         setTimeout(() => {
           if (notificationWindow && !notificationWindow.isDestroyed()) {
-            // Show without taking focus (showInactive on macOS/Linux, show on Windows)
-            if (process.platform === 'darwin' || process.platform === 'linux') {
+            // Show without taking focus whenever the API is available.
+            if (typeof notificationWindow.showInactive === 'function') {
               notificationWindow.showInactive();
             } else {
               notificationWindow.show();
@@ -883,29 +936,6 @@ app.whenReady().then(async () => {
 
   // Register global shortcut for Open Chat (configurable suffix)
   try { registerGlobalShortcut(); } catch (e) { log.error('Error registering global shortcut:', e); }
-
-  // Also check permissions when the app is activated
-  app.on('activate', async () => {
-    await checkScreenCapturePermission();
-
-    log.warn(`A Sending permission check result: hasPermission=${stateManager?.hasScreenCapturePermission()}`);
-
-    if (mainWindow) {
-      mainWindow.webContents.send('screenCapturePermission', {
-        hasPermission: stateManager?.hasScreenCapturePermission()
-      });
-    }
-
-    // Re-check Windows (active apps) permission passively and notify renderer
-    try {
-      const winPerm = await checkWindowsPermission();
-      const prev = stateManager?.hasWindowsPermission();
-      stateManager?.updateWindowsPermission(winPerm);
-      if (mainWindow && winPerm !== prev) {
-        mainWindow.webContents.send('windowsPermission', winPerm);
-      }
-    } catch (e) {}
-  });
 
   // Add daily auth check
   scheduleDailyAuthCheck();
@@ -1155,14 +1185,6 @@ function updateTrayIcon(isActuallyRecording) {
   const hasWindowsPermission = stateManager?.hasWindowsPermission() ?? false;
   const hasValidAccess = stateManager?.hasValidAccess() ?? false;
   const isSystemIdle = stateManager?.isSystemIdle() ?? false;
-
-  // Show main window for authentication, account, or permission issues
-  // But not during initial startup to avoid showing window for authenticated users
-  if (!isInitialStartup && (!loggedIn || !hasValidAccess || !hasScreenPermission || !hasWindowsPermission)) {
-    if (mainWindow && !mainWindow.isVisible()) {
-      showWindowBelowTray();
-    }
-  }
 
   if (isActuallyRecording && !isSystemIdle) {
     iconPath = iconRecordingPath;
@@ -1634,8 +1656,14 @@ function createWindow() {
 
     // Position the window once it's ready.
     mainWindow.once('ready-to-show', async () => {
+      // Startup behavior: app should open on launch.
+      if (isInitialStartup) {
+        showWindowBelowTray();
+      }
+
       mainWindow.webContents.send('screenCapturePermission', {
-        hasPermission: stateManager?.hasScreenCapturePermission()
+        hasPermission: stateManager?.hasScreenCapturePermission(),
+        source: 'initial-state'
       });
       
       // Initialize capture with auth error handler
@@ -1649,7 +1677,7 @@ function createWindow() {
       try {
         const winPerm = await checkWindowsPermission();
         stateManager?.updateWindowsPermission(winPerm);
-        try { mainWindow.webContents.send('windowsPermission', winPerm); } catch (e) {}
+        try { mainWindow.webContents.send('windowsPermission', { hasPermission: !!winPerm, source: 'initial-passive-check' }); } catch (e) {}
       } catch (e) {}
 
       // Renderer will handle opening the window if a permission is missing based on emitted events
@@ -2083,26 +2111,15 @@ app.on('will-quit', () => {
   try { globalShortcut.unregisterAll(); } catch (e) {}
 });
 
-// Update the focus handler to use state manager
+// Update focus handler to clear fallback idle flags.
 app.on('browser-window-focus', async () => {
   // Fallback: clear lock/suspend flags when user can focus our app
   // If they can interact with our window, the system is definitely not locked/suspended
   // This catches cases where powerMonitor unlock/resume events don't fire
   stateManager?.clearSystemIdleFlags();
-  
-  const oldPermission = stateManager?.hasScreenCapturePermission() ?? false;
-  await checkScreenCapturePermission();
 
-  // Only send update if permission status actually changed
-  if (oldPermission !== stateManager?.hasScreenCapturePermission() && mainWindow) {
-    // Use the state manager values
-    mainWindow.webContents.send('screenCapturePermission', {
-      hasPermission: stateManager?.hasScreenCapturePermission()
-    });
-
-    // Re-evaluate recording state based on permission change
-    checkAndAdjustRecording();
-  }
+  // Re-evaluate recording state after clearing idle flags.
+  checkAndAdjustRecording();
 });
 
 ////// INPUT DATA ////
@@ -2202,7 +2219,8 @@ ipcMain.on('checkScreenCapturePermission', async () => {
   if (mainWindow) {
     // Send permission status from state manager
     mainWindow.webContents.send('screenCapturePermission', {
-      hasPermission: stateManager?.hasScreenCapturePermission()
+      hasPermission: stateManager?.hasScreenCapturePermission(),
+      source: 'explicit-check'
     });
   }
 });

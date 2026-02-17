@@ -3,7 +3,13 @@ const { getAuth } = require("firebase/auth");
 const { httpsCallable } = require("firebase/functions");
 const { firebaseApp, functions } = require("./firebase.js");
 const { logAnalyticsEvent } = require('./analytics.js');
-const { hasWindowsPermission } = require('./app-state.js');
+const {
+  hasWindowsPermission,
+  hasScreenCapturePermission,
+  isCaptureReadinessReady,
+  updateSettingsReady,
+  updateSystemAudioPermission
+} = require('./app-state.js');
 const ipcRenderer = window.electronAPI;
 
 const { refreshAuthToken } = require('./auth.js');
@@ -34,6 +40,46 @@ let inputData = {
   systemAudio: false,
   screen: true
 };
+
+function emitCaptureStateUpdated() {
+  document.dispatchEvent(new CustomEvent('capture-state-updated'));
+}
+
+function isScreenEffectivelyEnabled() {
+  return !!inputData.screen && !!hasScreenCapturePermission();
+}
+
+function isWindowsEffectivelyEnabled() {
+  return !!inputData.windows && !!hasWindowsPermission();
+}
+
+function refreshCaptureDependentVisibility() {
+  const audioCard = document.getElementById('microphonePermissionsCard');
+  const appMaskingCard = document.getElementById('appMaskingCard');
+  const contextCaptureCard = document.getElementById('contextCaptureCard');
+  const dimClass = ['opacity-50', 'pointer-events-none'];
+
+  const setDimmed = (el, isDimmed) => {
+    if (!el) return;
+    dimClass.forEach((className) => {
+      el.classList.toggle(className, isDimmed);
+    });
+  };
+
+  if (!isCaptureReadinessReady()) {
+    setDimmed(audioCard, false);
+    setDimmed(appMaskingCard, false);
+    setDimmed(contextCaptureCard, false);
+    return;
+  }
+
+  const screenEnabled = isScreenEffectivelyEnabled();
+  const windowsEnabled = isWindowsEffectivelyEnabled();
+
+  setDimmed(audioCard, !screenEnabled && !windowsEnabled);
+  setDimmed(appMaskingCard, !screenEnabled || !windowsEnabled);
+  setDimmed(contextCaptureCard, !screenEnabled || !windowsEnabled);
+}
 
 
 
@@ -126,17 +172,7 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   // Set up Wayland detection
   setupWaylandDetection();
   
-  // Set up finish button (only when settings view is loaded)
-  setTimeout(() => {
-    try {
-      const { updateFinishButtonVisibility } = require('./permissions.js');
-      if (updateFinishButtonVisibility) {
-        updateFinishButtonVisibility();
-      }
-    } catch (error) {
-      console.error('Error setting up finish button:', error);
-    }
-  }, 100);
+  refreshCaptureDependentVisibility();
 }
 // Note: Screen capture checkbox behavior is now handled in permissions.js
 
@@ -166,19 +202,24 @@ function setupDisableCaptureListener() {
       }
     }
     
+    if (disabledSettings.screen === false) {
+      const screenCheckbox = document.getElementById('screenCheckbox');
+      if (screenCheckbox && screenCheckbox.checked) {
+        screenCheckbox.checked = false;
+        inputData.screen = false;
+      }
+    }
+    
     // Save the updated settings - only if changes were made
-    if (disabledSettings.audio === false || disabledSettings.windows === false) {
+    if (disabledSettings.audio === false || disabledSettings.windows === false || disabledSettings.screen === false) {
       try {
         await saveUserSettings('inputData', inputData);
       } catch (error) {
         console.error('Error updating settings after feature disabled:', error);
       }
     }
-
-    // After updating state and persisting, bring app to front and navigate to Settings
-    // Fail silently
-    // try { ipcRenderer.send('focus-app-window'); } catch (_) {}
-    try { if (navigateToView) navigateToView('settings'); } catch (_) {}
+    refreshCaptureDependentVisibility();
+    emitCaptureStateUpdated();
   });
 }
 
@@ -195,47 +236,41 @@ function setupPermissionResultListener() {
     const checkbox = document.getElementById(checkboxMap[type]);
     if (!checkbox) return;
     
-    // Set checkbox and local state according to permission result
-    checkbox.checked = hasPermission;
-    inputData[type] = hasPermission;
-
-    // Keep Active applications non-revokable once enabled
-    if (type === 'windows') {
-      checkbox.disabled = !!hasPermission;
-    }
-    // If audio permission was revoked, also disable system audio and persist
+    // Permission and toggle are decoupled. Keep user preference as-is.
+    // If audio permission was revoked, also disable system audio and persist.
     if (type === 'audio' && !hasPermission) {
       await forceDisableSystemAudio();
     }
-    
-    // Save to server
-    try {
-      const partial = { [type]: hasPermission, __partial: true };
-      await saveUserSettings('inputData', partial);
-      
-      // Send only the changed flag to main process to avoid clobbering other states
-      ipcRenderer.send('updateInputDataSettings', { [type]: hasPermission });
-      
-      logAnalyticsEvent(`permission_${hasPermission ? 'granted' : 'denied'}_setting_updated`, {
-        type: type,
-        platform: window.electronAPI.platform
-      });
-    } catch (error) {
-      console.error(`Error updating settings after ${type} permission ${hasPermission ? 'granted' : 'denied'}:`, error);
-      if (hasPermission) {
-        // Only need to revert UI state on error if we were trying to enable
-        checkbox.checked = false;
-        inputData[type] = false;
-      }
-    }
 
-    // If permission was denied, bring app to front and navigate to Settings after state persisted
-    if (!hasPermission) {
-      // Fail silently
-      // try { ipcRenderer.send('focus-app-window'); } catch (_) {}
-      try { if (navigateToView) navigateToView('settings'); } catch (_) {}
-    }
+    refreshCaptureDependentVisibility();
+    emitCaptureStateUpdated();
   });
+}
+
+async function handleCaptureToggleIntent(type, enabled) {
+  if (!type || typeof enabled !== 'boolean') {
+    return { success: false, reverted: false };
+  }
+
+  inputData[type] = enabled;
+
+  if (type === 'audio' && !enabled) {
+    await forceDisableSystemAudio();
+  }
+
+  try {
+    await saveUserSettings('inputData', { [type]: enabled, __partial: true });
+    ipcRenderer.send('updateInputDataSettings', { [type]: enabled });
+    refreshCaptureDependentVisibility();
+    emitCaptureStateUpdated();
+    return { success: true, reverted: false };
+  } catch (error) {
+    console.error(`Error saving ${type} toggle state:`, error);
+    inputData[type] = !enabled;
+    refreshCaptureDependentVisibility();
+    emitCaptureStateUpdated();
+    return { success: false, reverted: true };
+  }
 }
 
 // Helper function to update screenshots container visibility
@@ -469,10 +504,10 @@ async function updateSettingsUI(settings) {
   // Handle input data settings
   const loadedInputData = settings?.inputData || {};
   const prevInputData = { ...inputData };
-  // Passive windows: do not read persisted windows; use live OS permission for local state only
+  // Use persisted user toggle state; permissions are tracked separately.
   // Defaults: screen=true, systemAudio=false
   inputData = {
-    windows: (typeof hasWindowsPermission === 'function') ? hasWindowsPermission() : prevInputData.windows,
+    windows: loadedInputData.windows != null ? !!loadedInputData.windows : false,
     audio: loadedInputData.audio != null ? !!loadedInputData.audio : false,
     systemAudio: loadedInputData.systemAudio != null ? !!loadedInputData.systemAudio : false,
     screen: loadedInputData.screen != null ? !!loadedInputData.screen : true
@@ -480,8 +515,7 @@ async function updateSettingsUI(settings) {
 
   // Compute and send only changed flags to main to avoid clobbering
   const delta = {};
-  // IMPORTANT: Do not include windows in delta from settings load.
-  // Windows permission state is managed by permissions.js via system events.
+  if (prevInputData.windows !== inputData.windows) delta.windows = inputData.windows;
   if (prevInputData.audio !== inputData.audio) delta.audio = inputData.audio;
   if (prevInputData.systemAudio !== inputData.systemAudio) delta.systemAudio = inputData.systemAudio;
   if (prevInputData.screen !== inputData.screen) delta.screen = inputData.screen;
@@ -494,8 +528,9 @@ async function updateSettingsUI(settings) {
   const audioCheckbox = document.getElementById('audioCheckbox');
   const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
   const screenCheckbox = document.getElementById('screenCheckbox');
+  const windowsCheckbox = document.getElementById('windowsCheckbox');
 
-  // Do not set windowsCheckbox state here; permissions.js updates checked/disabled based on system permission
+  if (windowsCheckbox) windowsCheckbox.checked = inputData.windows;
   if (audioCheckbox) audioCheckbox.checked = inputData.audio; 
   if (screenCheckbox) screenCheckbox.checked = inputData.screen;
   if (systemAudioCheckbox) {
@@ -564,6 +599,10 @@ async function updateSettingsUI(settings) {
 
   // Send initial workdays to main process
   ipcRenderer.send('updateWorkdays', workdays);
+
+  updateSettingsReady(true);
+  refreshCaptureDependentVisibility();
+  emitCaptureStateUpdated();
 }
 
 
@@ -595,21 +634,6 @@ function setupSystemAudioDependency() {
     audioCheckbox.addEventListener('change', applyState);
   }
 
-  // Add event listener for screenshare toggle
-  if (screenCheckbox) {
-    screenCheckbox.addEventListener('change', async () => {
-      const isChecked = screenCheckbox.checked;
-      try {
-        inputData.screen = isChecked;
-        await saveUserSettings('inputData', { screen: isChecked, __partial: true });
-        ipcRenderer.send('updateInputDataSettings', { screen: isChecked });
-      } catch (error) {
-        screenCheckbox.checked = !isChecked;
-        inputData.screen = !isChecked;
-      }
-    });
-  }
-
   // Add event listener for system audio toggle
   if (systemAudioCheckbox) {
     systemAudioCheckbox.addEventListener('change', async () => {
@@ -619,6 +643,9 @@ function setupSystemAudioDependency() {
         inputData.systemAudio = isChecked;
         await saveUserSettings('inputData', { systemAudio: isChecked, __partial: true });
         ipcRenderer.send('updateInputDataSettings', { systemAudio: isChecked });
+        if (isChecked) {
+          ipcRenderer.send('requestSystemAudioPermission', true);
+        }
       } catch (error) {
         // Revert on error
         systemAudioCheckbox.checked = !isChecked;
@@ -626,6 +653,19 @@ function setupSystemAudioDependency() {
       }
     });
   }
+
+  // Keep system audio toggle aligned with system permission checks.
+  ipcRenderer.on('systemAudioPermission', async (_event, data) => {
+    const hasPermission = typeof data === 'object' ? !!data.hasPermission : !!data;
+    updateSystemAudioPermission(hasPermission);
+    if (hasPermission) return;
+    await forceDisableSystemAudio();
+  });
+
+  // Backward compatibility if older main process sends a recheck event.
+  ipcRenderer.on('systemAudioPermission-recheck', () => {
+    ipcRenderer.send('requestSystemAudioPermission', false);
+  });
 }
 
 function recomputeSystemAudioDependency() {
@@ -908,7 +948,8 @@ function setupOpenAICompatibleListeners() {
 module.exports = {
   initializeSettings,
   loadUserSettings,
-  saveUserSettings
+  saveUserSettings,
+  handleCaptureToggleIntent
 };
 
 // --- Hotkey configuration ---

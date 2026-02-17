@@ -20,8 +20,9 @@ const validSendChannels = [
   'resumeRecording',
   'requestWindowsPermission',
   'requestScreenCapturePermission',
-  'requestAudioPermission',
+  'requestMicrophonePermission',
   'requestSystemAudioPermission',
+  'checkScreenCapturePermission',
   'updateInputDataSettings',
 
   'updateSaveCaptureData',
@@ -71,6 +72,8 @@ const validInvokeChannels = [
   'get-app-version',
   'get-platform-info',
   'check-main-window-focus',
+  'checkWindowsPermission',
+  'checkMicrophonePermission',
 
   // Settings / Tailwind-related helpers
   'settings:load',
@@ -148,7 +151,9 @@ const validReceiveChannels = [
   'linux-audio-permission-notice',
   'linux-pactl-missing-notice',
   'screenCapturePermission',
-  'audioPermission',
+  'microphonePermission',
+  'systemAudioPermission',
+  'systemAudioPermission-recheck',
   'windowsPermission',
   'pauseStateChanged',
   'disable-capture-features',
