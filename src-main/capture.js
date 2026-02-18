@@ -872,9 +872,9 @@ async function captureAndSend(idToken) {
       requeueCompletedCycleTelemetry(clientTelemetry)
     }
 
-    if (dumpDir && sendResult?.structured) {
+    if (dumpDir && (sendResult?.structured || sendResult?.parameters || clientTelemetry)) {
       try {
-        appendCaptureDump(dumpDir, sendResult.structured, sendResult.parameters)
+        appendCaptureDump(dumpDir, sendResult?.structured, sendResult?.parameters, clientTelemetry)
       } catch (e) {
         log.warn('Capture dump append failed:', e?.message)
       }

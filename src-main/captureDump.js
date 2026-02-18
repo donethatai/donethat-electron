@@ -117,10 +117,14 @@ async function saveCaptureDump(screenshots, inputData, timestamp, pathType, prev
   }
 }
 
+function shouldWriteTelemetryDump(dumpDir) {
+  return typeof dumpDir === 'string' && dumpDir.includes('DEBUG')
+}
+
 /**
- * Append structured and parameters to existing dump dir (for local path)
+ * Append structured, parameters, and optional telemetry to existing dump dir (for local path)
  */
-function appendCaptureDump(dumpDir, structured, parameters) {
+function appendCaptureDump(dumpDir, structured, parameters, telemetry) {
   try {
     if (!dumpDir) return
     if (structured) {
@@ -128,6 +132,9 @@ function appendCaptureDump(dumpDir, structured, parameters) {
     }
     if (parameters) {
       fs.writeFileSync(path.join(dumpDir, 'parameters.json'), JSON.stringify(parameters, null, 2))
+    }
+    if (telemetry && shouldWriteTelemetryDump(dumpDir)) {
+      fs.writeFileSync(path.join(dumpDir, 'telemetry.json'), JSON.stringify(telemetry, null, 2))
     }
   } catch (error) {
   }
