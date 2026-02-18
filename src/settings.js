@@ -528,7 +528,7 @@ async function updateSettingsUI(settings) {
 
 
 
-// Disable "System audio" unless microphone is enabled
+// Disable "Meeting participants" unless microphone is enabled
 function setupSystemAudioDependency() {
   const audioCheckbox = document.getElementById('audioCheckbox');
   const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
@@ -538,8 +538,8 @@ function setupSystemAudioDependency() {
     const micOn = !!(audioCheckbox && audioCheckbox.checked) || !!inputData.audio;
     systemAudioCheckbox.disabled = !micOn;
     systemAudioCheckbox.title = micOn
-      ? 'System audio is controlled by your setting and system audio permission state'
-      : 'Enable microphone in settings to use system audio';
+      ? 'Meeting participants audio is controlled by your setting and permission state'
+      : 'Enable microphone in settings to capture meeting participants';
   };
 
   // Initial application
@@ -559,8 +559,8 @@ function recomputeSystemAudioDependency() {
   const micOn = !!(audioCheckbox && audioCheckbox.checked) || !!inputData.audio;
   systemAudioCheckbox.disabled = !micOn;
   systemAudioCheckbox.title = micOn
-    ? 'System audio is controlled by your setting and system audio permission state'
-    : 'Enable microphone in settings to use system audio';
+    ? 'Meeting participants audio is controlled by your setting and permission state'
+    : 'Enable microphone in settings to capture meeting participants';
 }
 
 

@@ -16,7 +16,7 @@ if (process.platform === 'linux') {
   }
 }
 
-const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor, globalShortcut } = require('electron')
+const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor, globalShortcut, session, desktopCapturer } = require('electron')
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
 const log = require('electron-log')
@@ -621,6 +621,36 @@ function setupAutoStart() {
 ////// MAIN /////
 
 app.whenReady().then(async () => {
+  session.fromPartition('persist:donethat').setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const requesterId = request?.frame?.webContents?.id
+      const trustedMainId = mainWindow?.webContents?.id
+      if (!trustedMainId || requesterId !== trustedMainId) {
+        log.warn('Blocked display media request from untrusted requester', {
+          requesterId,
+          trustedMainId,
+          securityOrigin: request?.securityOrigin || null
+        })
+        callback({ video: null, audio: null })
+        return
+      }
+
+      const sources = await desktopCapturer.getSources({ types: ['screen'] })
+      if (!sources || sources.length === 0) {
+        log.warn('No screen sources available for display media request')
+        callback({ video: null, audio: null })
+        return
+      }
+      callback({
+        video: sources[0],
+        audio: 'loopback'
+      })
+    } catch (error) {
+      log.error('Failed to resolve display media request handler source:', error)
+      callback({ video: null, audio: null })
+    }
+  })
+
   // Register Hotkey IPC early so renderer can invoke during startup
   ipcMain.handle('hotkey:get', async () => {
     try {
@@ -1631,6 +1661,13 @@ function createWindow() {
 
     // Sandboxed renderer needs explicit approval for capture permissions used by audio-recorder.js.
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+      const trustedMainId = mainWindow?.webContents?.id
+      if (!trustedMainId || webContents.id !== trustedMainId) {
+        console.warn(`Blocked permission request from untrusted renderer (permission=${permission}, wcId=${webContents.id})`);
+        callback(false);
+        return;
+      }
+
       const allowedPermissions = ['media', 'display-capture']; 
       
       if (allowedPermissions.includes(permission)) {

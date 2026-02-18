@@ -1201,6 +1201,11 @@ body {
   vertical-align: middle;
   flex-shrink: 0;
 }
+/* Add breathing room around settings toggles so they are not flush to card edges */
+#settingsView .auth-card .toggle {
+  margin-left: 12px;
+  margin-right: 8px;
+}
 .toggle input { display: none; }
 .slider {
   position: absolute;

@@ -35,12 +35,6 @@ function main() {
       sourcePath: path.join(process.cwd(), 'src-os/macos/active-mic.swift'),
       outputPath: path.join(outputDir, 'mic-monitor'),
       frameworks: ['CoreAudio', 'Foundation', 'AppKit']
-    },
-    {
-      name: 'system-audio-capture',
-      sourcePath: path.join(process.cwd(), 'src-os/macos/system-audio-capture.swift'),
-      outputPath: path.join(outputDir, 'system-audio-capture'),
-      frameworks: ['Foundation', 'AVFoundation', 'ScreenCaptureKit', 'CoreMedia']
     }
   ];
 

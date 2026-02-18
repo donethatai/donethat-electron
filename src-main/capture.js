@@ -389,6 +389,10 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     // System audio is part of screen recording permission on macOS
     if (process.platform === 'darwin') {
       const hasSystemAudioPermission = await checkSystemAudioPermission();
+      if (hasSystemAudioPermission === null) {
+        // Permission check was skipped/in-progress; keep current UI state.
+        return;
+      }
       if (hasSystemAudioPermission) {
         if (mainWindow) {
           mainWindow.webContents.send('systemAudioPermission', { hasPermission: true, source: 'request' });
@@ -423,6 +427,7 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
       
       if (!mainWindow) return;
       const hasSystemAudioPermission = await checkSystemAudioPermission();
+      if (hasSystemAudioPermission === null) return;
       mainWindow.webContents.send('systemAudioPermission', { hasPermission: !!hasSystemAudioPermission, source: 'request' });
     };
     

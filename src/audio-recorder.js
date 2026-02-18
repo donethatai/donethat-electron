@@ -12,33 +12,16 @@ window.allowAudioResume = false;
 // Audio Context and Nodes for Mixing/VAD
 let audioContext = null;
 let micSource = null;
-let systemSources = []; // Changed from systemSource to array to support merging multiple channels
+let systemSources = [];
 let destNode = null;
 let vadNode = null; // AnalyserNode or ScriptProcessor
 
 // Keep explicit handles to raw input streams so we can always stop tracks deterministically
 let micInputStream = null;
 let systemInputStreams = [];
-let lastStartOptions = { systemAudio: false, sourceIds: [] };
-
-function getTrackDebugState(track) {
-  if (!track) return null;
-  return {
-    kind: track.kind,
-    id: track.id,
-    label: track.label,
-    enabled: track.enabled,
-    muted: track.muted,
-    readyState: track.readyState
-  };
-}
-
-function attachSystemTrackDebugListeners(track, sourceId) {
-  // No-op to keep renderer logs quiet during audio capture.
-  void track;
-  void sourceId;
-}
-
+let lastStartOptions = { systemAudio: false };
+let deviceChangeListenerAttached = false;
+let systemTrackRestartInFlight = false;
 
 // VAD State & Constants
 let userSpeechIntervals = []; // Array of { startMs, endMs }
@@ -87,7 +70,7 @@ window.initAudioRecorder = function(config = {}) {
   MAX_BUFFER_DURATION_MS = config.bufferDurationMs;
   
   // Add device change listener
-  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  if (!deviceChangeListenerAttached && navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
     navigator.mediaDevices.addEventListener('devicechange', () => {
       // Restart recording with new default device if we're recording
       if (isRecording) {
@@ -101,6 +84,7 @@ window.initAudioRecorder = function(config = {}) {
         });
       }
     });
+    deviceChangeListenerAttached = true;
   }
 };
 
@@ -288,14 +272,10 @@ window.startAudioRecording = async function(options = {}) {
   }
 
   const normalizedOptions = {
-    systemAudio: !!options.systemAudio,
-    sourceIds: Array.isArray(options.sourceIds)
-      ? options.sourceIds
-      : (options.sourceId ? [options.sourceId] : [])
+    systemAudio: !!options.systemAudio
   };
   lastStartOptions = {
-    systemAudio: normalizedOptions.systemAudio,
-    sourceIds: [...normalizedOptions.sourceIds]
+    systemAudio: normalizedOptions.systemAudio
   };
   
   try {
@@ -309,6 +289,10 @@ window.startAudioRecording = async function(options = {}) {
     // 1. Setup Audio Context
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     audioContext = new AudioContext();
+    await audioContext.resume();
+    if (audioContext.state !== 'running') {
+      throw new Error(`AudioContext failed to enter running state (state=${audioContext.state})`);
+    }
     destNode = audioContext.createMediaStreamDestination();
 
     // 2. Get Microphone Stream
@@ -332,85 +316,38 @@ window.startAudioRecording = async function(options = {}) {
     // Connect Mic to Destination (for mixing)
     micSource.connect(destNode);
 
-    // 4. Get System Audio Stream(s) (if enabled and sourceId(s) provided)
+    // 4. Get system audio stream (if enabled)
     if (normalizedOptions.systemAudio) {
-      if (navigator.platform.toLowerCase().includes('mac')) {
-        // console.log('[Audio] macOS system audio capture is handled by main-process helper; renderer path skipped');
-      } else {
-      const sourceIds = normalizedOptions.sourceIds;
-      
-      if (sourceIds.length > 0) {
-        
-        // Use a loop to try and capture from all provided sources
-        for (const sourceId of sourceIds) {
-          try {
-            
-            const constraints = {
-              audio: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: sourceId,
-                // Fallback for some versions
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                  chromeMediaSourceId: sourceId
-                }
-              },
-              video: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: sourceId,
-                // Fallback for some versions
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                  chromeMediaSourceId: sourceId,
-                  maxWidth: 10,
-                  maxHeight: 10,
-                  maxFrameRate: 1
-                }
-              }
-            };
-            
-            const systemStream = await navigator.mediaDevices.getUserMedia(constraints);
-            
-            const tracks = systemStream.getAudioTracks();
-            const videoTracks = systemStream.getVideoTracks();
-            // Intentionally quiet: avoid verbose per-stream diagnostics in production logs.
-  
-            if (tracks.length > 0) {
-              tracks.forEach((track) => attachSystemTrackDebugListeners(track, sourceId));
-              const sourceNode = audioContext.createMediaStreamSource(systemStream);
-              sourceNode.connect(destNode);
-              systemSources.push(sourceNode);
-              systemInputStreams.push(systemStream);
-              
-              // Stop any video tracks immediately as we don't need them
-              if (videoTracks.length > 0) {
-                videoTracks.forEach(track => track.stop());
-              }
-            } else {
-              console.warn(`[Audio] Source ${sourceId} has no audio tracks`);
-              // Stop the stream if no audio
-              systemStream.getTracks().forEach(track => track.stop());
-            }
-          } catch (sysErr) {
-            const errorDetails = {
-              name: sysErr && sysErr.name,
-              message: sysErr && sysErr.message,
-              stack: sysErr && sysErr.stack
-            };
-            console.error(`[Audio] Capture FAILED for source ${sourceId}: ${JSON.stringify(errorDetails)}`);
-            // Continue to next source
-          }
-        }
-        
-        if (systemSources.length === 0) {
-          console.warn(`[Audio] No system audio sources were successfully captured ${JSON.stringify({
-            requestedSourceCount: sourceIds.length
-          })}`);
-        }
-      } else {
-        console.warn('[Audio] System audio requested but no sourceIds provided');
+      const systemStream = await navigator.mediaDevices.getDisplayMedia({
+        audio: true,
+        video: false
+      });
+      const systemTrack = systemStream.getAudioTracks()[0];
+      if (!systemTrack || systemTrack.readyState !== 'live') {
+        systemStream.getTracks().forEach((track) => track.stop());
+        throw new Error('System audio loopback track is not live');
       }
+      systemTrack.onended = async () => {
+        if (!isRecording || systemTrackRestartInFlight) return;
+        systemTrackRestartInFlight = true;
+        try {
+          await restartAudioRecording();
+        } catch (e) {
+          console.error('Failed to restart recording after system audio track ended:', e);
+        } finally {
+          systemTrackRestartInFlight = false;
+        }
+      };
+
+      const videoTracks = systemStream.getVideoTracks();
+      if (videoTracks.length > 0) {
+        videoTracks.forEach((track) => track.stop());
       }
+
+      const sourceNode = audioContext.createMediaStreamSource(systemStream);
+      sourceNode.connect(destNode);
+      systemSources.push(sourceNode);
+      systemInputStreams.push(systemStream);
     }
     
     // 5. Setup MediaRecorder with destination stream
@@ -554,8 +491,7 @@ async function restartAudioRecording() {
     cleanupAudioContext();
     
     const restartOptions = {
-      systemAudio: !!lastStartOptions.systemAudio,
-      sourceIds: Array.isArray(lastStartOptions.sourceIds) ? [...lastStartOptions.sourceIds] : []
+      systemAudio: !!lastStartOptions.systemAudio
     };
 
     // Force a real restart path; startAudioRecording short-circuits when isRecording is true.

@@ -24,9 +24,18 @@ const permissionIssueVisibleState = {
   microphone: false,
   systemAudio: false
 };
+let hasRequestedInitialSystemAudioCheck = false;
 
 function emitCaptureStateUpdated() {
   document.dispatchEvent(new CustomEvent('capture-state-updated'));
+}
+
+function readPermissionDataset(checkbox) {
+  if (!checkbox) return null;
+  const raw = checkbox.dataset.permissionGranted;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return null;
 }
 
 function parsePermissionPayload(data, fallbackSource = 'unknown') {
@@ -120,7 +129,7 @@ function setupPermissionIndicatorRefresh() {
     }
     const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
     if (systemAudioCheckbox) {
-      updateSystemAudioCheckbox(systemAudioCheckbox.dataset.permissionGranted === 'true');
+      updateSystemAudioCheckbox(readPermissionDataset(systemAudioCheckbox));
     }
   });
 }
@@ -134,7 +143,6 @@ function checkPermissionsOnStartup() {
   retryMicrophonePermissionStartupCheck().then((hasPermission) => {
     applyMicrophonePermissionUpdate(!!hasPermission, true, 'startup-passive-check');
   });
-  requestSystemAudioPermission(false);
 }
 
 async function retryWindowsPermissionStartupCheck() {
@@ -262,7 +270,7 @@ function applyMicrophonePermissionUpdate(hasPermission, _fromStartup = false, so
   updateMicrophoneCheckbox(hasPermission);
   const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
   if (systemAudioCheckbox) {
-    updateSystemAudioCheckbox(systemAudioCheckbox.dataset.permissionGranted === 'true');
+    updateSystemAudioCheckbox(readPermissionDataset(systemAudioCheckbox));
   }
   emitCaptureStateUpdated();
 }
@@ -285,6 +293,10 @@ ipcRenderer.on('screenCapturePermission', (_event, data) => {
     defaultSource: 'screen-channel',
     fromStartup: true
   });
+  if (!hasRequestedInitialSystemAudioCheck) {
+    hasRequestedInitialSystemAudioCheck = true;
+    requestSystemAudioPermission(false);
+  }
 });
 
 ipcRenderer.on('microphonePermission', (_event, data) => {
@@ -400,10 +412,13 @@ function updateSystemAudioCheckbox(hasPermission) {
   const checkbox = document.getElementById('systemAudioCheckbox');
   if (!checkbox) return;
 
-  checkbox.dataset.permissionGranted = hasPermission ? 'true' : 'false';
+  const isKnown = typeof hasPermission === 'boolean';
+  if (isKnown) {
+    checkbox.dataset.permissionGranted = hasPermission ? 'true' : 'false';
+  }
   const enabledByToggle = !!checkbox.checked;
   const audioEnabled = !!document.getElementById('audioCheckbox')?.checked;
-  const blockedByPermission = enabledByToggle && audioEnabled && !!hasMicrophonePermission() && !hasPermission;
+  const blockedByPermission = isKnown && enabledByToggle && audioEnabled && !!hasMicrophonePermission() && !hasPermission;
   if (blockedByPermission !== permissionIssueVisibleState.systemAudio) {
     permissionIssueVisibleState.systemAudio = blockedByPermission;
     if (blockedByPermission) {
@@ -417,10 +432,12 @@ function updateSystemAudioCheckbox(hasPermission) {
   const toggleLabel = checkbox.closest('.toggle');
   if (toggleLabel) {
     toggleLabel.title = blockedByPermission
-      ? 'Enabled in settings, but currently blocked by missing system audio permission'
-      : (hasPermission
-        ? 'System audio permission granted'
-        : 'System audio permission required for effective capture');
+      ? 'Enabled in settings, but currently blocked by missing meeting participants permission'
+      : (!isKnown
+        ? 'Meeting participants permission status is still being checked'
+        : (hasPermission
+        ? 'Meeting participants permission granted'
+        : 'Meeting participants permission required for effective capture'));
   }
 
   const recheckBtn = document.getElementById('recheckSystemAudioPermissionBtn');
@@ -483,7 +500,7 @@ function setupAudioCheckboxBehavior() {
     updateMicrophoneCheckbox(checkbox.dataset.permissionGranted === 'true');
     const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
     if (systemAudioCheckbox) {
-      updateSystemAudioCheckbox(systemAudioCheckbox.dataset.permissionGranted === 'true');
+      updateSystemAudioCheckbox(readPermissionDataset(systemAudioCheckbox));
     }
     emitCaptureStateUpdated();
   });
@@ -498,11 +515,11 @@ function setupSystemAudioCheckboxBehavior() {
     const result = await handleCaptureToggleIntent('systemAudio', enabled);
     if (result?.reverted) {
       checkbox.checked = !enabled;
-      updateSystemAudioCheckbox(checkbox.dataset.permissionGranted === 'true');
+      updateSystemAudioCheckbox(readPermissionDataset(checkbox));
       emitCaptureStateUpdated();
       return;
     }
-    updateSystemAudioCheckbox(checkbox.dataset.permissionGranted === 'true');
+    updateSystemAudioCheckbox(readPermissionDataset(checkbox));
     emitCaptureStateUpdated();
   });
 }
