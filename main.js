@@ -211,7 +211,10 @@ let tray = null
 let mainWindow = null
 let overlayWindow = null
 let screenshotInterval = null
-let isInitialStartup = true
+let startupMainWindowReady = false
+let startupAuthCheckResolved = false
+let startupIsAuthenticated = null
+let startupUnauthedWindowShown = false
 // Persist overlay position
 let overlayStore = null
 let savedOverlayPosition = null
@@ -979,9 +982,6 @@ app.whenReady().then(async () => {
   // Initial state check and schedule daily check
   checkAndAdjustRecording();
   
-  // Mark initial startup as complete
-  isInitialStartup = false;
-
   // Handle left-click to show a fresh context menu
   tray.on('click', () => {
     const contextMenu = buildContextMenu()
@@ -1745,12 +1745,10 @@ function createWindow() {
       mainWindow.webContents.openDevTools();
     }
 
-    // Position the window once it's ready.
+    // Decide startup visibility once both auth bootstrap and renderer readiness are known.
     mainWindow.once('ready-to-show', async () => {
-      // Startup behavior: app should open on launch.
-      if (isInitialStartup) {
-        showWindowBelowTray();
-      }
+      startupMainWindowReady = true;
+      maybeShowStartupWindowForUnauthenticated();
 
       mainWindow.webContents.send('screenCapturePermission', {
         hasPermission: stateManager?.hasScreenCapturePermission(),
@@ -2104,6 +2102,17 @@ function showWindowBelowTray() {
   try { mainWindow.focus(); } catch (e) {}
 }
 
+function maybeShowStartupWindowForUnauthenticated() {
+  if (startupUnauthedWindowShown) return;
+  if (!startupMainWindowReady) return;
+  if (!startupAuthCheckResolved) return;
+
+  if (startupIsAuthenticated === true) return;
+
+  startupUnauthedWindowShown = true;
+  showWindowBelowTray();
+}
+
 // Modify the window-all-closed handler to respect system quit
 app.on('window-all-closed', (event) => {
   // Only prevent default if we're not in the quit process
@@ -2263,10 +2272,9 @@ function handleCaptureAuthErrors(result) {
 }
 
 ipcMain.on('initialAuthCheck', (event, isAuthenticated) => {
-  if (!stateManager?.isAuthenticated()) {
-    // If user is not authenticated, show the window
-    showWindowBelowTray();
-  }
+  startupAuthCheckResolved = true;
+  startupIsAuthenticated = !!isAuthenticated;
+  maybeShowStartupWindowForUnauthenticated();
   createApplicationMenu(); // Update menu after auth check
 });
 

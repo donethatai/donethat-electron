@@ -320,11 +320,9 @@ function startChatListeners() {
     
     if (newChatId !== state.currentChatId && chatCreatedAt > oneMinuteAgo) {
       state.currentChatId = newChatId;
-      // Clear chat window first, then show overlay (only if user has valid access)
+      // Clear chat window first, then subscribe. Overlay visibility is handled
+      // by chat renderer only after messages arrive, without stealing focus.
       try { ipcRenderer.send('chat:set-messages', []); } catch (_) {}
-      if (hasValidAccess()) {
-        try { ipcRenderer.send('overlay:show-if-hidden'); } catch (_) {}
-      }
       subscribeToMessages(state.currentChatId);
     }
   }, (error) => {

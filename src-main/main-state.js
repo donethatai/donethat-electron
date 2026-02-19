@@ -44,6 +44,10 @@ let isSystemSuspended = false;
 // Cache decrypted API keys/configs in memory to avoid decryption issues during hibernation
 let cachedGeminiApiKey = null;
 let cachedOpenAICompatibleConfig = null;
+const GEMINI_KEY_SOURCE_STORE_KEY = 'geminiApiKeySource';
+const OPENAI_KEY_SOURCE_STORE_KEY = 'openaiCompatibleApiKeySource';
+const API_KEY_SOURCE_MANAGED = 'managed';
+const API_KEY_SOURCE_USER = 'user';
 let managedAppSettings = {
   recording: {
     manualPauseEnabled: null
@@ -520,6 +524,7 @@ function applyManagedAppSettings(rawSettings = null) {
       safeStoreOperation(() => {
         if (store) {
           store.delete('geminiApiKey');
+          store.delete(GEMINI_KEY_SOURCE_STORE_KEY);
         }
       }, 'clear managed Gemini key');
       cachedGeminiApiKey = null;
@@ -527,6 +532,7 @@ function applyManagedAppSettings(rawSettings = null) {
       safeStoreOperation(() => {
         if (store) {
           store.set('geminiApiKey', encryptData(geminiConfig.apiKey));
+          store.set(GEMINI_KEY_SOURCE_STORE_KEY, API_KEY_SOURCE_MANAGED);
         }
       }, 'apply managed Gemini key');
       cachedGeminiApiKey = geminiConfig.apiKey;
@@ -534,10 +540,21 @@ function applyManagedAppSettings(rawSettings = null) {
       safeStoreOperation(() => {
         if (store) {
           store.delete('geminiApiKey');
+          store.delete(GEMINI_KEY_SOURCE_STORE_KEY);
         }
       }, 'clear managed Gemini key');
       cachedGeminiApiKey = null;
     }
+  } else {
+    safeStoreOperation(() => {
+      if (!store) return;
+      const keySource = store.get(GEMINI_KEY_SOURCE_STORE_KEY);
+      if (keySource === API_KEY_SOURCE_MANAGED) {
+        store.delete('geminiApiKey');
+        store.delete(GEMINI_KEY_SOURCE_STORE_KEY);
+        cachedGeminiApiKey = null;
+      }
+    }, 'clear removed managed Gemini key');
   }
 
   if (isManagedValue(managedAppSettings.localProcessing.openAICompatible)) {
@@ -551,15 +568,28 @@ function applyManagedAppSettings(rawSettings = null) {
       safeStoreOperation(() => {
         if (store) {
           store.delete('openaiCompatibleConfig');
+          store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
         }
       }, 'clear managed OpenAI-compatible config');
       cachedOpenAICompatibleConfig = null;
     } else if (openAiEnabled === true || hasManagedField) {
-      const existingConfig = getOpenAICompatibleConfig() || {};
+      const storedConfig = safeStoreOperation(() => store?.get('openaiCompatibleConfig') || {}, 'read OpenAI-compatible config for managed merge') || {};
+      const existingKeySource = safeStoreOperation(() => store?.get(OPENAI_KEY_SOURCE_STORE_KEY), 'read OpenAI-compatible API key source');
+      let existingApiKey = cachedOpenAICompatibleConfig?.apiKey || null;
+      if (!existingApiKey && storedConfig.apiKey) {
+        try {
+          existingApiKey = decryptData(storedConfig.apiKey);
+        } catch (_) {
+          existingApiKey = null;
+        }
+      }
+      const effectiveExistingApiKey = (!hasManagedApiKey && existingKeySource === API_KEY_SOURCE_MANAGED)
+        ? null
+        : existingApiKey;
       const nextConfig = {
-        endpoint: hasManagedEndpoint ? (openAiConfig.endpoint || null) : (existingConfig.endpoint || null),
-        model: hasManagedModel ? (openAiConfig.model || null) : (existingConfig.model || null),
-        apiKey: hasManagedApiKey ? (openAiConfig.apiKey || null) : (existingConfig.apiKey || null)
+        endpoint: hasManagedEndpoint ? (openAiConfig.endpoint || null) : (cachedOpenAICompatibleConfig?.endpoint || storedConfig.endpoint || null),
+        model: hasManagedModel ? (openAiConfig.model || null) : (cachedOpenAICompatibleConfig?.model || storedConfig.model || null),
+        apiKey: hasManagedApiKey ? (openAiConfig.apiKey || null) : effectiveExistingApiKey
       };
       safeStoreOperation(() => {
         if (store) {
@@ -568,10 +598,38 @@ function applyManagedAppSettings(rawSettings = null) {
             model: nextConfig.model,
             apiKey: nextConfig.apiKey ? encryptData(nextConfig.apiKey) : null
           });
+          if (hasManagedApiKey && openAiConfig.apiKey) {
+            store.set(OPENAI_KEY_SOURCE_STORE_KEY, API_KEY_SOURCE_MANAGED);
+          } else if (hasManagedApiKey && !openAiConfig.apiKey) {
+            store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
+          } else if (!nextConfig.apiKey) {
+            store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
+          }
         }
       }, 'apply managed OpenAI-compatible config');
       cachedOpenAICompatibleConfig = nextConfig;
     }
+  } else {
+    safeStoreOperation(() => {
+      if (!store) return;
+      const keySource = store.get(OPENAI_KEY_SOURCE_STORE_KEY);
+      if (keySource === API_KEY_SOURCE_MANAGED) {
+        const rawConfig = store.get('openaiCompatibleConfig') || {};
+        store.set('openaiCompatibleConfig', {
+          endpoint: rawConfig.endpoint || null,
+          model: rawConfig.model || null,
+          apiKey: null
+        });
+        store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
+        if (cachedOpenAICompatibleConfig) {
+          cachedOpenAICompatibleConfig = {
+            endpoint: cachedOpenAICompatibleConfig.endpoint || null,
+            model: cachedOpenAICompatibleConfig.model || null,
+            apiKey: null
+          };
+        }
+      }
+    }, 'clear removed managed OpenAI-compatible key');
   }
 
   try { require('./processLocal').resetLLMModels(); } catch (_) {}
@@ -1484,6 +1542,7 @@ function setupIPCHandlers() {
       safeStoreOperation(() => {
         if (store) {
           store.set('geminiApiKey', encryptedKey);
+          store.set(GEMINI_KEY_SOURCE_STORE_KEY, API_KEY_SOURCE_USER);
         } else {
           throw new Error('Store not initialized');
         }
@@ -1519,6 +1578,7 @@ function setupIPCHandlers() {
       safeStoreOperation(() => {
         if (store) {
           store.delete('geminiApiKey');
+          store.delete(GEMINI_KEY_SOURCE_STORE_KEY);
         } else {
           throw new Error('Store not initialized');
         }
@@ -1570,6 +1630,11 @@ function setupIPCHandlers() {
             model: config.model || null,
             apiKey: encryptedKey
           });
+          if (apiKey) {
+            store.set(OPENAI_KEY_SOURCE_STORE_KEY, API_KEY_SOURCE_USER);
+          } else {
+            store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
+          }
         } else {
           throw new Error('Store not initialized');
         }
@@ -1609,6 +1674,7 @@ function setupIPCHandlers() {
       safeStoreOperation(() => {
         if (store) {
           store.delete('openaiCompatibleConfig');
+          store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
         } else {
           throw new Error('Store not initialized');
         }
@@ -2299,6 +2365,7 @@ async function getGeminiApiKey() {
         safeStoreOperation(() => {
           if (store) {
             store.delete('geminiApiKey');
+            store.delete(GEMINI_KEY_SOURCE_STORE_KEY);
           }
         }, 'delete corrupted Gemini API key');
         // Clear cached key
@@ -2365,6 +2432,7 @@ async function getOpenAICompatibleConfig() {
             safeStoreOperation(() => {
               if (store) {
                 store.delete('openaiCompatibleConfig');
+                store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
               }
             }, 'delete corrupted OpenAI-compatible config');
             // Clear cached config

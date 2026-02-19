@@ -73,7 +73,6 @@
     "@langchain/core": "^1.1.19",
     "@langchain/google-genai": "^2.1.15",
     "@langchain/openai": "^1.2.5",
-    "electron-liquid-glass": "^1.1.1",
     "electron-log": "^5.4.3",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.7.3",
@@ -83,6 +82,9 @@
     "jimp": "^1.6.0",
     "looks-same": "^10.0.1",
     "tailwindcss": "^4.1.18"
+  },
+  "optionalDependencies": {
+    "electron-liquid-glass": "^1.1.1"
   },
   "build": {
     "appId": "com.donethat.app",
