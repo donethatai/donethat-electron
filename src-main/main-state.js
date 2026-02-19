@@ -718,6 +718,16 @@ async function initializeStore() {
     { name: 'documents', cwd: path.join(app.getPath('documents'), '.donethat-config') },
     { name: 'temp', cwd: app.getPath('temp') }
   ];
+
+  function logSelectedStore(storeInstance, location, source) {
+    const resolvedPath = (storeInstance && typeof storeInstance.path === 'string')
+      ? storeInstance.path
+      : path.join(location.cwd, 'donethat-config.json');
+    log.info(`Using config store (${source}) in ${location.name}: ${resolvedPath}`);
+    if (location.name === 'temp') {
+      log.warn(`Config store fallback is using temp directory (non-persistent): ${resolvedPath}`);
+    }
+  }
   
   // Check all locations for existing data
   let dataFound = false;
@@ -738,6 +748,7 @@ async function initializeStore() {
       if (hasData) {
         // Found data, use this location
         store = testStore;
+        logSelectedStore(store, location, 'existing data');
         dataFound = true;
         break;
       }
@@ -764,6 +775,7 @@ async function initializeStore() {
           clearInvalidConfig: true
         });
         log.info(`Created new store in ${location.name} location: ${location.cwd}`);
+        logSelectedStore(store, location, 'new store');
         break;
       } catch (err) {
         log.warn(`Failed to create store in ${location.name} location:`, err.message);
