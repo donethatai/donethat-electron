@@ -232,6 +232,45 @@ class AudioSessionManager {
     return false;
   }
 
+  async getWindowsParentPid(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+
+    try {
+      const { stdout } = await execAsync(
+        `powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-CimInstance Win32_Process -Filter \\"ProcessId = ${pid}\\").ParentProcessId"`
+      );
+      const parsed = parseInt(String(stdout || '').trim(), 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) return null;
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async isChildOfOwnProcessWindows(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    if (this.isOwnProcessPid(pid)) return true;
+    if (process.platform !== 'win32') return false;
+
+    const visited = new Set();
+    let currentPid = pid;
+    while (currentPid > 0 && !visited.has(currentPid)) {
+      visited.add(currentPid);
+
+      if (this.isOwnProcessPid(currentPid)) {
+        return true;
+      }
+
+      const parentPid = await this.getWindowsParentPid(currentPid);
+      if (!Number.isInteger(parentPid) || parentPid <= 0) {
+        return false;
+      }
+      currentPid = parentPid;
+    }
+
+    return false;
+  }
+
   isOwnLinuxSession(stream) {
     if (!stream || typeof stream !== 'object') return false;
     const props = stream.properties || {};
@@ -308,7 +347,19 @@ class AudioSessionManager {
           const sessions = JSON.parse(stdout);
           
           // Filter out our own PID
-          const externalSessions = sessions.filter(s => s.pid !== process.pid);
+          const externalSessions = [];
+          for (const session of sessions) {
+            const pid = Number(session && session.pid);
+            const name = String((session && session.name) || '').toLowerCase();
+
+            const isOwnSession =
+              (Number.isInteger(pid) && (this.isOwnProcessPid(pid) || await this.isChildOfOwnProcessWindows(pid))) ||
+              name.includes('donethat');
+
+            if (!isOwnSession) {
+              externalSessions.push(session);
+            }
+          }
           
           if (externalSessions.length > 0) {
             const s = externalSessions[0];
