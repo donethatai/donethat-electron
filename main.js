@@ -755,7 +755,11 @@ function setupAutoStart() {
       });
 
     } else if (process.platform === 'linux') {
-      const enabled = !!overlayStore?.get('linuxAutostartEnabled')
+      const storedValue = overlayStore?.get('linuxAutostartEnabled')
+      const enabled = typeof storedValue === 'boolean' ? storedValue : true
+      if (typeof storedValue !== 'boolean') {
+        try { overlayStore?.set('linuxAutostartEnabled', true) } catch (_) {}
+      }
       linuxAutostart.reconcile(enabled)
     }
 

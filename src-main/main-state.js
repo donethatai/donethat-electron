@@ -1531,7 +1531,8 @@ function setupIPCHandlers() {
       if (process.platform !== 'linux') {
         return { success: true, enabled: false, filePath: null, execPath: null, exists: false, isCurrent: false };
       }
-      const enabled = !!safeStoreOperation(() => store?.get('linuxAutostartEnabled'), 'get linux autostart enabled');
+      const storedValue = safeStoreOperation(() => store?.get('linuxAutostartEnabled'), 'get linux autostart enabled');
+      const enabled = typeof storedValue === 'boolean' ? storedValue : true;
       const state = linuxAutostart.getState(enabled);
       return { success: true, ...state };
     } catch (error) {
