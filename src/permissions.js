@@ -440,12 +440,12 @@ function updateSystemAudioCheckbox(hasPermission) {
   const toggleLabel = checkbox.closest('.toggle');
   if (toggleLabel) {
     toggleLabel.title = blockedByPermission
-      ? 'Enabled in settings, but currently blocked by missing meeting participants permission'
+      ? 'Enabled in settings, but currently blocked by missing meeting audio permission'
       : (!isKnown
-        ? 'Meeting participants permission status is still being checked'
+        ? 'Meeting audio permission status is still being checked'
         : (hasPermission
-        ? 'Meeting participants permission granted'
-        : 'Meeting participants permission required for effective capture'));
+        ? 'Meeting audio permission granted'
+        : 'Meeting audio permission required for effective capture'));
   }
 
   const recheckBtn = document.getElementById('recheckSystemAudioPermissionBtn');
