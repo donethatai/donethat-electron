@@ -471,6 +471,30 @@ textarea::placeholder {
   pointer-events: none;
 }
 
+.managed-locked-card {
+  opacity: 0.5;
+}
+
+.managed-locked-card button,
+.managed-locked-card input,
+.managed-locked-card select,
+.managed-locked-card textarea,
+.managed-locked-card a {
+  pointer-events: none;
+}
+
+.managed-locked-row {
+  opacity: 0.5;
+}
+
+.managed-locked-row button,
+.managed-locked-row input,
+.managed-locked-row select,
+.managed-locked-row textarea,
+.managed-locked-row a {
+  pointer-events: none;
+}
+
 .dashboard-warning-text {
   overflow-wrap: anywhere;
 }

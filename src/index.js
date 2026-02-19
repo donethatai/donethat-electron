@@ -683,6 +683,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const recordingMenu = document.getElementById('recordingMenu');
   const pauseTodayBtn = document.getElementById('pauseTodayBtn');
   const resumeNowBtn = document.getElementById('resumeNowBtn');
+  let lastKnownPauseState = false;
+
+  function isManualPauseAllowed() {
+    return document.body?.dataset?.manualPauseAllowed !== 'false';
+  }
 
   function toggleRecordingMenu(open) {
     if (!recordingMenu) return;
@@ -697,16 +702,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Check if user has valid access
     const userHasValidAccess = hasValidAccess();
+    const manualPauseAllowed = isManualPauseAllowed();
     
     // Disable all recording controls if user doesn't have valid access
     recordingMenu.querySelectorAll('[data-pause]')?.forEach(el => {
-      if (isPaused || !userHasValidAccess) el.classList.add('disabled'); else el.classList.remove('disabled');
+      if (isPaused || !userHasValidAccess || !manualPauseAllowed) el.classList.add('disabled'); else el.classList.remove('disabled');
     });
     if (resumeNowBtn) {
-      if (isPaused && userHasValidAccess) resumeNowBtn.classList.remove('disabled'); else resumeNowBtn.classList.add('disabled');
+      if (isPaused && userHasValidAccess && manualPauseAllowed) resumeNowBtn.classList.remove('disabled'); else resumeNowBtn.classList.add('disabled');
     }
     if (pauseTodayBtn) {
-      if (isPaused || !userHasValidAccess) pauseTodayBtn.classList.add('disabled'); else pauseTodayBtn.classList.remove('disabled');
+      if (isPaused || !userHasValidAccess || !manualPauseAllowed) pauseTodayBtn.classList.add('disabled'); else pauseTodayBtn.classList.remove('disabled');
     }
   }
 
@@ -721,7 +727,7 @@ document.addEventListener('DOMContentLoaded', () => {
   recordingMenu?.querySelectorAll('[data-pause]')?.forEach(btn => {
     btn.addEventListener('click', () => {
       // Check if user has valid access before allowing pause
-      if (!hasValidAccess()) {
+      if (!hasValidAccess() || !isManualPauseAllowed()) {
         return;
       }
       const ms = Number(btn.getAttribute('data-pause')) || 0;
@@ -731,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   pauseTodayBtn?.addEventListener('click', () => { 
     // Check if user has valid access before allowing pause
-    if (!hasValidAccess()) {
+    if (!hasValidAccess() || !isManualPauseAllowed()) {
       return;
     }
     if (!pauseTodayBtn.classList.contains('disabled')) { 
@@ -741,7 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   resumeNowBtn?.addEventListener('click', () => { 
     // Check if user has valid access before allowing resume
-    if (!hasValidAccess()) {
+    if (!hasValidAccess() || !isManualPauseAllowed()) {
       return;
     }
     if (!resumeNowBtn.classList.contains('disabled')) { 
@@ -753,6 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Update recording text on pause/resume changes
   function setRecordingIcon(isPaused) {
     if (!recordingText || !recordingBtn) return;
+    lastKnownPauseState = !!isPaused;
     if (isPaused) {
       recordingText.textContent = 'Paused';
       recordingText.classList.remove('active');
@@ -779,6 +786,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   ipcRenderer.on('pauseStateChanged', (event, isPaused) => {
     setRecordingIcon(isPaused);
+  });
+
+  document.addEventListener('manual-pause-policy-updated', () => {
+    updateRecordingMenuState(lastKnownPauseState);
   });
 
   // Sync initial labels

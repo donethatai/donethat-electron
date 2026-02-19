@@ -44,6 +44,65 @@ let inputDataSettings = {
   systemAudio: false,
   screen: true
 };
+let managedInputDataSettings = {
+  audio: null,
+  windows: null,
+  systemAudio: null,
+  screen: null
+};
+
+function isManagedValue(value) {
+  return value !== null && value !== undefined;
+}
+
+function normalizeManagedInputState(value) {
+  if (!isManagedValue(value)) return null;
+  if (value === 'enabled' || value === 'optional' || value === 'disabled') {
+    return value;
+  }
+  if (value === true) return 'enabled';
+  if (value === false) return 'disabled';
+  return null;
+}
+
+function isManagedInputStateForced(value) {
+  return value === 'enabled' || value === 'disabled';
+}
+
+function stateToBool(value) {
+  if (value === 'enabled') return true;
+  if (value === 'disabled') return false;
+  return null;
+}
+
+function applyManagedInputDataOverrides(managedInputData) {
+  if (!managedInputData || typeof managedInputData !== 'object') {
+    managedInputDataSettings = {
+      audio: null,
+      windows: null,
+      systemAudio: null,
+      screen: null
+    };
+    return;
+  }
+
+  managedInputDataSettings = {
+    audio: normalizeManagedInputState(managedInputData.audio),
+    windows: normalizeManagedInputState(managedInputData.windows),
+    systemAudio: normalizeManagedInputState(managedInputData.systemAudio),
+    screen: normalizeManagedInputState(managedInputData.screen)
+  };
+
+  const enforced = {};
+  if (isManagedInputStateForced(managedInputDataSettings.audio)) enforced.audio = stateToBool(managedInputDataSettings.audio);
+  if (isManagedInputStateForced(managedInputDataSettings.windows)) enforced.windows = stateToBool(managedInputDataSettings.windows);
+  if (isManagedInputStateForced(managedInputDataSettings.systemAudio)) enforced.systemAudio = stateToBool(managedInputDataSettings.systemAudio);
+  if (isManagedInputStateForced(managedInputDataSettings.screen)) enforced.screen = stateToBool(managedInputDataSettings.screen);
+
+  if (Object.keys(enforced).length > 0) {
+    updateInputDataSettings(enforced);
+  }
+}
 
 // Window tracking startup retry state (to avoid disabling on transient failures)
 let windowStartRetryCount = 0;
@@ -260,6 +319,19 @@ function updateInputDataSettings(settings) {
       ...(settings.systemAudio !== undefined ? { systemAudio: !!settings.systemAudio } : {}),
       ...(settings.screen !== undefined ? { screen: !!settings.screen } : {})
     };
+
+    if (isManagedInputStateForced(managedInputDataSettings.audio)) {
+      inputDataSettings.audio = stateToBool(managedInputDataSettings.audio);
+    }
+    if (isManagedInputStateForced(managedInputDataSettings.windows)) {
+      inputDataSettings.windows = stateToBool(managedInputDataSettings.windows);
+    }
+    if (isManagedInputStateForced(managedInputDataSettings.systemAudio)) {
+      inputDataSettings.systemAudio = stateToBool(managedInputDataSettings.systemAudio);
+    }
+    if (isManagedInputStateForced(managedInputDataSettings.screen)) {
+      inputDataSettings.screen = stateToBool(managedInputDataSettings.screen);
+    }
     
     // Stop tracking for disabled options
     if (previousSettings.audio && !inputDataSettings.audio) {
@@ -345,6 +417,10 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
   // Handler for updating input data settings
   ipcMain.on('updateInputDataSettings', (event, settings) => {
     updateInputDataSettings(settings);
+  });
+
+  ipcMain.on('apply-managed-app-settings', (_event, payload) => {
+    applyManagedInputDataOverrides(payload?.capture?.inputData || null);
   });
 
   // Handler for updating disable screenshots in meetings setting

@@ -39,6 +39,294 @@ let inputData = {
   systemAudio: false,
   screen: true
 };
+let inputDataManagedLocks = {
+  windows: false,
+  audio: false,
+  systemAudio: false,
+  screen: false
+};
+let managedAppSettings = null;
+let lastManagedSettingsSignature = null;
+let lastManualPauseAllowed = true;
+const LOCKED_TOOLTIP = 'Managed by your organization';
+const MASKED_SECRET = '************************';
+const MANAGED_LIST_MODE_FIXED = 'fixed';
+const MANAGED_LIST_MODE_MINIMUM = 'minimum';
+const MANAGED_INPUT_ENABLED = 'enabled';
+const MANAGED_INPUT_OPTIONAL = 'optional';
+const MANAGED_INPUT_DISABLED = 'disabled';
+const llmManagedLocks = {
+  gemini: false,
+  openAICompatible: false
+};
+let applyAppExclusionsManagedConfig = null;
+let applyContextCaptureManagedConfig = null;
+let applySaveCaptureManagedConfig = null;
+
+function isManagedValue(value) {
+  return value !== null && value !== undefined;
+}
+
+function normalizeBoolOrNull(value) {
+  if (!isManagedValue(value)) return null;
+  return !!value;
+}
+
+function normalizeManagedInputState(value) {
+  if (!isManagedValue(value)) return null;
+  if (value === MANAGED_INPUT_ENABLED || value === MANAGED_INPUT_OPTIONAL || value === MANAGED_INPUT_DISABLED) {
+    return value;
+  }
+  if (value === true) return MANAGED_INPUT_ENABLED;
+  if (value === false) return MANAGED_INPUT_DISABLED;
+  return null;
+}
+
+function isManagedInputStateForced(value) {
+  return value === MANAGED_INPUT_ENABLED || value === MANAGED_INPUT_DISABLED;
+}
+
+function resolveInputDataValue(managedState, storedValue, fallbackValue) {
+  if (managedState === MANAGED_INPUT_ENABLED) return true;
+  if (managedState === MANAGED_INPUT_DISABLED) return false;
+  return storedValue != null ? !!storedValue : fallbackValue;
+}
+
+function normalizeManagedListMode(value, fallback = MANAGED_LIST_MODE_FIXED) {
+  if (value === MANAGED_LIST_MODE_MINIMUM) return MANAGED_LIST_MODE_MINIMUM;
+  if (value === MANAGED_LIST_MODE_FIXED) return MANAGED_LIST_MODE_FIXED;
+  return fallback;
+}
+
+function normalizeTitlePatterns(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((pattern) => typeof pattern === 'string')
+    .map((pattern) => pattern.trim())
+    .filter((pattern) => pattern.length > 0);
+}
+
+function normalizeAppExclusions(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const appName = typeof item.appName === 'string' ? item.appName.trim() : '';
+      if (!appName) return null;
+      return {
+        appName,
+        titlePatterns: normalizeTitlePatterns(item.titlePatterns),
+        ignoreActivity: !!item.ignoreActivity
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeContextApps(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const appName = typeof item.appName === 'string' ? item.appName.trim() : '';
+      if (!appName) return null;
+      return {
+        appName,
+        titlePatterns: normalizeTitlePatterns(item.titlePatterns)
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeManagedAppExclusionsConfig(value) {
+  if (!isManagedValue(value)) return null;
+  if (Array.isArray(value)) {
+    return {
+      mode: MANAGED_LIST_MODE_FIXED,
+      entries: normalizeAppExclusions(value)
+    };
+  }
+  if (!value || typeof value !== 'object') return null;
+  const hasExplicitConfig =
+    isManagedValue(value.mode) ||
+    isManagedValue(value.entries) ||
+    isManagedValue(value.list) ||
+    isManagedValue(value.apps);
+  if (!hasExplicitConfig) return null;
+
+  const entries = normalizeAppExclusions(
+    value.entries ?? value.list ?? value.apps ?? []
+  );
+  return {
+    mode: normalizeManagedListMode(value.mode, MANAGED_LIST_MODE_FIXED),
+    entries
+  };
+}
+
+function normalizeManagedContextCaptureConfig(value) {
+  if (!isManagedValue(value)) return null;
+  if (!value || typeof value !== 'object') return null;
+  const hasExplicitConfig =
+    isManagedValue(value.enabled) ||
+    isManagedValue(value.mode) ||
+    isManagedValue(value.apps) ||
+    isManagedValue(value.entries) ||
+    isManagedValue(value.list);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: normalizeBoolOrNull(value.enabled),
+    mode: normalizeManagedListMode(value.mode, MANAGED_LIST_MODE_FIXED),
+    apps: normalizeContextApps(value.apps ?? value.entries ?? value.list ?? [])
+  };
+}
+
+function normalizeManagedSaveCaptureDataConfig(value) {
+  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
+  const hasExplicitConfig = isManagedValue(value.enabled) || isManagedValue(value.path);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: normalizeBoolOrNull(value.enabled),
+    path: typeof value.path === 'string' ? value.path.trim() : null
+  };
+}
+
+function normalizeManagedGeminiConfig(value) {
+  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
+  const hasExplicitConfig = isManagedValue(value.enabled) || isManagedValue(value.apiKey);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: normalizeBoolOrNull(value.enabled),
+    apiKey: typeof value.apiKey === 'string' ? value.apiKey.trim() : null
+  };
+}
+
+function normalizeManagedOpenAICompatibleConfig(value) {
+  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
+  const hasExplicitConfig =
+    isManagedValue(value.enabled) || isManagedValue(value.endpoint) || isManagedValue(value.model) || isManagedValue(value.apiKey);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: normalizeBoolOrNull(value.enabled),
+    endpoint: typeof value.endpoint === 'string' ? value.endpoint.trim() : null,
+    model: typeof value.model === 'string' ? value.model.trim() : null,
+    apiKey: typeof value.apiKey === 'string' ? value.apiKey.trim() : null
+  };
+}
+
+function normalizeAppSettings(raw) {
+  const recordingRaw = raw?.recording;
+  const captureRaw = raw?.capture;
+  const localRaw = raw?.localProcessing;
+
+  const appExclusions = normalizeManagedAppExclusionsConfig(captureRaw?.appExclusions);
+  const contextCapture = normalizeManagedContextCaptureConfig(captureRaw?.contextCapture);
+
+  const saveCaptureData = normalizeManagedSaveCaptureDataConfig(captureRaw?.saveCaptureData);
+  const gemini = normalizeManagedGeminiConfig(localRaw?.gemini);
+  const openAICompatible = normalizeManagedOpenAICompatibleConfig(localRaw?.openAICompatible);
+
+  return {
+    recording: {
+      manualPauseEnabled: normalizeBoolOrNull(recordingRaw?.manualPauseEnabled)
+    },
+    capture: {
+      inputData: {
+        windows: normalizeManagedInputState(captureRaw?.inputData?.windows),
+        audio: normalizeManagedInputState(captureRaw?.inputData?.audio),
+        systemAudio: normalizeManagedInputState(captureRaw?.inputData?.systemAudio),
+        screen: normalizeManagedInputState(captureRaw?.inputData?.screen)
+      },
+      appExclusions,
+      contextCapture,
+      saveCaptureData
+    },
+    localProcessing: {
+      gemini,
+      openAICompatible
+    }
+  };
+}
+
+function setManagedCardLock(elementOrId, locked, tooltip = LOCKED_TOOLTIP) {
+  const element = typeof elementOrId === 'string'
+    ? document.getElementById(elementOrId)
+    : elementOrId;
+  if (!element) return;
+  element.classList.toggle('managed-locked-card', !!locked);
+  if (locked) {
+    element.title = tooltip;
+  } else {
+    element.removeAttribute('title');
+  }
+}
+
+function setManagedRowLock(checkbox, locked, tooltip = LOCKED_TOOLTIP) {
+  if (!checkbox) return;
+  const row = checkbox.closest('.flex.items-center.justify-between');
+  if (row) {
+    row.classList.toggle('managed-locked-row', !!locked);
+    if (locked) {
+      row.title = tooltip;
+    } else {
+      row.removeAttribute('title');
+    }
+  }
+}
+
+function applyManualPausePolicy(manualPauseEnabled) {
+  const isAllowed = manualPauseEnabled !== false;
+  try {
+    document.body.dataset.manualPauseAllowed = isAllowed ? 'true' : 'false';
+  } catch (_) {}
+  if (lastManualPauseAllowed !== isAllowed) {
+    lastManualPauseAllowed = isAllowed;
+    document.dispatchEvent(new CustomEvent('manual-pause-policy-updated', {
+      detail: { isAllowed }
+    }));
+  }
+}
+
+function pushManagedSettingsToMain() {
+  if (!managedAppSettings) return;
+  let signature = '';
+  try {
+    signature = JSON.stringify(managedAppSettings);
+  } catch (_) {
+    return;
+  }
+  if (signature === lastManagedSettingsSignature) return;
+  lastManagedSettingsSignature = signature;
+  ipcRenderer.send('apply-managed-app-settings', managedAppSettings);
+}
+
+function applyInputDataManagedLockUI() {
+  const audioCheckbox = document.getElementById('audioCheckbox');
+  const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
+  const screenCheckbox = document.getElementById('screenCheckbox');
+  const windowsCheckbox = document.getElementById('windowsCheckbox');
+
+  if (screenCheckbox) {
+    screenCheckbox.disabled = !!inputDataManagedLocks.screen;
+    setManagedRowLock(screenCheckbox, !!inputDataManagedLocks.screen);
+  }
+  if (windowsCheckbox) {
+    windowsCheckbox.disabled = !!inputDataManagedLocks.windows;
+    setManagedRowLock(windowsCheckbox, !!inputDataManagedLocks.windows);
+  }
+  if (audioCheckbox) {
+    audioCheckbox.disabled = !!inputDataManagedLocks.audio;
+    setManagedRowLock(audioCheckbox, !!inputDataManagedLocks.audio);
+  }
+  if (systemAudioCheckbox) {
+    const micOn = !!(audioCheckbox && audioCheckbox.checked) || !!inputData.audio;
+    const shouldLock = !!inputDataManagedLocks.systemAudio;
+    systemAudioCheckbox.disabled = shouldLock || !micOn;
+    setManagedRowLock(systemAudioCheckbox, shouldLock);
+  }
+}
 
 function emitCaptureStateUpdated() {
   document.dispatchEvent(new CustomEvent('capture-state-updated'));
@@ -177,6 +465,10 @@ async function handleCaptureToggleIntent(type, enabled) {
     return { success: false, reverted: false };
   }
 
+  if (inputDataManagedLocks[type]) {
+    return { success: false, reverted: true, managed: true };
+  }
+
   inputData[type] = enabled;
 
   try {
@@ -218,7 +510,7 @@ function setupVersionClickHandler() {
 // Set up Firestore listener for user settings
 function setupSettingsListener(userId) {
   // Stop any existing listener
-  stopSettingsListener();
+  stopSettingsListener(false);
   
   const userDoc = doc(db, 'settings', userId);
   
@@ -249,11 +541,26 @@ function setupSettingsListener(userId) {
 }
 
 // Stop the settings listener
-function stopSettingsListener() {
+function stopSettingsListener(resetManagedState = true) {
   if (settingsUnsubscribe) {
     settingsUnsubscribe();
     settingsUnsubscribe = null;
   }
+
+  if (!resetManagedState) return;
+
+  managedAppSettings = null;
+  lastManagedSettingsSignature = null;
+  inputDataManagedLocks = {
+    windows: false,
+    audio: false,
+    systemAudio: false,
+    screen: false
+  };
+  llmManagedLocks.gemini = false;
+  llmManagedLocks.openAICompatible = false;
+  applyManualPausePolicy(null);
+  try { ipcRenderer.send('apply-managed-app-settings', null); } catch (_) {}
 }
 
 /**
@@ -412,6 +719,21 @@ async function saveUserSettings(type, value) {
 }
 
 async function updateSettingsUI(settings) {
+  managedAppSettings = normalizeAppSettings(settings?.appSettings || null);
+  applyManualPausePolicy(managedAppSettings.recording.manualPauseEnabled);
+  pushManagedSettingsToMain();
+
+  if (typeof applyAppExclusionsManagedConfig === 'function') {
+    await applyAppExclusionsManagedConfig(managedAppSettings.capture.appExclusions);
+  }
+  if (typeof applyContextCaptureManagedConfig === 'function') {
+    await applyContextCaptureManagedConfig(managedAppSettings.capture.contextCapture);
+  }
+  if (typeof applySaveCaptureManagedConfig === 'function') {
+    await applySaveCaptureManagedConfig(managedAppSettings.capture.saveCaptureData);
+  }
+  await applyManagedLocalProcessingSettings(managedAppSettings.localProcessing);
+
   // Handle screenshots setting
   if (settings && typeof settings.storeScreenshots === 'boolean') {
     const screenshotsCheckbox = document.getElementById('screenshotsCheckbox');
@@ -425,13 +747,21 @@ async function updateSettingsUI(settings) {
   // Handle input data settings
   const loadedInputData = settings?.inputData || {};
   const prevInputData = { ...inputData };
+  const managedInputData = managedAppSettings.capture.inputData;
+  inputDataManagedLocks = {
+    windows: isManagedInputStateForced(managedInputData.windows),
+    audio: isManagedInputStateForced(managedInputData.audio),
+    systemAudio: isManagedInputStateForced(managedInputData.systemAudio),
+    screen: isManagedInputStateForced(managedInputData.screen)
+  };
+
   // Use persisted user toggle state; permissions are tracked separately.
   // Defaults: screen=true, systemAudio=false
   inputData = {
-    windows: loadedInputData.windows != null ? !!loadedInputData.windows : false,
-    audio: loadedInputData.audio != null ? !!loadedInputData.audio : false,
-    systemAudio: loadedInputData.systemAudio != null ? !!loadedInputData.systemAudio : false,
-    screen: loadedInputData.screen != null ? !!loadedInputData.screen : true
+    windows: resolveInputDataValue(managedInputData.windows, loadedInputData.windows, false),
+    audio: resolveInputDataValue(managedInputData.audio, loadedInputData.audio, false),
+    systemAudio: resolveInputDataValue(managedInputData.systemAudio, loadedInputData.systemAudio, false),
+    screen: resolveInputDataValue(managedInputData.screen, loadedInputData.screen, true)
   };
 
   // Compute and send only changed flags to main to avoid clobbering
@@ -456,10 +786,9 @@ async function updateSettingsUI(settings) {
   if (screenCheckbox) screenCheckbox.checked = inputData.screen;
   if (systemAudioCheckbox) {
     systemAudioCheckbox.checked = inputData.systemAudio;
-    // Visually disable if audio is off
-    systemAudioCheckbox.disabled = !inputData.audio;
   }
 
+  applyInputDataManagedLockUI();
   try { recomputeSystemAudioDependency(); } catch (_) {}
 
 
@@ -536,7 +865,7 @@ function setupSystemAudioDependency() {
 
   const applyState = () => {
     const micOn = !!(audioCheckbox && audioCheckbox.checked) || !!inputData.audio;
-    systemAudioCheckbox.disabled = !micOn;
+    systemAudioCheckbox.disabled = !!inputDataManagedLocks.systemAudio || !micOn;
     systemAudioCheckbox.title = micOn
       ? 'Meeting participants audio is controlled by your setting and permission state'
       : 'Enable microphone in settings to capture meeting participants';
@@ -557,10 +886,115 @@ function recomputeSystemAudioDependency() {
 
   const audioCheckbox = document.getElementById('audioCheckbox');
   const micOn = !!(audioCheckbox && audioCheckbox.checked) || !!inputData.audio;
-  systemAudioCheckbox.disabled = !micOn;
+  systemAudioCheckbox.disabled = !!inputDataManagedLocks.systemAudio || !micOn;
   systemAudioCheckbox.title = micOn
     ? 'Meeting participants audio is controlled by your setting and permission state'
     : 'Enable microphone in settings to capture meeting participants';
+  applyInputDataManagedLockUI();
+}
+
+async function applyManagedLocalProcessingSettings(localProcessing) {
+  const geminiSection = document.getElementById('geminiSettingsSection');
+  const openAiSection = document.getElementById('openAiCompatibleSettingsSection');
+  const llmSettingsCard = document.getElementById('llmSettingsCard');
+  const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
+  const toggleGeminiKeyBtn = document.getElementById('toggleGeminiKeyBtn');
+  const clearGeminiKeyBtn = document.getElementById('clearGeminiKeyBtn');
+  const openaiEndpointInput = document.getElementById('openaiEndpointInput');
+  const openaiModelInput = document.getElementById('openaiModelInput');
+  const openaiApiKeyInput = document.getElementById('openaiApiKeyInput');
+  const toggleOpenaiKeyBtn = document.getElementById('toggleOpenaiKeyBtn');
+  const clearOpenaiConfigBtn = document.getElementById('clearOpenaiConfigBtn');
+
+  const geminiManaged = isManagedValue(localProcessing?.gemini);
+  const openAiManaged = isManagedValue(localProcessing?.openAICompatible);
+  const llmManaged = geminiManaged || openAiManaged;
+  llmManagedLocks.gemini = llmManaged;
+  llmManagedLocks.openAICompatible = llmManaged;
+
+  setManagedCardLock(llmSettingsCard, llmManaged);
+  setManagedCardLock(geminiSection, llmManaged);
+  setManagedCardLock(openAiSection, llmManaged);
+
+  if (geminiApiKeyInput) geminiApiKeyInput.disabled = llmManaged;
+  if (toggleGeminiKeyBtn) toggleGeminiKeyBtn.disabled = llmManaged;
+  if (clearGeminiKeyBtn) clearGeminiKeyBtn.disabled = llmManaged;
+
+  if (openaiEndpointInput) openaiEndpointInput.disabled = llmManaged;
+  if (openaiModelInput) openaiModelInput.disabled = llmManaged;
+  if (openaiApiKeyInput) openaiApiKeyInput.disabled = llmManaged;
+  if (toggleOpenaiKeyBtn) toggleOpenaiKeyBtn.disabled = llmManaged;
+  if (clearOpenaiConfigBtn) clearOpenaiConfigBtn.disabled = llmManaged;
+
+  if (geminiManaged && geminiApiKeyInput) {
+    const config = localProcessing.gemini;
+    let hasKey = false;
+    if (config.enabled === false) {
+      hasKey = false;
+    } else if (isManagedValue(config.apiKey)) {
+      hasKey = !!config.apiKey;
+    } else {
+      try {
+        const result = await ipcRenderer.invoke('get-gemini-api-key');
+        hasKey = !!(result && result.success && result.apiKey);
+      } catch (_) {
+        hasKey = false;
+      }
+    }
+    geminiApiKeyInput.type = 'password';
+    geminiApiKeyInput.value = hasKey ? MASKED_SECRET : '';
+  } else if (!geminiManaged && geminiApiKeyInput) {
+    try {
+      const result = await ipcRenderer.invoke('get-gemini-api-key');
+      const hasKey = !!(result && result.success && result.apiKey);
+      geminiApiKeyInput.type = 'password';
+      geminiApiKeyInput.value = hasKey ? MASKED_SECRET : '';
+    } catch (_) {}
+  }
+
+  if (openAiManaged) {
+    const config = localProcessing.openAICompatible;
+    if (config.enabled === false) {
+      if (openaiEndpointInput) openaiEndpointInput.value = '';
+      if (openaiModelInput) openaiModelInput.value = '';
+      if (openaiApiKeyInput) {
+        openaiApiKeyInput.type = 'password';
+        openaiApiKeyInput.value = '';
+      }
+    } else {
+      let currentConfig = null;
+      try {
+        const result = await ipcRenderer.invoke('get-openai-compatible-config');
+        currentConfig = result?.success ? (result.config || null) : null;
+      } catch (_) {
+        currentConfig = null;
+      }
+
+      const endpointValue = isManagedValue(config.endpoint) ? config.endpoint : (currentConfig?.endpoint || '');
+      const modelValue = isManagedValue(config.model) ? config.model : (currentConfig?.model || '');
+      const hasApiKey = isManagedValue(config.apiKey)
+        ? !!config.apiKey
+        : !!currentConfig?.apiKey;
+
+      if (openaiEndpointInput) openaiEndpointInput.value = endpointValue;
+      if (openaiModelInput) openaiModelInput.value = modelValue;
+      if (openaiApiKeyInput) {
+        openaiApiKeyInput.type = 'password';
+        openaiApiKeyInput.value = hasApiKey ? MASKED_SECRET : '';
+      }
+    }
+  } else if (!openAiManaged) {
+    try {
+      const result = await ipcRenderer.invoke('get-openai-compatible-config');
+      const config = result?.success ? result.config : null;
+      if (openaiEndpointInput) openaiEndpointInput.value = config?.endpoint || '';
+      if (openaiModelInput) openaiModelInput.value = config?.model || '';
+      if (openaiApiKeyInput) {
+        openaiApiKeyInput.type = 'password';
+        openaiApiKeyInput.value = config?.apiKey ? MASKED_SECRET : '';
+      }
+    } catch (_) {}
+  }
 }
 
 
@@ -570,9 +1004,9 @@ function setupGeminiApiKeyListeners() {
   const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
   const toggleGeminiKeyBtn = document.getElementById('toggleGeminiKeyBtn');
   const clearGeminiKeyBtn = document.getElementById('clearGeminiKeyBtn');
-  const MASK = '************************'; // long placeholder for masked key
   let hasStoredKey = false;
   let isShowing = false;
+  let storedKeyCached = '';
   
   if (geminiApiKeyInput) {
     // On mount, check if a key exists and show masked
@@ -583,8 +1017,9 @@ function setupGeminiApiKeyListeners() {
         if (hasStoredKey) {
           storedKeyCached = result.apiKey || '';
         }
+        if (llmManagedLocks.gemini) return;
         if (hasStoredKey) {
-          geminiApiKeyInput.value = MASK;
+          geminiApiKeyInput.value = MASKED_SECRET;
           geminiApiKeyInput.type = 'password';
         }
       } catch (error) {
@@ -601,8 +1036,9 @@ function setupGeminiApiKeyListeners() {
     
     // Save API key on blur
     geminiApiKeyInput.addEventListener('blur', async () => {
+      if (llmManagedLocks.gemini) return;
       const raw = geminiApiKeyInput.value.trim();
-      if (hasStoredKey && !isShowing && raw === MASK) {
+      if (!isShowing && raw === MASKED_SECRET) {
         // Still masked, don't save
         return;
       }
@@ -617,7 +1053,7 @@ function setupGeminiApiKeyListeners() {
           hasStoredKey = true;
           storedKeyCached = apiKey;
           if (!isShowing) {
-            geminiApiKeyInput.value = MASK;
+            geminiApiKeyInput.value = MASKED_SECRET;
             geminiApiKeyInput.type = 'password';
           }
         } else {
@@ -637,18 +1073,22 @@ function setupGeminiApiKeyListeners() {
   
   if (toggleGeminiKeyBtn) {
     toggleGeminiKeyBtn.addEventListener('click', () => {
+      if (llmManagedLocks.gemini) return;
       const input = geminiApiKeyInput;
       if (input.type === 'password') {
         input.type = 'text';
         isShowing = true;
-        // Populate with real key if we have a stored one and field currently masked
-        if (hasStoredKey && input.value === MASK) {
+        // Populate with real key if field currently masked
+        if (input.value === MASKED_SECRET) {
           // Always refetch to ensure fresh value
           ipcRenderer.invoke('get-gemini-api-key').then((res) => {
             if (res && res.success && res.apiKey) {
+              hasStoredKey = true;
               storedKeyCached = res.apiKey;
               input.value = res.apiKey;
             } else {
+              hasStoredKey = false;
+              storedKeyCached = '';
               input.value = '';
             }
           }).catch(() => { input.value = ''; });
@@ -663,7 +1103,7 @@ function setupGeminiApiKeyListeners() {
         input.type = 'password';
         isShowing = false;
         if (hasStoredKey) {
-          input.value = MASK;
+          input.value = MASKED_SECRET;
         }
         toggleGeminiKeyBtn.innerHTML = `
           <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -677,6 +1117,7 @@ function setupGeminiApiKeyListeners() {
   
   if (clearGeminiKeyBtn) {
     clearGeminiKeyBtn.addEventListener('click', async () => {
+      if (llmManagedLocks.gemini) return;
       try {
         await ipcRenderer.invoke('clear-gemini-api-key');
         geminiApiKeyInput.value = '';
@@ -701,7 +1142,6 @@ function setupOpenAICompatibleListeners() {
   const openaiApiKeyInput = document.getElementById('openaiApiKeyInput');
   const toggleOpenaiKeyBtn = document.getElementById('toggleOpenaiKeyBtn');
   const clearOpenaiConfigBtn = document.getElementById('clearOpenaiConfigBtn');
-  const MASK = '************************';
   let hasStoredConfig = false;
   let isShowingKey = false;
   let storedConfig = { endpoint: null, model: null, apiKey: null };
@@ -714,6 +1154,7 @@ function setupOpenAICompatibleListeners() {
         if (result && result.success && result.config) {
           storedConfig = result.config;
           hasStoredConfig = !!(storedConfig.endpoint || storedConfig.model || storedConfig.apiKey);
+          if (llmManagedLocks.openAICompatible) return;
           if (storedConfig.endpoint) {
             openaiEndpointInput.value = storedConfig.endpoint;
           }
@@ -721,7 +1162,7 @@ function setupOpenAICompatibleListeners() {
             openaiModelInput.value = storedConfig.model;
           }
           if (storedConfig.apiKey) {
-            openaiApiKeyInput.value = MASK;
+            openaiApiKeyInput.value = MASKED_SECRET;
             openaiApiKeyInput.type = 'password';
           }
         }
@@ -732,14 +1173,23 @@ function setupOpenAICompatibleListeners() {
 
     // Save config on blur for all fields
     const saveConfig = async () => {
+      if (llmManagedLocks.openAICompatible) return;
       const endpoint = openaiEndpointInput.value.trim();
       const model = openaiModelInput.value.trim();
       const rawApiKey = openaiApiKeyInput.value.trim();
 
       let apiKey = null;
-      if (hasStoredConfig && !isShowingKey && rawApiKey === MASK) {
-        // Still masked, keep existing key
-        apiKey = storedConfig.apiKey;
+      if (!isShowingKey && rawApiKey === MASKED_SECRET) {
+        // Still masked, keep existing key from store (fresh fetch to avoid stale closure state)
+        try {
+          const latest = await ipcRenderer.invoke('get-openai-compatible-config');
+          const latestConfig = latest?.success ? (latest.config || {}) : {};
+          storedConfig = latestConfig;
+          hasStoredConfig = !!(latestConfig.endpoint || latestConfig.model || latestConfig.apiKey);
+          apiKey = latestConfig.apiKey || null;
+        } catch (_) {
+          apiKey = storedConfig.apiKey || null;
+        }
       } else if (rawApiKey) {
         apiKey = rawApiKey;
       }
@@ -755,7 +1205,7 @@ function setupOpenAICompatibleListeners() {
           hasStoredConfig = true;
           storedConfig = { endpoint, model, apiKey };
           if (apiKey && !isShowingKey) {
-            openaiApiKeyInput.value = MASK;
+            openaiApiKeyInput.value = MASKED_SECRET;
             openaiApiKeyInput.type = 'password';
           }
         } else {
@@ -777,13 +1227,21 @@ function setupOpenAICompatibleListeners() {
 
   if (toggleOpenaiKeyBtn) {
     toggleOpenaiKeyBtn.addEventListener('click', () => {
+      if (llmManagedLocks.openAICompatible) return;
       const input = openaiApiKeyInput;
       if (input.type === 'password') {
         input.type = 'text';
         isShowingKey = true;
-        // Populate with real key if we have a stored one and field currently masked
-        if (hasStoredConfig && storedConfig.apiKey && input.value === MASK) {
-          input.value = storedConfig.apiKey;
+        // Populate with real key if field is currently masked
+        if (input.value === MASKED_SECRET) {
+          ipcRenderer.invoke('get-openai-compatible-config').then((res) => {
+            const config = res?.success ? (res.config || {}) : {};
+            storedConfig = config;
+            hasStoredConfig = !!(config.endpoint || config.model || config.apiKey);
+            input.value = config.apiKey || '';
+          }).catch(() => {
+            input.value = '';
+          });
         }
         toggleOpenaiKeyBtn.innerHTML = `
           <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -795,7 +1253,7 @@ function setupOpenAICompatibleListeners() {
         input.type = 'password';
         isShowingKey = false;
         if (hasStoredConfig && storedConfig.apiKey) {
-          input.value = MASK;
+          input.value = MASKED_SECRET;
         }
         toggleOpenaiKeyBtn.innerHTML = `
           <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -809,6 +1267,7 @@ function setupOpenAICompatibleListeners() {
 
   if (clearOpenaiConfigBtn) {
     clearOpenaiConfigBtn.addEventListener('click', async () => {
+      if (llmManagedLocks.openAICompatible) return;
       try {
         await ipcRenderer.invoke('clear-openai-compatible-config');
         openaiEndpointInput.value = '';
@@ -896,11 +1355,13 @@ function setupAppExclusionsListeners() {
   if (!exclusionsList || !addBtn) return;
   
   let exclusions = [];
-  
-  // Load exclusions on mount
-  (async () => {
+  let exclusionsManaged = false;
+  let managedExclusionsMode = null;
+
+  async function loadExclusionsFromStore() {
     try {
       const result = await ipcRenderer.invoke('get-app-exclusions');
+      if (exclusionsManaged) return;
       if (result && result.success) {
         // Migrate old format (titlePattern) to new format (titlePatterns)
         exclusions = (result.exclusions || []).map(exclusion => {
@@ -921,7 +1382,37 @@ function setupAppExclusionsListeners() {
     } catch (error) {
       console.error('Error loading app exclusions:', error);
     }
-  })();
+  }
+
+  async function applyManagedExclusions(managedExclusionsConfig) {
+    if (!isManagedValue(managedExclusionsConfig)) {
+      exclusionsManaged = false;
+      managedExclusionsMode = null;
+      setManagedCardLock('appMaskingCard', false);
+      await loadExclusionsFromStore();
+      return;
+    }
+
+    const normalizedConfig = normalizeManagedAppExclusionsConfig(managedExclusionsConfig);
+    managedExclusionsMode = normalizedConfig?.mode || MANAGED_LIST_MODE_FIXED;
+    exclusionsManaged = managedExclusionsMode === MANAGED_LIST_MODE_FIXED;
+    setManagedCardLock('appMaskingCard', exclusionsManaged);
+
+    if (exclusionsManaged) {
+      exclusions = normalizedConfig?.entries || [];
+      renderExclusionsList();
+      return;
+    }
+
+    await loadExclusionsFromStore();
+  }
+
+  applyAppExclusionsManagedConfig = applyManagedExclusions;
+  if (managedAppSettings) {
+    applyManagedExclusions(managedAppSettings.capture.appExclusions);
+  } else {
+    loadExclusionsFromStore();
+  }
   
   // Render exclusions list
   function renderExclusionsList() {
@@ -1002,6 +1493,7 @@ function setupAppExclusionsListeners() {
           chipRemove.className = 'text-gray-500 hover:text-gray-700 ml-1';
           chipRemove.innerHTML = '×';
           chipRemove.addEventListener('click', () => {
+            if (exclusionsManaged) return;
             // Find the current index of this pattern (in case array changed)
             const currentIndex = titlePatterns.indexOf(pattern);
             if (currentIndex !== -1) {
@@ -1026,6 +1518,7 @@ function setupAppExclusionsListeners() {
       titlePatternInput.dataset.index = index;
       
       titlePatternInput.addEventListener('keydown', async (e) => {
+        if (exclusionsManaged) return;
         if (e.key === 'Enter' && titlePatternInput.value.trim()) {
           e.preventDefault();
           const newPattern = titlePatternInput.value.trim();
@@ -1040,6 +1533,7 @@ function setupAppExclusionsListeners() {
       });
       
       titlePatternInput.addEventListener('blur', async () => {
+        if (exclusionsManaged) return;
         // Also add on blur if there's a value
         if (titlePatternInput.value.trim() && !titlePatterns.includes(titlePatternInput.value.trim())) {
           titlePatterns.push(titlePatternInput.value.trim());
@@ -1075,6 +1569,7 @@ function setupAppExclusionsListeners() {
       ignoreActivityToggle.appendChild(toggleSlider);
       
       ignoreActivityCheckbox.addEventListener('change', async () => {
+        if (exclusionsManaged) return;
         const idx = parseInt(ignoreActivityCheckbox.dataset.index);
         if (exclusions[idx]) {
           exclusions[idx].ignoreActivity = ignoreActivityCheckbox.checked;
@@ -1094,6 +1589,7 @@ function setupAppExclusionsListeners() {
     // Add event listeners for app name inputs only (title patterns handled separately)
     exclusionsList.querySelectorAll('input[data-field="appName"]').forEach(input => {
       input.addEventListener('blur', async () => {
+        if (exclusionsManaged) return;
         const index = parseInt(input.dataset.index);
         if (exclusions[index]) {
           exclusions[index].appName = input.value.trim() || null;
@@ -1112,6 +1608,7 @@ function setupAppExclusionsListeners() {
     exclusionsList.querySelectorAll('button[data-index]').forEach(btn => {
       if (btn.textContent === '×') {
         btn.addEventListener('click', async () => {
+          if (exclusionsManaged) return;
           const index = parseInt(btn.dataset.index);
           exclusions.splice(index, 1);
           renderExclusionsList();
@@ -1123,11 +1620,15 @@ function setupAppExclusionsListeners() {
   
   // Save exclusions
   async function saveExclusions() {
+    if (exclusionsManaged) return;
     try {
       const result = await ipcRenderer.invoke('save-app-exclusions', exclusions);
       if (!result || !result.success) {
         console.error('Error saving app exclusions:', result?.error);
         showBanner(`Error saving exclusions: ${result?.error || 'Unknown error'}`, { title: 'Settings', sticky: true });
+      } else if (managedExclusionsMode === MANAGED_LIST_MODE_MINIMUM && Array.isArray(result.exclusions)) {
+        exclusions = result.exclusions;
+        renderExclusionsList();
       }
     } catch (error) {
       console.error('Error saving app exclusions:', error);
@@ -1137,6 +1638,7 @@ function setupAppExclusionsListeners() {
   
   // Add new exclusion
   addBtn.addEventListener('click', () => {
+    if (exclusionsManaged) return;
     exclusions.push({ appName: '', titlePatterns: [], ignoreActivity: false });
     renderExclusionsList();
     // Focus the new app name input
@@ -1149,6 +1651,7 @@ function setupAppExclusionsListeners() {
   // Test button
   if (testBtn && testResult && testIcon && testMessage && testScreenshots) {
     testBtn.addEventListener('click', async () => {
+      if (exclusionsManaged) return;
       try {
         testBtn.disabled = true;
         testBtn.textContent = 'Testing...';
@@ -1221,11 +1724,15 @@ function setupContextCaptureListeners() {
   if (!enabledCheckbox || !appsSection || !appsList || !addBtn) return;
 
   let contextApps = [];
+  let contextManaged = false;
+  let contextMode = null;
+  let contextEnabledManaged = false;
 
   async function loadContextCaptureState() {
     try {
       const enabledResult = await ipcRenderer.invoke('get-context-capture-enabled');
       const appsResult = await ipcRenderer.invoke('get-context-apps');
+      if (contextManaged) return;
       if (enabledResult?.success) {
         enabledCheckbox.checked = !!enabledResult.enabled;
       }
@@ -1241,6 +1748,45 @@ function setupContextCaptureListeners() {
       console.error('Error loading context capture state:', error);
     }
   }
+
+  async function applyManagedContextCapture(managedContextCaptureConfig) {
+    if (!isManagedValue(managedContextCaptureConfig)) {
+      contextManaged = false;
+      contextMode = null;
+      contextEnabledManaged = false;
+      enabledCheckbox.disabled = false;
+      setManagedCardLock('contextCaptureCard', false);
+      await loadContextCaptureState();
+      return;
+    }
+
+    const normalized = normalizeManagedContextCaptureConfig(managedContextCaptureConfig);
+    contextMode = normalized?.mode || MANAGED_LIST_MODE_FIXED;
+    contextManaged = contextMode === MANAGED_LIST_MODE_FIXED;
+    contextEnabledManaged = isManagedValue(normalized?.enabled);
+
+    setManagedCardLock('contextCaptureCard', contextManaged);
+    enabledCheckbox.disabled = contextManaged || contextEnabledManaged;
+
+    if (contextEnabledManaged) {
+      enabledCheckbox.checked = !!normalized.enabled;
+    }
+
+    if (contextManaged) {
+      contextApps = normalized?.apps || [];
+      appsSection.classList.toggle('hidden', !enabledCheckbox.checked);
+      renderContextAppsList();
+      return;
+    }
+
+    await loadContextCaptureState();
+    if (contextEnabledManaged) {
+      enabledCheckbox.checked = !!normalized.enabled;
+      appsSection.classList.toggle('hidden', !enabledCheckbox.checked);
+    }
+  }
+
+  applyContextCaptureManagedConfig = applyManagedContextCapture;
 
   function renderContextAppsList() {
     appsList.innerHTML = '';
@@ -1290,6 +1836,7 @@ function setupContextCaptureListeners() {
           chip.className = 'context-pattern-chip inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm';
           chip.innerHTML = `<span>${pattern}</span><button type="button" class="text-gray-500 hover:text-gray-700 ml-1 chip-remove">×</button>`;
           chip.querySelector('.chip-remove').addEventListener('click', () => {
+            if (contextManaged) return;
             const i = titlePatterns.indexOf(pattern);
             if (i !== -1) {
               titlePatterns.splice(i, 1);
@@ -1307,6 +1854,7 @@ function setupContextCaptureListeners() {
       titlePatternInput.placeholder = titlePatterns.length === 0 ? 'e.g. todos, projects' : 'Add another...';
       titlePatternInput.dataset.index = index;
       titlePatternInput.addEventListener('keydown', async (e) => {
+        if (contextManaged) return;
         if (e.key === 'Enter' && titlePatternInput.value.trim()) {
           e.preventDefault();
           const newPattern = titlePatternInput.value.trim();
@@ -1320,6 +1868,7 @@ function setupContextCaptureListeners() {
         }
       });
       titlePatternInput.addEventListener('blur', async () => {
+        if (contextManaged) return;
         if (titlePatternInput.value.trim() && !titlePatterns.includes(titlePatternInput.value.trim())) {
           titlePatterns.push(titlePatternInput.value.trim());
           contextApps[index].titlePatterns = titlePatterns;
@@ -1340,6 +1889,7 @@ function setupContextCaptureListeners() {
 
     appsList.querySelectorAll('input[data-field="appName"]').forEach((input) => {
       input.addEventListener('blur', async () => {
+        if (contextManaged) return;
         const index = parseInt(input.dataset.index);
         if (contextApps[index]) {
           contextApps[index].appName = input.value.trim() || '';
@@ -1355,6 +1905,7 @@ function setupContextCaptureListeners() {
     appsList.querySelectorAll('button[data-index]').forEach((btn) => {
       if (btn.textContent === '×') {
         btn.addEventListener('click', async () => {
+          if (contextManaged) return;
           const index = parseInt(btn.dataset.index);
           contextApps.splice(index, 1);
           renderContextAppsList();
@@ -1365,10 +1916,14 @@ function setupContextCaptureListeners() {
   }
 
   async function saveContextApps() {
+    if (contextManaged) return;
     try {
       const result = await ipcRenderer.invoke('save-context-apps', contextApps);
       if (!result?.success) {
         showBanner(`Error saving context apps: ${result?.error || 'Unknown error'}`, { title: 'Settings', sticky: true });
+      } else if (contextMode === MANAGED_LIST_MODE_MINIMUM && Array.isArray(result.apps)) {
+        contextApps = result.apps;
+        renderContextAppsList();
       }
     } catch (error) {
       console.error('Error saving context apps:', error);
@@ -1377,18 +1932,27 @@ function setupContextCaptureListeners() {
   }
 
   enabledCheckbox.addEventListener('change', async () => {
+    if (contextManaged || contextEnabledManaged) {
+      enabledCheckbox.checked = !enabledCheckbox.checked;
+      return;
+    }
     ipcRenderer.send('update-context-capture-enabled', enabledCheckbox.checked);
     appsSection.classList.toggle('hidden', !enabledCheckbox.checked);
   });
 
   addBtn.addEventListener('click', () => {
+    if (contextManaged) return;
     contextApps.push({ appName: '', titlePatterns: [] });
     renderContextAppsList();
     const newInput = appsList.querySelector(`input[data-index="${contextApps.length - 1}"][data-field="appName"]`);
     if (newInput) newInput.focus();
   });
 
-  loadContextCaptureState();
+  if (managedAppSettings) {
+    applyManagedContextCapture(managedAppSettings.capture.contextCapture);
+  } else {
+    loadContextCaptureState();
+  }
 }
 
 // Set up Wayland detection and show note if on Wayland
@@ -1416,21 +1980,69 @@ function setupSaveCaptureDataListeners() {
   const checkbox = document.getElementById('saveCaptureDataCheckbox');
   const pathSection = document.getElementById('saveCaptureDataPathSection');
   const pathInput = document.getElementById('saveCaptureDataPathInput');
+  const saveCaptureSection = document.getElementById('saveCaptureDataSection');
 
   if (!checkbox || !pathSection || !pathInput) return;
 
-  ipcRenderer.invoke('get-save-capture-data').then(({ enabled, path }) => {
-    checkbox.checked = !!enabled;
-    pathSection.classList.toggle('hidden', !enabled);
-    pathInput.value = path || 'Browse';
-  }).catch((e) => console.error('Error loading save capture data:', e));
+  let saveCaptureManaged = false;
+
+  async function loadSaveCaptureDataFromStore() {
+    try {
+      const { enabled, path } = await ipcRenderer.invoke('get-save-capture-data');
+      if (saveCaptureManaged) return;
+      checkbox.checked = !!enabled;
+      pathSection.classList.toggle('hidden', !enabled);
+      pathInput.value = path || 'Browse';
+    } catch (error) {
+      console.error('Error loading save capture data:', error);
+    }
+  }
+
+  async function applyManagedSaveCaptureData(managedSaveCaptureData) {
+    saveCaptureManaged = isManagedValue(managedSaveCaptureData);
+    setManagedCardLock(saveCaptureSection || 'saveCaptureDataSection', saveCaptureManaged);
+
+    if (saveCaptureManaged) {
+      let currentConfig = null;
+      try {
+        currentConfig = await ipcRenderer.invoke('get-save-capture-data');
+      } catch (_) {
+        currentConfig = null;
+      }
+      const effectiveEnabled = isManagedValue(managedSaveCaptureData.enabled)
+        ? !!managedSaveCaptureData.enabled
+        : !!currentConfig?.enabled;
+      const effectivePath = (isManagedValue(managedSaveCaptureData.path) && managedSaveCaptureData.path)
+        ? managedSaveCaptureData.path
+        : (currentConfig?.path || 'Browse');
+
+      checkbox.checked = effectiveEnabled;
+      pathSection.classList.toggle('hidden', !effectiveEnabled);
+      pathInput.value = effectivePath;
+      return;
+    }
+
+    await loadSaveCaptureDataFromStore();
+  }
+
+  applySaveCaptureManagedConfig = applyManagedSaveCaptureData;
+  if (managedAppSettings) {
+    applyManagedSaveCaptureData(managedAppSettings.capture.saveCaptureData);
+  } else {
+    loadSaveCaptureDataFromStore();
+  }
 
   checkbox.addEventListener('change', () => {
+    if (saveCaptureManaged) {
+      checkbox.checked = !checkbox.checked;
+      return;
+    }
     pathSection.classList.toggle('hidden', !checkbox.checked);
     ipcRenderer.send('updateSaveCaptureData', checkbox.checked);
   });
 
   pathInput.addEventListener('click', async () => {
+    if (saveCaptureManaged) return;
     try {
       const selected = await ipcRenderer.invoke('choose-capture-dump-folder');
       if (selected) {

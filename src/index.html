@@ -632,10 +632,10 @@
             </div>
           </div>
 
-          <div class="auth-card">
+          <div class="auth-card" id="llmSettingsCard">
             <div class="section-divider"><span class="section-divider-label">Bring your own LLM (optional)</span></div>
             <p class="text-sm text-gray-600 mb-4">Process screenshots and other raw data with your own LLM. Keys are encrypted and stored on your device. This only affects raw data. The processed data will still be synced to our servers and further analzed there to eg detect tasks.<br><br>You can further increase privacy by deleting intermediary data at the end of every day automatically in your settings in the dashboard.<br><br>Note that raw data shared with the chat will also be processed on our servers (and deleted after).</p>
-            <div class="mt-0">
+            <div class="mt-0" id="geminiSettingsSection">
               <div class="text-base font-semibold text-gray-800">Gemini API Key</div>
               <p class="text-xs text-gray-500 mb-3">Add your Google Gemini API key to process raw data directly with Gemini.</p>
               <div class="relative w-full">
@@ -648,7 +648,7 @@
                 <button id="clearGeminiKeyBtn" class="text-xs text-gray-500 hover:text-gray-700 underline">Clear API key</button>
               </div>
             </div>
-            <div class="mt-6">
+            <div class="mt-6" id="openAiCompatibleSettingsSection">
               <div class="text-base font-semibold text-gray-800">OpenAI-compatible API</div>
               <p class="text-xs text-gray-500 mb-3">Configure an OpenAI-compatible API endpoint. Local or cloud. Used when Gemini key is not available.</p>
               <p class="text-xs text-gray-500 mb-3">Note: Use a multimodal model that supports image and audio inputs (e.g. GPT-4o, Gemini). Need help? <a href="https://donethat.ai/support" class="underline support-link">Visit our support page</a>.</p>
@@ -697,7 +697,7 @@
 
           </div>
 
-          <div class="auth-card">
+          <div class="auth-card" id="appConfigCard">
             <div class="section-divider"><span class="section-divider-label">App config</span></div>
             <p class="text-sm text-gray-600 mb-4">Manage your application settings and logs.</p>
             
@@ -720,7 +720,7 @@
               </div>
 
               <!-- Logs Section -->
-              <div>
+              <div id="saveCaptureDataSection">
                 <div class="flex items-center justify-between mb-2">
                   <div>
                     <div class="text-base font-semibold text-gray-800">Save capture data to folder</div>

@@ -43,6 +43,237 @@ let isSystemSuspended = false;
 // Cache decrypted API keys/configs in memory to avoid decryption issues during hibernation
 let cachedGeminiApiKey = null;
 let cachedOpenAICompatibleConfig = null;
+let managedAppSettings = {
+  recording: {
+    manualPauseEnabled: null
+  },
+  capture: {
+    appExclusions: null,
+    contextCapture: null,
+    saveCaptureData: null
+  },
+  localProcessing: {
+    gemini: null,
+    openAICompatible: null
+  }
+};
+
+function isManagedValue(value) {
+  return value !== null && value !== undefined;
+}
+
+function normalizeManagedAppExclusions(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const appName = typeof item.appName === 'string' ? item.appName.trim() : '';
+      if (!appName) return null;
+      const titlePatterns = Array.isArray(item.titlePatterns)
+        ? item.titlePatterns
+          .filter((entry) => typeof entry === 'string')
+          .map((entry) => entry.trim())
+          .filter((entry) => !!entry)
+        : [];
+      return {
+        appName,
+        titlePatterns,
+        ignoreActivity: !!item.ignoreActivity
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeManagedContextApps(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const appName = typeof item.appName === 'string' ? item.appName.trim() : '';
+      if (!appName) return null;
+      const titlePatterns = Array.isArray(item.titlePatterns)
+        ? item.titlePatterns
+          .filter((entry) => typeof entry === 'string')
+          .map((entry) => entry.trim())
+          .filter((entry) => !!entry)
+        : [];
+      return { appName, titlePatterns };
+    })
+    .filter(Boolean);
+}
+
+function normalizeManagedListMode(value, fallback = 'fixed') {
+  if (value === 'minimum') return 'minimum';
+  if (value === 'fixed') return 'fixed';
+  return fallback;
+}
+
+function normalizeManagedAppExclusionsConfig(value) {
+  if (!isManagedValue(value)) return null;
+  if (Array.isArray(value)) {
+    return {
+      mode: 'fixed',
+      entries: normalizeManagedAppExclusions(value)
+    };
+  }
+  if (!value || typeof value !== 'object') return null;
+  const hasExplicitConfig =
+    isManagedValue(value.mode) ||
+    isManagedValue(value.entries) ||
+    isManagedValue(value.list) ||
+    isManagedValue(value.apps);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    mode: normalizeManagedListMode(value.mode, 'fixed'),
+    entries: normalizeManagedAppExclusions(value.entries ?? value.list ?? value.apps ?? [])
+  };
+}
+
+function normalizeManagedContextCaptureConfig(value) {
+  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
+  const hasExplicitConfig =
+    isManagedValue(value.enabled) ||
+    isManagedValue(value.mode) ||
+    isManagedValue(value.apps) ||
+    isManagedValue(value.entries) ||
+    isManagedValue(value.list);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: isManagedValue(value.enabled) ? !!value.enabled : null,
+    mode: normalizeManagedListMode(value.mode, 'fixed'),
+    apps: normalizeManagedContextApps(value.apps ?? value.entries ?? value.list ?? [])
+  };
+}
+
+function normalizeManagedSaveCaptureDataConfig(value) {
+  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
+  const hasExplicitConfig = isManagedValue(value.enabled) || isManagedValue(value.path);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: isManagedValue(value.enabled) ? !!value.enabled : null,
+    path: typeof value.path === 'string' ? value.path.trim() : null
+  };
+}
+
+function normalizeManagedGeminiConfig(value) {
+  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
+  const hasExplicitConfig = isManagedValue(value.enabled) || isManagedValue(value.apiKey);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: isManagedValue(value.enabled) ? !!value.enabled : null,
+    apiKey: typeof value.apiKey === 'string' ? value.apiKey.trim() : null
+  };
+}
+
+function normalizeManagedOpenAICompatibleConfig(value) {
+  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
+  const hasExplicitConfig =
+    isManagedValue(value.enabled) || isManagedValue(value.endpoint) || isManagedValue(value.model) || isManagedValue(value.apiKey);
+  if (!hasExplicitConfig) return null;
+
+  return {
+    enabled: isManagedValue(value.enabled) ? !!value.enabled : null,
+    endpoint: typeof value.endpoint === 'string' ? value.endpoint.trim() : null,
+    model: typeof value.model === 'string' ? value.model.trim() : null,
+    apiKey: typeof value.apiKey === 'string' ? value.apiKey.trim() : null
+  };
+}
+
+function buildManagedExclusionKey(item) {
+  const appName = String(item?.appName || '').trim().toLowerCase();
+  const patterns = Array.isArray(item?.titlePatterns)
+    ? [...item.titlePatterns].map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean).sort()
+    : [];
+  return `${appName}::${patterns.join('|')}`;
+}
+
+function mergeMinimumAppExclusions(userEntries, requiredEntries) {
+  const requiredMap = new Map();
+  for (const entry of requiredEntries) {
+    requiredMap.set(buildManagedExclusionKey(entry), entry);
+  }
+
+  const merged = [];
+  const consumed = new Set();
+  for (const entry of userEntries) {
+    const key = buildManagedExclusionKey(entry);
+    if (requiredMap.has(key)) {
+      merged.push(requiredMap.get(key));
+      consumed.add(key);
+    } else {
+      merged.push(entry);
+    }
+  }
+
+  for (const [key, entry] of requiredMap.entries()) {
+    if (!consumed.has(key)) {
+      merged.push(entry);
+    }
+  }
+
+  return normalizeManagedAppExclusions(merged);
+}
+
+function buildManagedContextAppKey(item) {
+  const appName = String(item?.appName || '').trim().toLowerCase();
+  const patterns = Array.isArray(item?.titlePatterns)
+    ? [...item.titlePatterns].map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean).sort()
+    : [];
+  return `${appName}::${patterns.join('|')}`;
+}
+
+function mergeMinimumContextApps(userEntries, requiredEntries) {
+  const requiredMap = new Map();
+  for (const entry of requiredEntries) {
+    requiredMap.set(buildManagedContextAppKey(entry), entry);
+  }
+
+  const merged = [];
+  const consumed = new Set();
+  for (const entry of userEntries) {
+    const key = buildManagedContextAppKey(entry);
+    if (requiredMap.has(key)) {
+      merged.push(requiredMap.get(key));
+      consumed.add(key);
+    } else {
+      merged.push(entry);
+    }
+  }
+
+  for (const [key, entry] of requiredMap.entries()) {
+    if (!consumed.has(key)) {
+      merged.push(entry);
+    }
+  }
+
+  return normalizeManagedContextApps(merged);
+}
+
+function normalizeManagedAppSettings(raw) {
+  const captureRaw = raw?.capture || {};
+  const localRaw = raw?.localProcessing || {};
+
+  return {
+    recording: {
+      manualPauseEnabled: isManagedValue(raw?.recording?.manualPauseEnabled)
+        ? !!raw.recording.manualPauseEnabled
+        : null
+    },
+    capture: {
+      appExclusions: normalizeManagedAppExclusionsConfig(captureRaw.appExclusions),
+      contextCapture: normalizeManagedContextCaptureConfig(captureRaw.contextCapture),
+      saveCaptureData: normalizeManagedSaveCaptureDataConfig(captureRaw.saveCaptureData)
+    },
+    localProcessing: {
+      gemini: normalizeManagedGeminiConfig(localRaw.gemini),
+      openAICompatible: normalizeManagedOpenAICompatibleConfig(localRaw.openAICompatible)
+    }
+  };
+}
 
 /**
  * Periodic state validator that ensures consistency after sleep/wake cycles.
@@ -228,6 +459,127 @@ function safeStoreOperation(operation, errorContext) {
   }
 }
 
+function isManualPauseAllowed() {
+  return managedAppSettings.recording.manualPauseEnabled !== false;
+}
+
+function isLocalProcessingManaged() {
+  return isManagedValue(managedAppSettings.localProcessing.gemini) ||
+    isManagedValue(managedAppSettings.localProcessing.openAICompatible);
+}
+
+function applyManagedAppSettings(rawSettings = null) {
+  managedAppSettings = normalizeManagedAppSettings(rawSettings || {});
+
+  if (isManagedValue(managedAppSettings.capture.appExclusions)) {
+    const exclusionConfig = managedAppSettings.capture.appExclusions;
+    safeStoreOperation(() => {
+      if (!store) return;
+      const existing = normalizeManagedAppExclusions(store.get('appExclusions') || []);
+      const nextExclusions = exclusionConfig.mode === 'minimum'
+        ? mergeMinimumAppExclusions(existing, exclusionConfig.entries)
+        : exclusionConfig.entries;
+      store.set('appExclusions', nextExclusions);
+    }, 'apply managed app exclusions');
+  }
+
+  if (isManagedValue(managedAppSettings.capture.contextCapture)) {
+    const contextCaptureConfig = managedAppSettings.capture.contextCapture;
+    safeStoreOperation(() => {
+      if (!store) return;
+      if (isManagedValue(contextCaptureConfig.enabled)) {
+        store.set('contextCaptureEnabled', !!contextCaptureConfig.enabled);
+      }
+      const existingApps = normalizeManagedContextApps(store.get('contextApps') || []);
+      const nextApps = contextCaptureConfig.mode === 'minimum'
+        ? mergeMinimumContextApps(existingApps, contextCaptureConfig.apps)
+        : contextCaptureConfig.apps;
+      store.set('contextApps', nextApps);
+    }, 'apply managed context capture');
+  }
+
+  if (isManagedValue(managedAppSettings.capture.saveCaptureData)) {
+    const saveCaptureConfig = managedAppSettings.capture.saveCaptureData;
+    safeStoreOperation(() => {
+      if (!store) return;
+      if (isManagedValue(saveCaptureConfig.enabled)) {
+        store.set('saveCaptureDataToFolder', !!saveCaptureConfig.enabled);
+      }
+      if (isManagedValue(saveCaptureConfig.path) && saveCaptureConfig.path) {
+        store.set('saveCaptureDataPath', saveCaptureConfig.path);
+      }
+    }, 'apply managed save capture data');
+  }
+
+  if (isManagedValue(managedAppSettings.localProcessing.gemini)) {
+    const geminiConfig = managedAppSettings.localProcessing.gemini;
+    const geminiEnabled = geminiConfig.enabled;
+    const geminiApiKeyManaged = isManagedValue(geminiConfig.apiKey);
+    if (geminiEnabled === false) {
+      safeStoreOperation(() => {
+        if (store) {
+          store.delete('geminiApiKey');
+        }
+      }, 'clear managed Gemini key');
+      cachedGeminiApiKey = null;
+    } else if (geminiApiKeyManaged && geminiConfig.apiKey) {
+      safeStoreOperation(() => {
+        if (store) {
+          store.set('geminiApiKey', encryptData(geminiConfig.apiKey));
+        }
+      }, 'apply managed Gemini key');
+      cachedGeminiApiKey = geminiConfig.apiKey;
+    } else if (geminiApiKeyManaged && !geminiConfig.apiKey) {
+      safeStoreOperation(() => {
+        if (store) {
+          store.delete('geminiApiKey');
+        }
+      }, 'clear managed Gemini key');
+      cachedGeminiApiKey = null;
+    }
+  }
+
+  if (isManagedValue(managedAppSettings.localProcessing.openAICompatible)) {
+    const openAiConfig = managedAppSettings.localProcessing.openAICompatible;
+    const openAiEnabled = openAiConfig.enabled;
+    const hasManagedEndpoint = isManagedValue(openAiConfig.endpoint);
+    const hasManagedModel = isManagedValue(openAiConfig.model);
+    const hasManagedApiKey = isManagedValue(openAiConfig.apiKey);
+    const hasManagedField = hasManagedEndpoint || hasManagedModel || hasManagedApiKey;
+    if (openAiEnabled === false) {
+      safeStoreOperation(() => {
+        if (store) {
+          store.delete('openaiCompatibleConfig');
+        }
+      }, 'clear managed OpenAI-compatible config');
+      cachedOpenAICompatibleConfig = null;
+    } else if (openAiEnabled === true || hasManagedField) {
+      const existingConfig = getOpenAICompatibleConfig() || {};
+      const nextConfig = {
+        endpoint: hasManagedEndpoint ? (openAiConfig.endpoint || null) : (existingConfig.endpoint || null),
+        model: hasManagedModel ? (openAiConfig.model || null) : (existingConfig.model || null),
+        apiKey: hasManagedApiKey ? (openAiConfig.apiKey || null) : (existingConfig.apiKey || null)
+      };
+      safeStoreOperation(() => {
+        if (store) {
+          store.set('openaiCompatibleConfig', {
+            endpoint: nextConfig.endpoint,
+            model: nextConfig.model,
+            apiKey: nextConfig.apiKey ? encryptData(nextConfig.apiKey) : null
+          });
+        }
+      }, 'apply managed OpenAI-compatible config');
+      cachedOpenAICompatibleConfig = nextConfig;
+    }
+  }
+
+  try { require('./processLocal').resetLLMModels(); } catch (_) {}
+
+  if (checkAndAdjustRecording) {
+    checkAndAdjustRecording();
+  }
+}
+
 /**
  * Initialize the state manager
  * @param {Object} options Configuration options
@@ -278,6 +630,7 @@ async function initState(options = {}) {
       hasScreenCapturePermission: () => hasScreenCapturePermission,
       isAuthenticated: () => Boolean(idToken),
       hasValidAccess: () => userStatus === 'active',
+      isManualPauseAllowed,
       getIdToken: () => {
         return idToken;
       },
@@ -962,6 +1315,9 @@ function setupIPCHandlers() {
 
   // From dashboard
   ipcMain.on('pauseUntilTomorrow', (event) => {
+    if (!isManualPauseAllowed()) {
+      return;
+    }
     const mainWindow = event.sender.getOwnerBrowserWindow();
     pauseUntilNextWorkPeriod(mainWindow);
   });
@@ -1020,6 +1376,14 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.on('apply-managed-app-settings', (_event, payload) => {
+    try {
+      applyManagedAppSettings(payload || null);
+    } catch (error) {
+      log.error('Failed to apply managed app settings:', error);
+    }
+  });
+
   // Linux screenshot command handlers
   ipcMain.handle('save-linux-screenshot-command', async (event, command) => {
     try {
@@ -1069,6 +1433,9 @@ function setupIPCHandlers() {
   // Gemini API key handlers
   ipcMain.handle('save-gemini-api-key', async (event, apiKey) => {
     try {
+      if (isLocalProcessingManaged()) {
+        throw new Error('LLM settings are managed by your organization');
+      }
       if (!apiKey || typeof apiKey !== 'string') {
         throw new Error('Invalid API key provided');
       }
@@ -1109,6 +1476,9 @@ function setupIPCHandlers() {
 
   ipcMain.handle('clear-gemini-api-key', async (event) => {
     try {
+      if (isLocalProcessingManaged()) {
+        throw new Error('LLM settings are managed by your organization');
+      }
       safeStoreOperation(() => {
         if (store) {
           store.delete('geminiApiKey');
@@ -1132,6 +1502,9 @@ function setupIPCHandlers() {
   // OpenAI-compatible config handlers
   ipcMain.handle('save-openai-compatible-config', async (event, config) => {
     try {
+      if (isLocalProcessingManaged()) {
+        throw new Error('LLM settings are managed by your organization');
+      }
       if (!config || typeof config !== 'object') {
         throw new Error('Invalid config provided');
       }
@@ -1193,6 +1566,9 @@ function setupIPCHandlers() {
 
   ipcMain.handle('clear-openai-compatible-config', async (event) => {
     try {
+      if (isLocalProcessingManaged()) {
+        throw new Error('LLM settings are managed by your organization');
+      }
       safeStoreOperation(() => {
         if (store) {
           store.delete('openaiCompatibleConfig');
@@ -1305,17 +1681,25 @@ function setupIPCHandlers() {
 
   ipcMain.handle('save-app-exclusions', async (event, exclusions) => {
     try {
+      const managedExclusionConfig = managedAppSettings.capture.appExclusions;
+      if (isManagedValue(managedExclusionConfig) && managedExclusionConfig.mode === 'fixed') {
+        throw new Error('App exclusions are managed by your organization');
+      }
       if (!Array.isArray(exclusions)) {
         throw new Error('Exclusions must be an array');
       }
+      const normalizedExclusions = normalizeManagedAppExclusions(exclusions);
+      const mergedExclusions = (isManagedValue(managedExclusionConfig) && managedExclusionConfig.mode === 'minimum')
+        ? mergeMinimumAppExclusions(normalizedExclusions, managedExclusionConfig.entries)
+        : normalizedExclusions;
       safeStoreOperation(() => {
         if (store) {
-          store.set('appExclusions', exclusions);
+          store.set('appExclusions', mergedExclusions);
         } else {
           throw new Error('Store not initialized');
         }
       }, 'save app exclusions');
-      return { success: true };
+      return { success: true, exclusions: mergedExclusions };
     } catch (error) {
       log.error('Error saving app exclusions:', error);
       return { success: false, error: error.message };
@@ -1391,6 +1775,10 @@ function setupIPCHandlers() {
   });
 
   ipcMain.on('update-context-capture-enabled', (event, enabled) => {
+    const managedContextConfig = managedAppSettings.capture.contextCapture;
+    if (isManagedValue(managedContextConfig?.enabled)) {
+      return;
+    }
     safeStoreOperation(() => {
       if (store) store.set('contextCaptureEnabled', !!enabled);
     }, 'save contextCaptureEnabled');
@@ -1407,14 +1795,22 @@ function setupIPCHandlers() {
 
   ipcMain.handle('save-context-apps', async (event, apps) => {
     try {
+      const managedContextConfig = managedAppSettings.capture.contextCapture;
+      if (isManagedValue(managedContextConfig) && managedContextConfig.mode === 'fixed') {
+        throw new Error('Context capture settings are managed by your organization');
+      }
       if (!Array.isArray(apps)) {
         throw new Error('Context apps must be an array');
       }
+      const normalizedApps = normalizeManagedContextApps(apps);
+      const mergedApps = (isManagedValue(managedContextConfig) && managedContextConfig.mode === 'minimum')
+        ? mergeMinimumContextApps(normalizedApps, managedContextConfig.apps)
+        : normalizedApps;
       safeStoreOperation(() => {
-        if (store) store.set('contextApps', apps);
+        if (store) store.set('contextApps', mergedApps);
         else throw new Error('Store not initialized');
       }, 'save contextApps');
-      return { success: true };
+      return { success: true, apps: mergedApps };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -1438,18 +1834,27 @@ function setupIPCHandlers() {
   });
 
   ipcMain.on('updateSaveCaptureData', (event, enabled) => {
+    if (isManagedValue(managedAppSettings.capture.saveCaptureData)) {
+      return;
+    }
     safeStoreOperation(() => {
       if (store) store.set('saveCaptureDataToFolder', !!enabled);
     }, 'save saveCaptureDataToFolder');
   });
 
   ipcMain.on('updateSaveCaptureDataPath', (event, dumpPath) => {
+    if (isManagedValue(managedAppSettings.capture.saveCaptureData)) {
+      return;
+    }
     safeStoreOperation(() => {
       if (store && typeof dumpPath === 'string') store.set('saveCaptureDataPath', dumpPath.trim());
     }, 'save saveCaptureDataPath');
   });
 
   ipcMain.handle('choose-capture-dump-folder', async (event) => {
+    if (isManagedValue(managedAppSettings.capture.saveCaptureData)) {
+      return null;
+    }
     try {
       const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
       const bw = win && !win.isDestroyed() ? win : BrowserWindow.getFocusedWindow();
@@ -1755,6 +2160,8 @@ function resetSessionState() {
   
   // Reset user status to default (avoid showing inactive when logged out)
   userStatus = 'active';
+
+  managedAppSettings = normalizeManagedAppSettings(null);
 }
 
 /**
@@ -1990,6 +2397,7 @@ module.exports = {
   resetSessionState,
   isSystemIdle,
   clearSystemIdleFlags,
+  isManualPauseAllowed,
   getGeminiApiKey,
   getOpenAICompatibleConfig,
   getAutoSubmit: () => autoSubmit

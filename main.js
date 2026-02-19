@@ -462,6 +462,9 @@ function dispatchNotificationAction(action) {
   if (!channel) return;
 
   if (channel === 'resumeRecording') {
+    if (stateManager?.isManualPauseAllowed && !stateManager.isManualPauseAllowed()) {
+      return;
+    }
     startRecording();
     return;
   }
@@ -595,9 +598,15 @@ ipcMain.handle('get-debug-flag', () => {
 
 // Recording control handlers for renderer topbar
 ipcMain.on('pauseForMs', (event, ms) => {
+  if (stateManager?.isManualPauseAllowed && !stateManager.isManualPauseAllowed()) {
+    return;
+  }
   try { stateManager?.pauseRecording(Number(ms), mainWindow); } catch (e) {}
 });
 ipcMain.on('pauseForToday', () => {
+  if (stateManager?.isManualPauseAllowed && !stateManager.isManualPauseAllowed()) {
+    return;
+  }
   try { stateManager?.pauseUntilNextWorkPeriod(mainWindow); } catch (e) {}
 });
 ipcMain.on('logout-request', () => {
@@ -1321,7 +1330,7 @@ function createApplicationMenu() {
   const isPaused = stateManager?.isPaused() ?? false;
   const hasPermission = stateManager?.hasScreenCapturePermission() ?? false;
   const hasValidAccess = stateManager?.hasValidAccess() ?? false;
-  const isMac = process.platform === 'darwin';
+  const manualPauseAllowed = stateManager?.isManualPauseAllowed ? stateManager.isManualPauseAllowed() : true;
   
   const template = [];
   
@@ -1362,32 +1371,32 @@ function createApplicationMenu() {
       {
         label: 'Pause for 5 minutes',
         click: () => stateManager?.pauseRecording(5 * 60 * 1000, mainWindow),
-        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
       },
       {
         label: 'Pause for 15 minutes',
         click: () => stateManager?.pauseRecording(15 * 60 * 1000, mainWindow),
-        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
       },
       {
         label: 'Pause for 30 minutes',
         click: () => stateManager?.pauseRecording(30 * 60 * 1000, mainWindow),
-        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
       },
       {
         label: 'Pause for 1 hour',
         click: () => stateManager?.pauseRecording(60 * 60 * 1000, mainWindow),
-        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
       },
       {
         label: 'Pause for today',
         click: () => stateManager?.pauseUntilNextWorkPeriod(mainWindow),
-        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+        enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
       },
       {
         label: 'Resume',
         click: () => startRecording(),
-        enabled: isLoggedIn && isPaused && hasPermission && hasValidAccess
+        enabled: isLoggedIn && isPaused && hasPermission && hasValidAccess && manualPauseAllowed
       }
     ]
   };
@@ -1468,6 +1477,7 @@ function buildContextMenu() {
   const isPaused = stateManager?.isPaused() ?? false;
   const hasPermission = stateManager?.hasScreenCapturePermission() ?? false;
   const hasValidAccess = stateManager?.hasValidAccess() ?? false;
+  const manualPauseAllowed = stateManager?.isManualPauseAllowed ? stateManager.isManualPauseAllowed() : true;
 
   // Start with basic template
   const template = []
@@ -1508,32 +1518,32 @@ function buildContextMenu() {
     {
       label: 'Pause for 5 minutes',
       click: () => stateManager?.pauseRecording(5 * 60 * 1000, mainWindow),
-      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
     },
     {
       label: 'Pause for 15 minutes',
       click: () => stateManager?.pauseRecording(15 * 60 * 1000, mainWindow),
-      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
     },
     {
       label: 'Pause for 30 minutes',
       click: () => stateManager?.pauseRecording(30 * 60 * 1000, mainWindow),
-      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
     },
     {
       label: 'Pause for 1 hour',
       click: () => stateManager?.pauseRecording(60 * 60 * 1000, mainWindow),
-      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
     },
     {
       label: 'Pause for today',
       click: () => stateManager?.pauseUntilNextWorkPeriod(mainWindow),
-      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess
+      enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
     },
     {
       label: 'Resume',
       click: () => startRecording(),
-      enabled: isLoggedIn && isPaused && hasPermission && hasValidAccess
+      enabled: isLoggedIn && isPaused && hasPermission && hasValidAccess && manualPauseAllowed
     }
   )
 
@@ -1619,6 +1629,9 @@ function checkAndAdjustRecording() {
 
 // Add IPC handler for resume action
 ipcMain.on('resumeRecording', (event) => {
+  if (stateManager?.isManualPauseAllowed && !stateManager.isManualPauseAllowed()) {
+    return;
+  }
   startRecording();
 });
 

@@ -28,6 +28,7 @@ const validSendChannels = [
   'updateSaveCaptureData',
   'updateSaveCaptureDataPath',
   'update-context-capture-enabled',
+  'apply-managed-app-settings',
   'updateWorkhours',
   'updateWorkdays',
   'audio-device-changed',
