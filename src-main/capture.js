@@ -34,6 +34,13 @@ let systemAudioPermissionFocusListener = null;
 const WINDOW_CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 let lastWindowCacheCleanupAt = 0;
 
+function isValidImageDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false;
+  const commaIndex = dataUrl.indexOf(',');
+  if (commaIndex < 0) return false;
+  return dataUrl.slice(commaIndex + 1).trim().length > 0;
+}
+
 
 // Track input data settings
 let inputDataSettings = {
@@ -849,6 +856,12 @@ async function captureAndSend(idToken) {
       // Non-critical: if masking fails, continue with unmasked screenshots
       log.warn('Error applying app exclusions to screenshots:', error);
     }
+
+    const validScreenshots = screenshots.filter((shot) => isValidImageDataUrl(shot));
+    if (validScreenshots.length !== screenshots.length) {
+      log.warn(`[capture] Dropped ${screenshots.length - validScreenshots.length} invalid screenshot(s) before diff`);
+    }
+    screenshots = validScreenshots;
 
     // Save for next cycle's diff comparison (must be after exclusions, before bounding boxes)
     saveCurrentScreenshot(screenshots);

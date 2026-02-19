@@ -13,8 +13,16 @@ const TOLERANCE = 5
  */
 function toDataUrl(val) {
   if (!val) return null
-  if (typeof val === 'string' && val.startsWith('data:image/')) return val
-  if (Buffer.isBuffer(val)) return `data:image/jpeg;base64,${val.toString('base64')}`
+  if (typeof val === 'string' && val.startsWith('data:image/')) {
+    const commaIndex = val.indexOf(',')
+    if (commaIndex < 0) return null
+    const payload = val.slice(commaIndex + 1).trim()
+    return payload.length > 0 ? val : null
+  }
+  if (Buffer.isBuffer(val)) {
+    if (val.length === 0) return null
+    return `data:image/jpeg;base64,${val.toString('base64')}`
+  }
   return null
 }
 

@@ -21,9 +21,40 @@ let screenPermissionFocusListener = null
 const DEFAULT_LINUX_SCREENSHOT_COMMAND = `bash -c 'getOriginalAnimationSetting=$(gsettings get org.gnome.desktop.interface enable-animations); getOriginalSoundSetting=$(gsettings get org.gnome.desktop.sound event-sounds); gsettings set org.gnome.desktop.interface enable-animations false; gsettings set org.gnome.desktop.sound event-sounds false; gnome-screenshot -f "%s"; gsettings set org.gnome.desktop.interface enable-animations $getOriginalAnimationSetting; gsettings set org.gnome.desktop.sound event-sounds $getOriginalSoundSetting'`
 
 ///// UTILITIES /////
+function isValidImageDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
+  const commaIndex = dataUrl.indexOf(',')
+  if (commaIndex < 0) return false
+  const payload = dataUrl.slice(commaIndex + 1).trim()
+  return payload.length > 0
+}
+
+function filterValidScreenshots(screenshots, source = 'unknown') {
+  if (!Array.isArray(screenshots) || screenshots.length === 0) return []
+  const valid = screenshots.filter((shot) => isValidImageDataUrl(shot))
+  if (valid.length !== screenshots.length) {
+    log.warn(`Dropped ${screenshots.length - valid.length} invalid screenshot(s) from ${source}`)
+  }
+  return valid
+}
+
+function getSourceLogContext(source, index, caller) {
+  const thumbnailSize = source?.thumbnail?.getSize ? source.thumbnail.getSize() : {}
+  return {
+    caller,
+    sourceIndex: index,
+    sourceId: source?.id || 'unknown',
+    sourceName: source?.name || 'unknown',
+    displayId: source?.display_id || 'unknown',
+    thumbWidth: thumbnailSize?.width || 0,
+    thumbHeight: thumbnailSize?.height || 0
+  }
+}
+
 // Function to scale down a screenshot to the configured scale factor
 function scaleScreenshotToPreviousSize(dataUrl) {
   try {
+    if (!isValidImageDataUrl(dataUrl)) return dataUrl
     // Convert data URL to buffer
     const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
     const buffer = Buffer.from(base64Data, 'base64')
@@ -67,10 +98,15 @@ function getPreviousScreenshots(captureIntervalMinutes = null) {
   if (screenshotAge >= maxAge) {
     return null
   }
+
+  const validScreenshots = filterValidScreenshots(lastScreenshots, 'previous-cache')
+  if (validScreenshots.length === 0) {
+    return null
+  }
   
   return {
     timestamp: lastScreenshotTimestamp,
-    images: lastScreenshots.map((screenshot, index) => ({
+    images: validScreenshots.map((screenshot, index) => ({
       base64Data: screenshot,
       index
     }))
@@ -79,8 +115,9 @@ function getPreviousScreenshots(captureIntervalMinutes = null) {
 
 // Function to save the current screenshots for next upload
 function saveCurrentScreenshot(screenshots) {
-  if (screenshots && screenshots.length > 0) {
-    lastScreenshots = screenshots
+  const validScreenshots = filterValidScreenshots(screenshots, 'current-capture')
+  if (validScreenshots.length > 0) {
+    lastScreenshots = validScreenshots
     lastScreenshotTimestamp = Date.now()
   }
 }
@@ -231,11 +268,35 @@ async function captureScreenshot(options = {}) {
       }
       // Process each source
       screenshots = await Promise.all(
-        sources.map(async source => {
-          return await processScreenshotForUpload(source.thumbnail.toDataURL());
+        sources.map(async (source, index) => {
+          const context = getSourceLogContext(source, index, caller)
+          let rawDataUrl = null
+          try {
+            rawDataUrl = source.thumbnail.toDataURL()
+          } catch (error) {
+            log.warn('[screen-capture] Failed to read source thumbnail', {
+              ...context,
+              reason: 'thumbnail_to_data_url_error',
+              error: error?.message || String(error)
+            })
+            return null
+          }
+
+          if (!isValidImageDataUrl(rawDataUrl)) {
+            log.warn('[screen-capture] Source produced invalid thumbnail data URL', {
+              ...context,
+              reason: 'invalid_raw_data_url',
+              rawDataUrlLength: typeof rawDataUrl === 'string' ? rawDataUrl.length : 0,
+              rawDataUrlPrefix: typeof rawDataUrl === 'string' ? rawDataUrl.slice(0, 40) : ''
+            })
+          }
+
+          return await processScreenshotForUpload(rawDataUrl, context);
         })
       );
     }
+
+    screenshots = filterValidScreenshots(screenshots, 'capture')
     
     if (screenshots.length === 0) {
       log.warn('No screenshots captured');
@@ -296,17 +357,49 @@ async function captureScreenshotsLinux() {
 
 
 // Simplified function to process screenshots using only Electron's nativeImage
-async function processScreenshotForUpload(dataUrl) {
+async function processScreenshotForUpload(dataUrl, context = null) {
   try {
+    if (!isValidImageDataUrl(dataUrl)) {
+      log.warn('[screen-capture] processScreenshotForUpload received invalid data URL', {
+        ...(context || {}),
+        reason: 'invalid_data_url',
+        dataUrlLength: typeof dataUrl === 'string' ? dataUrl.length : 0,
+        dataUrlPrefix: typeof dataUrl === 'string' ? dataUrl.slice(0, 40) : ''
+      })
+      return null
+    }
     // Convert data URL to buffer
     const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+    if (!base64Data || base64Data.length === 0) {
+      log.warn('[screen-capture] Empty base64 payload after stripping data URL prefix', {
+        ...(context || {}),
+        reason: 'empty_base64_payload'
+      })
+      return null
+    }
     const buffer = Buffer.from(base64Data, 'base64')
+    if (!buffer || buffer.length === 0) {
+      log.warn('[screen-capture] Decoded image buffer is empty', {
+        ...(context || {}),
+        reason: 'empty_decoded_buffer',
+        base64Length: base64Data.length
+      })
+      return null
+    }
     
     // Create native image from buffer
     let img = nativeImage.createFromBuffer(buffer)
     
     // Get original dimensions
     const { width, height } = img.getSize()
+    if (!width || !height) {
+      log.warn('[screen-capture] nativeImage created with empty dimensions', {
+        ...(context || {}),
+        reason: 'empty_native_image',
+        decodedBufferLength: buffer.length
+      })
+      return null
+    }
     
     // Calculate new dimensions with 819px constraint on shorter edge
     let newWidth = width
@@ -337,13 +430,25 @@ async function processScreenshotForUpload(dataUrl) {
     // Convert to JPEG with 70% quality
     const jpegOptions = { quality: 70 }
     const jpegBuffer = img.toJPEG(jpegOptions.quality)
+    if (!jpegBuffer || jpegBuffer.length === 0) {
+      log.warn('[screen-capture] JPEG conversion returned empty buffer', {
+        ...(context || {}),
+        reason: 'empty_jpeg_buffer',
+        inputWidth: width,
+        inputHeight: height
+      })
+      return null
+    }
     
     // Convert back to data URL
     return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`
   } catch (error) {
-    console.error('Error processing screenshot:', error)
-    // Return original as fallback
-    return dataUrl
+    log.warn('[screen-capture] Error processing screenshot for upload', {
+      ...(context || {}),
+      reason: 'process_exception',
+      error: error?.message || String(error)
+    })
+    return null
   }
 }
 
