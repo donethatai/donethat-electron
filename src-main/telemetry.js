@@ -11,7 +11,6 @@ let pendingAggregate = createAggregate()
 let activeCycle = null
 const completedQueue = []
 let cycleSeq = 0
-let pendingLogs = []
 
 function createAggregate() {
   return {
@@ -43,10 +42,6 @@ function resetAggregate(target) {
 
 function getTargetAggregate() {
   return activeCycle ? activeCycle.aggregate : pendingAggregate
-}
-
-function getTargetLogs() {
-  return activeCycle ? activeCycle.logs : pendingLogs
 }
 
 function trimLogs(logs) {
@@ -104,7 +99,10 @@ function sanitizeMeta(meta = {}) {
 }
 
 function recordLog(level, source, message, meta = null) {
-  const logs = getTargetLogs()
+  if (!activeCycle || !Array.isArray(activeCycle.logs)) {
+    return
+  }
+  const logs = activeCycle.logs
   const entry = {
     ts: Date.now(),
     level: clampString(level, 'info', 16),
@@ -149,10 +147,9 @@ function beginCycle(metadata = {}) {
       captureIntervalMin: parsePositiveNumber(metadata.captureIntervalMin, 0)
     },
     aggregate: mergedAggregate,
-    logs: [...pendingLogs]
+    logs: []
   }
   trimLogs(activeCycle.logs)
-  pendingLogs = []
 }
 
 function recordCyclePhaseDuration(phase, durationMs) {

@@ -459,6 +459,9 @@
               <a href="https://donethat.ai/data" target="_blank" rel="noopener noreferrer" class="underline">Learn how data is processed</a>.
             </p>
             <div class="space-y-5 mb-6">
+              <div id="linuxInstallGuideNote" class="hidden text-xs text-gray-500">
+                Need Linux setup help? <a href="https://donethat.ai/install/linux" target="_blank" rel="noopener noreferrer" class="underline">Read the Linux install guide</a>.
+              </div>
               <div class="flex items-center justify-between">
                 <div>
                   <div class="text-base font-semibold text-gray-800">Screenshare</div>
@@ -475,7 +478,6 @@
               <div id="linuxScreenshotSection" class="hidden mt-4">
                 <h3 class="linux-section-heading">Screenshot Command</h3>
                 <p class="instruction-text text-sm mb-3">Taking background screenshots on Linux is not as easy as it sounds. Please adapt the script below to make it work on your installation. The command should capture all monitors merged into one image. The settings juggling in the default command deactivates the screenshot animation in Ubuntu. Changes are automatically saved.</p>
-                <p class="text-xs text-gray-500 mb-3">Need Linux setup help? <a href="https://donethat.ai/install/linux" target="_blank" rel="noopener noreferrer" class="underline">Read the Linux install guide</a>.</p>
                 
                 <div class="space-y-3">
                   <div>
@@ -510,18 +512,6 @@
                 </div>
               </div>
 
-              <div id="linuxAutostartSection" class="hidden">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <div class="text-base font-semibold text-gray-800">Start on login</div>
-                    <div class="text-xs text-gray-500">On Linux this creates <code>donethat.desktop</code> in your autostart folder and always launches with <code>--no-sandbox</code>.</div>
-                    <div id="linuxAutostartStatus" class="text-xs text-gray-500 mt-1 hidden"></div>
-                    <div id="linuxAutostartError" class="text-xs text-red-600 mt-1 hidden"></div>
-                  </div>
-                  <label class="toggle"><input type="checkbox" id="linuxAutostartCheckbox"><span class="slider"></span></label>
-                </div>
-              </div>
-
               <div class="flex items-center justify-between">
                 <div>
                   <div class="text-base font-semibold text-gray-800">Active applications</div>
@@ -532,10 +522,6 @@
                 </div>
                 <label class="toggle"><input type="checkbox" id="windowsCheckbox"><span class="slider"></span></label>
               </div>
-              <div id="waylandWindowsForcedOffNote" class="hidden mt-2 text-xs text-gray-500">
-                Active applications are disabled on Wayland because most compositors block app/window introspection.
-              </div>
-              
               <!-- Linux-specific windows permission notification (hidden by default) -->
               <div id="linuxWindowsSection" class="hidden mt-4">
                 <h3 class="linux-section-heading">Window Tracking Permission Required</h3>
@@ -552,11 +538,9 @@
               
               <!-- Wayland detection note (hidden by default) -->
               <div id="waylandNote" class="hidden mt-4">
-                <div class="p-3 rounded-lg" style="background-color: rgba(255, 182, 35, 0.1); border: 1px solid rgba(255, 182, 35, 0.3);">
-                  <p class="text-sm" style="color: rgb(230, 164, 32);">
-                    <strong>Note:</strong> You are on Wayland. Application detection doesn't work for most apps due to its security architecture. Your data will be less accurate.
-                  </p>
-                </div>
+                <p class="text-xs text-gray-500">
+                  <strong>Note:</strong> You are on Wayland. Application detection doesn't work for most apps due to its security architecture. Your data will be less accurate.
+                </p>
               </div>
             </div>
           </div>
@@ -748,6 +732,18 @@
                   <div class="mt-3">
                     <input type="text" id="saveCaptureDataPathInput" readonly class="form-input w-full text-sm py-2 px-3 text-gray-500 leading-none cursor-pointer hover:bg-gray-50" />
                   </div>
+                </div>
+              </div>
+
+              <div id="linuxAutostartSection" class="hidden">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-base font-semibold text-gray-800">Start on login</div>
+                    <div class="text-xs text-gray-500">On Linux this creates <code>donethat.desktop</code> in your autostart folder and always launches with <code>--no-sandbox</code>.</div>
+                    <div id="linuxAutostartStatus" class="text-xs text-gray-500 mt-1 hidden"></div>
+                    <div id="linuxAutostartError" class="text-xs text-red-600 mt-1 hidden"></div>
+                  </div>
+                  <label class="toggle"><input type="checkbox" id="linuxAutostartCheckbox"><span class="slider"></span></label>
                 </div>
               </div>
 

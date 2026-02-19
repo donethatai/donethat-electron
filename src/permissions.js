@@ -215,6 +215,10 @@ function showInlineLinuxNotification(sectionId) {
 
 function showLinuxScreenshotSection() {
   if (window.electronAPI.platform !== 'linux') return;
+  const linuxInstallGuideNote = document.getElementById('linuxInstallGuideNote');
+  if (linuxInstallGuideNote) {
+    linuxInstallGuideNote.classList.remove('hidden');
+  }
   const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
   if (linuxScreenshotSection) {
     linuxScreenshotSection.classList.remove('hidden');

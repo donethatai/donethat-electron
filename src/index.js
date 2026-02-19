@@ -262,6 +262,10 @@ function navigateToView(viewName) {
     
     // Show custom screenshot section on Linux when settings view is displayed
     if ((viewName === 'settings' || viewName === 'permissions') && window.electronAPI && window.electronAPI.platform === 'linux') {
+      const linuxInstallGuideNote = document.getElementById('linuxInstallGuideNote');
+      if (linuxInstallGuideNote) {
+        linuxInstallGuideNote.classList.remove('hidden');
+      }
       const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
       if (linuxScreenshotSection) {
         linuxScreenshotSection.classList.remove('hidden');

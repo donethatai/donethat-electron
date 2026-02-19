@@ -130,6 +130,7 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "resources/icon.icon",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "binaries": [
