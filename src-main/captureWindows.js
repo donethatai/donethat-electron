@@ -291,7 +291,6 @@ function applyBackoff() {
  */
 function resetBackoff() {
   if (consecutiveFailures > 0 || currentTrackingIntervalMs !== INITIAL_TRACKING_INTERVAL_MS) {
-    log.info('Window tracking succeeded. Resetting to normal interval.')
     consecutiveFailures = 0
     
     // Only reset interval if we're backing off significantly

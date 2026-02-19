@@ -212,6 +212,8 @@ let overlayPositionUserSet = false
 let overlayDisplayMetricsListener = null
 // Track update availability for Windows/Linux update button
 let updateAvailable = false
+const DESKTOP_NOTIFICATION_DEBOUNCE_MS = 8 * 60 * 60 * 1000
+const desktopNotificationHistory = new Map()
 
 // Deep-link auth flow coordination
 let pendingDeepLinkToken = null;
@@ -475,6 +477,35 @@ function dispatchNotificationAction(action) {
   }
 
   log.warn('Unknown desktop notification action channel:', channel);
+}
+
+function makeDesktopNotificationKey(payload) {
+  const title = String(payload?.title || 'DoneThat').trim()
+  const message = String(payload?.message || '').trim()
+  const actionChannel = String(payload?.action?.channel || '').trim()
+  const actionLabel = String(payload?.action?.label || '').trim()
+  return `${title}\n${message}\n${actionChannel}\n${actionLabel}`
+}
+
+function shouldSuppressDesktopNotification(payload) {
+  const now = Date.now()
+  const key = makeDesktopNotificationKey(payload)
+  const lastShownAt = desktopNotificationHistory.get(key)
+
+  if (typeof lastShownAt === 'number' && (now - lastShownAt) < DESKTOP_NOTIFICATION_DEBOUNCE_MS) {
+    return true
+  }
+
+  desktopNotificationHistory.set(key, now)
+
+  // Keep map bounded and fresh; remove entries older than debounce window.
+  for (const [historyKey, timestamp] of desktopNotificationHistory) {
+    if ((now - timestamp) >= DESKTOP_NOTIFICATION_DEBOUNCE_MS) {
+      desktopNotificationHistory.delete(historyKey)
+    }
+  }
+
+  return false
 }
 
 ////// AUTOUPDATER /////
@@ -911,6 +942,11 @@ app.whenReady().then(async () => {
   // Background notification handlers
   ipcMain.on('background:notify', (_event, payload) => {
     try {
+      if (shouldSuppressDesktopNotification(payload)) {
+        log.info('Suppressed duplicate desktop notification within 8h window')
+        return
+      }
+
       const { title, message, action } = payload || {};
       const notification = new Notification({
         title: title || 'DoneThat',

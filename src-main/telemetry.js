@@ -4,6 +4,7 @@ const { app } = require('electron')
 const TELEMETRY_SCHEMA_VERSION = 1
 const MAX_COMPLETED_QUEUE = 24
 const MAX_LOG_ENTRIES_PER_CYCLE = 50
+const MAX_LOG_ENTRIES_PER_CYCLE_DEBUG = 100
 const MAX_LOG_MESSAGE_CHARS = 600
 const MAX_LOG_META_LENGTH = 240
 
@@ -47,6 +48,10 @@ function getTargetAggregate() {
 
 function getTargetLogs() {
   return activeCycle ? activeCycle.logs : pendingLogs
+}
+
+function getMaxLogEntriesPerCycle() {
+  return app.isPackaged ? MAX_LOG_ENTRIES_PER_CYCLE : MAX_LOG_ENTRIES_PER_CYCLE_DEBUG
 }
 
 function parsePositiveNumber(value, fallback = 0) {
@@ -99,6 +104,7 @@ function sanitizeMeta(meta = {}) {
 
 function recordLog(level, source, message, meta = null) {
   const logs = getTargetLogs()
+  const maxLogEntriesPerCycle = getMaxLogEntriesPerCycle()
   const entry = {
     ts: Date.now(),
     level: clampString(level, 'info', 16),
@@ -112,7 +118,7 @@ function recordLog(level, source, message, meta = null) {
     }
   }
   logs.push(entry)
-  while (logs.length > MAX_LOG_ENTRIES_PER_CYCLE) {
+  while (logs.length > maxLogEntriesPerCycle) {
     logs.shift()
   }
 }
@@ -145,7 +151,7 @@ function beginCycle(metadata = {}) {
       captureIntervalMin: parsePositiveNumber(metadata.captureIntervalMin, 0)
     },
     aggregate: mergedAggregate,
-    logs: pendingLogs.slice(-MAX_LOG_ENTRIES_PER_CYCLE)
+    logs: pendingLogs.slice(-getMaxLogEntriesPerCycle())
   }
   pendingLogs = []
 }
@@ -273,7 +279,7 @@ function endCycle(metadata = {}) {
       external: memoryUsage ? Math.round((memoryUsage.external / (1024 * 1024)) * 100) / 100 : null
     },
     logs: Array.isArray(activeCycle.logs)
-      ? activeCycle.logs.slice(-MAX_LOG_ENTRIES_PER_CYCLE)
+      ? activeCycle.logs.slice(-getMaxLogEntriesPerCycle())
       : [],
     outcome: {
       status: clampString(metadata.status, 'unknown', 32),
