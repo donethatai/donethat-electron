@@ -629,7 +629,7 @@ ipcMain.on('pauseForToday', () => {
   if (stateManager?.isManualPauseAllowed && !stateManager.isManualPauseAllowed()) {
     return;
   }
-  try { stateManager?.pauseUntilNextWorkPeriod(mainWindow); } catch (e) {}
+  try { stateManager?.pauseForToday(mainWindow); } catch (e) {}
 });
 ipcMain.on('logout-request', () => {
   if (mainWindow) {
@@ -1403,7 +1403,7 @@ function createApplicationMenu() {
       },
       {
         label: 'Pause for today',
-        click: () => stateManager?.pauseUntilNextWorkPeriod(mainWindow),
+        click: () => stateManager?.pauseForToday(mainWindow),
         enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
       },
       {
@@ -1550,7 +1550,7 @@ function buildContextMenu() {
     },
     {
       label: 'Pause for today',
-      click: () => stateManager?.pauseUntilNextWorkPeriod(mainWindow),
+      click: () => stateManager?.pauseForToday(mainWindow),
       enabled: isLoggedIn && !isPaused && hasPermission && hasValidAccess && manualPauseAllowed
     },
     {

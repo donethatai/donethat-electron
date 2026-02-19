@@ -469,6 +469,137 @@ describe('pauseUntilNextWorkPeriod', () => {
   });
 });
 
+describe('pauseForToday', () => {
+  test('should pause until local midnight with pause-today reason', () => {
+    jest.useFakeTimers();
+
+    try {
+      const { pauseForToday, isPaused } = state;
+      const mockWindow = {
+        webContents: { send: jest.fn() },
+        show: jest.fn(),
+        focus: jest.fn(),
+        isDestroyed: () => false
+      };
+
+      const now = createTestDate(1, 22, 30);
+      jest.setSystemTime(now);
+
+      pauseForToday(mockWindow);
+
+      expect(isPaused()).toBe(true);
+
+      const savedPauseState = mockStore.get('pauseState');
+      expect(savedPauseState.reason).toBe('pause-today');
+
+      const expectedMidnight = new Date(now);
+      expectedMidnight.setHours(24, 0, 0, 0);
+      expect(savedPauseState.endTime).toBe(expectedMidnight.getTime());
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('pause-today should survive resume() when in active work period', () => {
+    jest.useFakeTimers();
+
+    try {
+      setWorkdaysInStore([1, 2, 3, 4, 5]);
+      setWorkhoursInStore('09:00', '17:00');
+      mainStateModule.loadWorkSettings();
+
+      const { pauseForToday, resume, isPaused } = state;
+      const mockWindow = {
+        webContents: { send: jest.fn() },
+        show: jest.fn(),
+        focus: jest.fn(),
+        isDestroyed: () => false
+      };
+
+      const mondayAfternoon = createTestDate(1, 14, 0);
+      jest.setSystemTime(mondayAfternoon);
+
+      pauseForToday(mockWindow);
+      expect(isPaused()).toBe(true);
+
+      // resume() is called from unlock/resume power events.
+      resume();
+
+      // resume() should not clear pause-today (it only clears workday-start).
+      expect(isPaused()).toBe(true);
+      expect(mockStore.get('pauseState').reason).toBe('pause-today');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('pause-today timeout should validate state at midnight', () => {
+    jest.useFakeTimers();
+
+    try {
+      setWorkdaysInStore([1, 2, 3, 4, 5]);
+      setWorkhoursInStore('09:00', '17:00');
+      mainStateModule.loadWorkSettings();
+
+      const { pauseForToday, isPaused } = state;
+      const mockWindow = {
+        webContents: { send: jest.fn() },
+        show: jest.fn(),
+        focus: jest.fn(),
+        isDestroyed: () => false
+      };
+
+      const mondayLate = createTestDate(1, 23, 59);
+      mondayLate.setSeconds(50, 0);
+      jest.setSystemTime(mondayLate);
+
+      pauseForToday(mockWindow);
+      expect(isPaused()).toBe(true);
+      expect(mockStore.get('pauseState').reason).toBe('pause-today');
+
+      jest.advanceTimersByTime(11000);
+
+      // After midnight, validation runs and should keep us paused until next work period.
+      expect(isPaused()).toBe(true);
+      expect(mockStore.get('pauseState').reason).toBe('workday-start');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('pauseUntilTomorrow IPC should use pause-today reason', () => {
+    jest.useFakeTimers();
+
+    try {
+      const now = createTestDate(1, 21, 0);
+      jest.setSystemTime(now);
+
+      const pauseUntilTomorrowHandler = mockIpcMain.on.mock.calls.find(
+        (call) => call[0] === 'pauseUntilTomorrow'
+      );
+      expect(pauseUntilTomorrowHandler).toBeTruthy();
+
+      const mockEvent = {
+        sender: {
+          getOwnerBrowserWindow: () => ({
+            webContents: { send: jest.fn() },
+            show: jest.fn(),
+            focus: jest.fn(),
+            isDestroyed: () => false
+          })
+        }
+      };
+
+      pauseUntilTomorrowHandler[1](mockEvent);
+
+      expect(state.isPaused()).toBe(true);
+      expect(mockStore.get('pauseState').reason).toBe('pause-today');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe('_scheduleNextWorkEndCheck', () => {
   test('should schedule check at correct time for normal work hours', () => {
     setWorkdaysInStore([1, 2, 3, 4, 5]);
@@ -1145,42 +1276,34 @@ describe('Hibernation/Suspend Edge Cases', () => {
     }
   });
   
-  test.skip('pause during workday, hibernate, wake up after pause expired in work hours - should resume', () => {
-    setWorkdaysInStore([1, 2, 3, 4, 5]);
-    setWorkhoursInStore('09:00', '17:00');
-    mainStateModule.loadWorkSettings();
-    
-    const { resume, isPaused, isActiveWorkPeriod } = state;
-    const mockWindow = {
-      webContents: { send: jest.fn() },
-      show: jest.fn(),
-      focus: jest.fn(),
-      isDestroyed: () => false
-    };
-    
-    // Simulate: paused Monday 14:00 for 1 hour (until 15:00)
-    // Hibernated, woke up Tuesday 10:00 (pause expired, in work hours)
-    const pauseStartTime = createTestDate(1, 14, 0);
-    const pauseDuration = 1 * 60 * 60 * 1000; // 1 hour
-    const pauseEndTime = new Date(pauseStartTime.getTime() + pauseDuration);
-    
-    // Set expired pause in store (expired in the past)
-    const expiredTime = new Date(pauseEndTime.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
-    mockStore.set('pauseState', {
-      endTime: expiredTime.getTime(),
-      reason: 'manual'
-    });
-    
-    // Simulate system resume
-    resume();
-    
-    // loadPauseState() should detect expired pause and clear it
-    // Then resume() checks if we should be paused based on work hours
-    // If we're in work hours, should not be paused
-    const now = new Date();
-    if (isActiveWorkPeriod(now)) {
-      // If in work hours, expired pause should be cleared
+  test('pause during workday, hibernate, wake up after pause expired in work hours - should resume', () => {
+    jest.useFakeTimers();
+
+    try {
+      setWorkdaysInStore([1, 2, 3, 4, 5]);
+      setWorkhoursInStore('09:00', '17:00');
+      mainStateModule.loadWorkSettings();
+
+      const { resume, isPaused, isActiveWorkPeriod } = state;
+
+      // Force deterministic wake-up time during active work hours.
+      const wakeUpTime = createTestDate(1, 10, 0); // Monday 10:00
+      jest.setSystemTime(wakeUpTime);
+      expect(isActiveWorkPeriod(wakeUpTime)).toBe(true);
+
+      // Set expired pause in store (expired 2 hours before wake-up).
+      const expiredTime = new Date(wakeUpTime.getTime() - 2 * 60 * 60 * 1000);
+      mockStore.set('pauseState', {
+        endTime: expiredTime.getTime(),
+        reason: 'manual'
+      });
+
+      resume();
+
+      // Expired pause should be cleared and stay unpaused in work hours.
       expect(isPaused()).toBe(false);
+    } finally {
+      jest.useRealTimers();
     }
   });
   

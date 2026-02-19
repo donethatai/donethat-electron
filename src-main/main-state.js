@@ -10,8 +10,9 @@ let store = null;
 let pauseState = {
   endTime: null,     // If non-null and in future, app is paused
   timeoutId: null,    // Reference to the auto-resume timer
-  reason: null        // Reason for pausing (workday-start, manual, etc.)
+  reason: null        // Reason for pausing (workday-start, pause-today, manual, etc.)
 };
+const PAUSE_REASON_PAUSE_TODAY = 'pause-today';
 let userWorkdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
 let userWorkhours = { start: "09:00", end: "17:00" }; // Default 9 AM to 5 PM
 let lastSummaryTimestamp = null;
@@ -678,6 +679,7 @@ async function initState(options = {}) {
       isWithinWorkHours,
       isActiveWorkPeriod,
       pauseRecording,
+      pauseForToday,
       recordingStarted,
       pauseUntilNextWorkPeriod,
       updateScreenCapturePermission,
@@ -925,6 +927,14 @@ function _clearPauseStateAndCheckRecording() {
   }
 }
 
+function _handlePauseTimeout(reason) {
+  if (reason === PAUSE_REASON_PAUSE_TODAY) {
+    _validateState();
+    return;
+  }
+  _clearPauseStateAndCheckRecording();
+}
+
 // Function to pause recording for a specified duration
 function pauseRecording(duration, mainWindow, reason = null) {
   if (pauseState.timeoutId) {
@@ -938,7 +948,7 @@ function pauseRecording(duration, mainWindow, reason = null) {
   // Set pause state
   pauseState = {
     endTime: endTime,
-    timeoutId: setTimeout(() => _clearPauseStateAndCheckRecording(), duration),
+    timeoutId: setTimeout(() => _handlePauseTimeout(reason), duration),
     reason: reason
   };
 
@@ -959,6 +969,22 @@ function pauseRecording(duration, mainWindow, reason = null) {
       }
     });
   }
+}
+
+function pauseForToday(mainWindow) {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const duration = midnight.getTime() - now.getTime();
+
+  setManualOverrideWorkHours(false);
+
+  if (duration > 0) {
+    pauseRecording(duration, mainWindow, PAUSE_REASON_PAUSE_TODAY);
+    return;
+  }
+
+  _validateState();
 }
 
 // Function to pause until the start of the next active work period (either today or next workday)
@@ -1135,7 +1161,7 @@ function loadPauseState() {
       
       pauseState = {
         endTime: endTime,
-        timeoutId: setTimeout(() => _clearPauseStateAndCheckRecording(), remainingDuration),
+        timeoutId: setTimeout(() => _handlePauseTimeout(savedState.reason), remainingDuration),
         reason: savedState.reason
       };
       
@@ -1378,7 +1404,7 @@ function setupIPCHandlers() {
       return;
     }
     const mainWindow = event.sender.getOwnerBrowserWindow();
-    pauseUntilNextWorkPeriod(mainWindow);
+    pauseForToday(mainWindow);
   });
 
   // Add IPC handler for pause state updates
@@ -2487,6 +2513,7 @@ module.exports = {
   isWithinWorkHours,
   isActiveWorkPeriod,
   pauseRecording,
+  pauseForToday,
   pauseUntilNextWorkPeriod,
   recordingStarted,
   loadWorkSettings,
