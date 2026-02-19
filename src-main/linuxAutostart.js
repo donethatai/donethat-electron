@@ -33,6 +33,7 @@ function buildDesktopEntry() {
     `Exec=${buildExecLine()}`,
     'Terminal=false',
     'X-GNOME-Autostart-enabled=true',
+    'X-GNOME-Autostart-Delay=5',
     ''
   ].join('\n')
 }
