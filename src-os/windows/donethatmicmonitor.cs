@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -7,11 +9,9 @@ namespace DoneThatMicMonitor
 {
     class Program
     {
-        static readonly ERole[] CaptureRoles = new[]
+        static readonly string[] MicConsentRoots = new[]
         {
-            ERole.eConsole,
-            ERole.eCommunications,
-            ERole.eMultimedia
+            @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"
         };
 
         static void Main(string[] args)
@@ -32,123 +32,128 @@ namespace DoneThatMicMonitor
         static List<AudioSessionInfo> GetActiveAudioSessions()
         {
             var activeSessions = new List<AudioSessionInfo>();
-            var seenPids = new HashSet<int>();
-            IMMDeviceEnumerator enumerator = null;
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            try
+            foreach (var rootPath in MicConsentRoots)
             {
-                enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-
-                foreach (var role in CaptureRoles)
+                RegistryKey root = null;
+                try
                 {
-                    IMMDevice device = null;
-                    try
+                    root = Registry.CurrentUser.OpenSubKey(rootPath);
+                    if (root == null) continue;
+
+                    CollectActiveRegistrySessions(root, activeSessions, seenNames, 0);
+                }
+                catch
+                {
+                    // Continue to next root
+                }
+                finally
+                {
+                    if (root != null)
                     {
-                        device = enumerator.GetDefaultAudioEndpoint(EDataFlow.eCapture, role);
-                        CollectSessionsFromDevice(device, activeSessions, seenPids);
-                    }
-                    catch
-                    {
-                        // Continue with other roles if one endpoint is unavailable.
-                    }
-                    finally
-                    {
-                        SafeRelease(device);
+                        root.Close();
                     }
                 }
-            }
-            finally
-            {
-                SafeRelease(enumerator);
             }
 
             return activeSessions;
         }
 
-        static void CollectSessionsFromDevice(IMMDevice device, List<AudioSessionInfo> activeSessions, HashSet<int> seenPids)
+        static void CollectActiveRegistrySessions(RegistryKey key, List<AudioSessionInfo> activeSessions, HashSet<string> seenNames, int depth)
         {
-            if (device == null) return;
-
-            IAudioSessionManager2 sessionManager = null;
-            IAudioSessionEnumerator sessionEnum = null;
+            if (key == null) return;
+            if (depth > 4) return;
 
             try
             {
-                sessionManager = (IAudioSessionManager2)device.Activate(typeof(IAudioSessionManager2).GUID, 0, IntPtr.Zero);
-                sessionEnum = sessionManager.GetSessionEnumerator();
-
-                int count = sessionEnum.GetCount();
-                for (int i = 0; i < count; i++)
+                if (IsMicSessionActive(key))
                 {
-                    IAudioSessionControl sessionControl = null;
-                    IAudioSessionControl2 sessionControl2 = null;
-
+                    string fullName = key.Name ?? string.Empty;
+                    string leafName = fullName;
                     try
                     {
-                        sessionControl = sessionEnum.GetSession(i);
-                        sessionControl2 = (IAudioSessionControl2)sessionControl;
+                        leafName = Path.GetFileName(fullName);
+                    }
+                    catch {}
 
-                        if (sessionControl.GetState() != AudioSessionState.AudioSessionStateActive) continue;
-                        if (sessionControl2.IsSystemSoundsSession()) continue;
+                    if (string.IsNullOrWhiteSpace(leafName))
+                    {
+                        leafName = fullName;
+                    }
 
-                        int pid = sessionControl2.GetProcessId();
-                        if (pid <= 0) continue;
-                        if (!seenPids.Add(pid)) continue;
-
-                        string displayName = sessionControl.GetDisplayName();
-                        if (string.IsNullOrWhiteSpace(displayName))
-                        {
-                            try
-                            {
-                                var proc = System.Diagnostics.Process.GetProcessById(pid);
-                                displayName = proc.ProcessName;
-                            }
-                            catch
-                            {
-                                displayName = null;
-                            }
-                        }
-
+                    if (!string.IsNullOrWhiteSpace(leafName) && seenNames.Add(leafName))
+                    {
                         activeSessions.Add(new AudioSessionInfo
                         {
-                            pid = pid,
-                            name = displayName ?? "Unknown",
+                            pid = -1,
+                            name = leafName,
                             isActive = true
                         });
                     }
+                }
+
+                var subKeyNames = key.GetSubKeyNames();
+                foreach (var subKeyName in subKeyNames)
+                {
+                    RegistryKey subKey = null;
+                    try
+                    {
+                        subKey = key.OpenSubKey(subKeyName);
+                        if (subKey != null)
+                        {
+                            CollectActiveRegistrySessions(subKey, activeSessions, seenNames, depth + 1);
+                        }
+                    }
                     catch
                     {
-                        // Skip bad session and continue.
+                        // Ignore and continue
                     }
                     finally
                     {
-                        SafeRelease(sessionControl2);
-                        if (!object.ReferenceEquals(sessionControl, sessionControl2))
+                        if (subKey != null)
                         {
-                            SafeRelease(sessionControl);
+                            subKey.Close();
                         }
                     }
                 }
             }
-            finally
+            catch
             {
-                SafeRelease(sessionEnum);
-                SafeRelease(sessionManager);
+                // Ignore and continue
             }
         }
 
-        static void SafeRelease(object comObj)
+        static bool IsMicSessionActive(RegistryKey key)
         {
-            if (comObj == null) return;
-            if (!Marshal.IsComObject(comObj)) return;
+            if (key == null) return false;
 
             try
             {
-                Marshal.ReleaseComObject(comObj);
+                object rawStop = key.GetValue("LastUsedTimeStop");
+                if (rawStop == null) return false;
+
+                if (rawStop is long l) return l == 0;
+                if (rawStop is int i) return i == 0;
+                if (rawStop is short s) return s == 0;
+                if (rawStop is byte[] bytes)
+                {
+                    if (bytes.Length == 0) return false;
+                    foreach (var b in bytes)
+                    {
+                        if (b != 0) return false;
+                    }
+                    return true;
+                }
+
+                var asText = rawStop.ToString();
+                if (string.IsNullOrWhiteSpace(asText)) return false;
+                if (long.TryParse(asText.Trim(), out var parsed)) return parsed == 0;
+                return false;
             }
             catch
             {
-                // Ignore COM release failures.
+                return false;
             }
         }
     }
