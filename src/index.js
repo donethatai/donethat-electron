@@ -46,6 +46,9 @@ const PORTAL_LOAD_TIMEOUT_MS = 12000; // 12s timeout for slow networks
 const PORTAL_MAX_RETRIES = 3;
 let portalSpinnerTimer = null; // delay before showing dashboard spinner
 const PORTAL_RELOAD_COOLDOWN_MS = 10000; // avoid reloads shortly after token delivery
+const PORTAL_BLANK_URL = 'about:blank';
+const PORTAL_DEFAULT_URL = 'https://app.donethat.ai';
+let portalSuspendedForTray = false;
 
 // Inform main that renderer is ready to receive auth tokens as early as possible
 try { ipcRenderer.send('renderer:ready-for-auth'); } catch (_) {}
@@ -170,6 +173,45 @@ function safePortalReload(reason) {
   }
 }
 
+function setPortalSuspendedPlaceholderVisible(visible) {
+  const placeholder = document.getElementById('portalSuspendedPlaceholder');
+  if (!placeholder) return;
+  if (visible) {
+    placeholder.classList.remove('hidden');
+  } else {
+    placeholder.classList.add('hidden');
+  }
+}
+
+function suspendPortalForTray() {
+  if (!portalView) return;
+  try { clearPortalLoadWatchdog(); } catch (_) {}
+  try { hidePortalSpinner(); } catch (_) {}
+  portalDomReady = false;
+  const currentSrc = portalView.getAttribute('src') || '';
+  if (currentSrc && currentSrc !== PORTAL_BLANK_URL) {
+    portalView.setAttribute('data-last-src', currentSrc);
+  }
+  if (currentSrc !== PORTAL_BLANK_URL) {
+    try { portalView.setAttribute('src', PORTAL_BLANK_URL); } catch (_) {}
+  }
+  try { portalView.classList.add('hidden'); } catch (_) {}
+  setPortalSuspendedPlaceholderVisible(true);
+  portalSuspendedForTray = true;
+}
+
+function resumePortalFromTrayIfNeeded() {
+  if (!portalView || !portalSuspendedForTray) return;
+  if (!(getCurrentView && getCurrentView() === 'dashboard')) {
+    return;
+  }
+  const targetSrc = portalView.getAttribute('data-last-src') || PORTAL_DEFAULT_URL;
+  try { portalView.setAttribute('src', targetSrc); } catch (_) {}
+  try { portalView.classList.remove('hidden'); } catch (_) {}
+  setPortalSuspendedPlaceholderVisible(false);
+  portalSuspendedForTray = false;
+}
+
 
 
 // Add a small delay to check initial auth state
@@ -282,6 +324,7 @@ function navigateToView(viewName) {
     }
     // If opening dashboard, proactively attempt login message to portal
     if (viewName === 'dashboard') {
+      resumePortalFromTrayIfNeeded();
       sendPortalLoginIfPossible();
       // Refresh webview only when transitioning from a different view to dashboard
       try {
@@ -364,10 +407,10 @@ function showWebviewError() {
   } catch (_) {}
   if (dashboardEmbed) {
     // Create error message if it doesn't exist
-    let errorDiv = dashboardEmbed.querySelector('.webview-error');
+    let errorDiv = dashboardEmbed.querySelector('.runtime-webview-error');
     if (!errorDiv) {
       errorDiv = document.createElement('div');
-      errorDiv.className = 'webview-error';
+      errorDiv.className = 'webview-error runtime-webview-error';
       errorDiv.innerHTML = `
         <div class="flex flex-col items-center justify-center h-full p-8 text-center">
           <div class="text-gray-500 mb-4">
@@ -411,13 +454,13 @@ function showWebviewError() {
 
 // Function to hide webview error message
 function hideWebviewError() {
-  const errorDiv = document.querySelector('.webview-error');
+  const errorDiv = document.querySelector('.runtime-webview-error');
   if (errorDiv) {
     errorDiv.classList.add('hidden');
   }
   // Show the webview again
   try {
-    if (portalView) portalView.classList.remove('hidden');
+    if (portalView && !portalSuspendedForTray) portalView.classList.remove('hidden');
   } catch (_) {}
 }
 
@@ -483,6 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Grab the portal webview if present
   portalView = document.getElementById('portalView');
+  const reloadSuspendedPortalBtn = document.getElementById('reloadSuspendedPortalBtn');
 
   // Respond to main process request to reload webview (throttled in main)
   try {
@@ -517,6 +561,28 @@ document.addEventListener('DOMContentLoaded', () => {
     showWebviewError();
   } else {
     hideWebviewError();
+  }
+  setPortalSuspendedPlaceholderVisible(false);
+
+  if (reloadSuspendedPortalBtn) {
+    reloadSuspendedPortalBtn.addEventListener('click', () => {
+      portalSuspendedForTray = true;
+      resumePortalFromTrayIfNeeded();
+      if (portalView && navigator.onLine) {
+        try {
+          hideWebviewError();
+          if (typeof portalView.reloadIgnoringCache === 'function') {
+            portalView.reloadIgnoringCache();
+          } else {
+            portalView.reload();
+          }
+          startPortalLoadWatchdog('manual-suspended-reload');
+          sendPortalLoginIfPossible();
+        } catch (e) {
+          console.error('[Webview] Error reloading from suspended placeholder:', e);
+        }
+      }
+    });
   }
   
   // Listen to connectivity changes
@@ -1026,6 +1092,14 @@ function updateTopbarVisibility() {
 // Add IPC listener for navigation
 ipcRenderer.on('navigate', (event, viewName) => {
   navigateToView(viewName);
+});
+
+ipcRenderer.on('app:window-hidden', () => {
+  suspendPortalForTray();
+});
+
+ipcRenderer.on('app:window-shown', () => {
+  resumePortalFromTrayIfNeeded();
 });
 
 // Add pause state handler

@@ -1723,6 +1723,18 @@ function createWindow() {
       }
     })
 
+    // Keep the main renderer unthrottled for capture reliability, but allow
+    // embedded webviews to throttle when backgrounded.
+    mainWindow.webContents.on('did-attach-webview', (_event, webContents) => {
+      try {
+        if (webContents && typeof webContents.setBackgroundThrottling === 'function') {
+          webContents.setBackgroundThrottling(true);
+        }
+      } catch (e) {
+        log.warn('Failed to enable background throttling for attached webview:', e?.message || e);
+      }
+    });
+
     // Sandboxed renderer needs explicit approval for capture permissions used by audio-recorder.js.
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
       const trustedMainId = mainWindow?.webContents?.id
@@ -1783,6 +1795,7 @@ function createWindow() {
       // Prevent window from being closed completely if not quitting the app
       if (!app.isQuitting) {
         event.preventDefault();
+        try { mainWindow.webContents.send('app:window-hidden'); } catch (_) {}
         mainWindow.hide();
         // On all platforms: only hide from dock/taskbar when user explicitly closes to tray (not on minimize)
         if (process.platform === 'darwin') {
@@ -1797,6 +1810,7 @@ function createWindow() {
 
     // Ensure Dock icon is visible whenever the main window is shown (macOS)
     mainWindow.on('show', () => {
+      try { mainWindow.webContents.send('app:window-shown'); } catch (_) {}
       if (process.platform === 'darwin') {
         try { app.dock.show(); } catch (e) {}
       } else {
