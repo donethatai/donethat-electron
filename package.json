@@ -177,6 +177,7 @@
     },
     "linux": {
       "target": "AppImage",
+      "icon": "resources/icon-ios.png",
       "category": "Utility",
       "desktop": {
         "entry": {

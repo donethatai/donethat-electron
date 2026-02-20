@@ -227,11 +227,36 @@ function resolveTrayIconPath(fileName) {
 
   for (const candidate of candidates) {
     try {
-      if (fs.existsSync(candidate)) return candidate
+      if (fs.existsSync(candidate)) {
+        if (process.platform === 'linux') {
+          log.info('[tray-icon] resolved icon path', { fileName, selected: candidate, candidates })
+        }
+        return candidate
+      }
     } catch (_) {}
   }
 
+  if (process.platform === 'linux') {
+    log.warn('[tray-icon] no icon candidate exists on disk, using fallback candidate[0]', { fileName, fallback: candidates[0], candidates })
+  }
   return candidates[0]
+}
+
+function logTrayImageState(label, image, iconPath) {
+  if (process.platform !== 'linux') return
+  try {
+    const size = image && typeof image.getSize === 'function' ? image.getSize() : { width: 0, height: 0 }
+    const empty = !image || (typeof image.isEmpty === 'function' ? image.isEmpty() : true)
+    log.info('[tray-icon] image state', {
+      label,
+      iconPath,
+      empty,
+      width: size.width || 0,
+      height: size.height || 0
+    })
+  } catch (error) {
+    log.warn('[tray-icon] failed to inspect image state', { label, iconPath, error: error?.message || String(error) })
+  }
 }
 
 let iconRecordingPath = resolveTrayIconPath('icon_recording.png')
@@ -999,10 +1024,12 @@ app.whenReady().then(async () => {
 
   // Create tray with initial error icon
   let trayIcon = nativeImage.createFromPath(iconErrorPath)
+  logTrayImageState('initial:error', trayIcon, iconErrorPath)
   if (process.platform === 'linux' && trayIcon.isEmpty()) {
     const fallbackPath = resolveTrayIconPath('icon.png')
     trayIcon = nativeImage.createFromPath(fallbackPath)
     log.warn('Linux tray icon was empty, using fallback icon path', { iconErrorPath, fallbackPath })
+    logTrayImageState('initial:fallback', trayIcon, fallbackPath)
   }
 
   // Apply platform-specific resizing for initial icon
@@ -1344,10 +1371,12 @@ function updateTrayIcon(isActuallyRecording) {
 
   // Load and set the appropriate icon
   let icon = nativeImage.createFromPath(iconPath)
+  logTrayImageState('state:primary', icon, iconPath)
   if (process.platform === 'linux' && icon.isEmpty()) {
     const fallbackPath = resolveTrayIconPath('icon.png')
     icon = nativeImage.createFromPath(fallbackPath)
     log.warn('Linux tray state icon was empty, using fallback icon path', { iconPath, fallbackPath })
+    logTrayImageState('state:fallback', icon, fallbackPath)
   }
 
   // MODIFY the resizing code to skip Windows
