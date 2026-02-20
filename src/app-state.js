@@ -211,20 +211,52 @@ function subscribeToMessages(chatId) {
   const db = getFirestore(firebaseApp, 'europe-west1');
   const q = query(collection(db, `chats/${auth.currentUser.uid}/chats/${chatId}/messages`), orderBy('createdAt', 'asc'));
 
+  function normalizeAssistantPayload(messageData) {
+    const rawContent = typeof messageData.content === 'string' ? messageData.content : ''
+    const explicitRequestScreen = typeof messageData.requestScreen === 'boolean' ? messageData.requestScreen : undefined
+    const trimmed = rawContent.trim()
+
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+      return { text: rawContent, requestScreen: explicitRequestScreen }
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (!parsed || typeof parsed !== 'object') {
+        return { text: rawContent, requestScreen: explicitRequestScreen }
+      }
+
+      const keys = Object.keys(parsed)
+      const hasExactKeys = keys.length === 2 && keys.includes('answer') && keys.includes('requestScreen')
+      if (!hasExactKeys || typeof parsed.answer !== 'string' || typeof parsed.requestScreen !== 'boolean') {
+        return { text: rawContent, requestScreen: explicitRequestScreen }
+      }
+
+      return {
+        text: parsed.answer,
+        requestScreen: explicitRequestScreen ?? (typeof parsed.requestScreen === 'boolean' ? parsed.requestScreen : undefined)
+      }
+    } catch (_) {
+      return { text: rawContent, requestScreen: explicitRequestScreen }
+    }
+  }
+
   state.stopMessageListener = onSnapshot(q, (snap) => {
     const messages = snap.docs.map((d) => {
       const m = d.data() || {};
       const ts = parseCreatedAtForTs(m.createdAt, d.id);
+      const isAssistant = m.role === 'assistant'
+      const assistantPayload = isAssistant ? normalizeAssistantPayload(m) : null
       return {
         id: d.id,
         // Preserve assistant role so renderer logic can react (e.g., requestScreen)
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        text: m.content || '',
+        role: isAssistant ? 'assistant' : 'user',
+        text: isAssistant ? assistantPayload.text : (m.content || ''),
         status: m.status || 'sent',
         // Pass through a numeric timestamp for inactivity checks (with logging)
         ts,
         // Pass through assistant request for next-user screenshot if present
-        requestScreen: typeof m.requestScreen === 'boolean' ? m.requestScreen : undefined
+        requestScreen: isAssistant ? assistantPayload.requestScreen : undefined
       };
     });
     try { ipcRenderer.send('chat:set-messages', messages); } catch (_) {}
