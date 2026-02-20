@@ -1010,22 +1010,24 @@ app.whenReady().then(async () => {
   });
 
   // Create tray with initial error icon
-  let trayIcon = nativeImage.createFromPath(iconErrorPath)
-  logTrayImageState('initial:error', trayIcon, iconErrorPath)
-  if (process.platform === 'linux' && trayIcon.isEmpty()) {
-    const fallbackPath = resolveTrayIconPath('icon.png')
-    trayIcon = nativeImage.createFromPath(fallbackPath)
-    log.warn('Linux tray icon was empty, using fallback icon path', { iconErrorPath, fallbackPath })
-    logTrayImageState('initial:fallback', trayIcon, fallbackPath)
+  if (process.platform === 'linux') {
+    let trayIconPath = iconErrorPath
+    if (!fs.existsSync(trayIconPath)) {
+      const fallbackPath = resolveTrayIconPath('icon.png')
+      log.warn('Linux tray icon path missing, using fallback icon path', { iconErrorPath, fallbackPath })
+      trayIconPath = fallbackPath
+    }
+    log.info('[tray-icon] creating tray from path', { trayIconPath })
+    tray = new Tray(trayIconPath)
+  } else {
+    let trayIcon = nativeImage.createFromPath(iconErrorPath)
+    // Apply platform-specific resizing for initial icon
+    if (process.platform === 'darwin') {
+      // macOS menu bar icons should be 18-22px
+      trayIcon = trayIcon.resize({ width: 18, height: 18 })
+    }
+    tray = new Tray(trayIcon)
   }
-
-  // Apply platform-specific resizing for initial icon
-  if (process.platform === 'darwin') {
-    // macOS menu bar icons should be 18-22px
-    trayIcon = trayIcon.resize({ width: 18, height: 18 })
-  }
-
-  tray = new Tray(trayIcon)
   tray.setToolTip('DoneThat')
 
   // Call setupAutoStart here to ensure it runs after app is ready
@@ -1356,23 +1358,27 @@ function updateTrayIcon(isActuallyRecording) {
     tooltip = 'DoneThat - Error';
   }
 
-  // Load and set the appropriate icon
-  let icon = nativeImage.createFromPath(iconPath)
-  logTrayImageState('state:primary', icon, iconPath)
-  if (process.platform === 'linux' && icon.isEmpty()) {
-    const fallbackPath = resolveTrayIconPath('icon.png')
-    icon = nativeImage.createFromPath(fallbackPath)
-    log.warn('Linux tray state icon was empty, using fallback icon path', { iconPath, fallbackPath })
-    logTrayImageState('state:fallback', icon, fallbackPath)
-  }
+  if (process.platform === 'linux') {
+    let iconPathToUse = iconPath
+    if (!fs.existsSync(iconPathToUse)) {
+      const fallbackPath = resolveTrayIconPath('icon.png')
+      log.warn('Linux tray state icon path missing, using fallback icon path', { iconPath, fallbackPath })
+      iconPathToUse = fallbackPath
+    }
+    log.info('[tray-icon] setting tray image from path', { iconPath, iconPathToUse })
+    tray.setImage(iconPathToUse)
+  } else {
+    // Load and set the appropriate icon
+    let icon = nativeImage.createFromPath(iconPath)
 
-  // MODIFY the resizing code to skip Windows
-  if (process.platform === 'darwin') {
-    // macOS menu bar icons look best at 18-22px
-    icon = icon.resize({ width: 18, height: 18 })
-  }
+    // MODIFY the resizing code to skip Windows
+    if (process.platform === 'darwin') {
+      // macOS menu bar icons look best at 18-22px
+      icon = icon.resize({ width: 18, height: 18 })
+    }
 
-  tray.setImage(icon)
+    tray.setImage(icon)
+  }
 
   // Clear any previous title (macOS specific)
   if (process.platform === 'darwin') {
