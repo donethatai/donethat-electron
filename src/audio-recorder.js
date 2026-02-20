@@ -31,9 +31,72 @@ const AUDIO_RESTART_MAX_PER_WINDOW = 6;
 
 // VAD State & Constants
 let userSpeechIntervals = []; // Array of { startMs, endMs }
+let cycleRecordingIntervals = []; // Closed intervals for current capture cycle
+let currentRecordingIntervalStartMs = null; // Open interval start for current capture cycle
 const VAD_THRESHOLD = 0.05; // RMS threshold (adjustable)
 const VAD_MIN_SPEECH_MS = 100; // Minimum duration to consider as speech
 const VAD_HANG_OVER_MS = 500; // Time to wait before ending a speech segment
+
+function mergeIntervals(intervals) {
+  const normalized = (intervals || [])
+    .map((interval) => ({
+      startMs: Number(interval?.startMs),
+      endMs: Number(interval?.endMs)
+    }))
+    .filter((interval) => Number.isFinite(interval.startMs) && Number.isFinite(interval.endMs) && interval.endMs > interval.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+
+  const merged = [];
+  for (const interval of normalized) {
+    const last = merged[merged.length - 1];
+    if (!last || interval.startMs > last.endMs) {
+      merged.push({ ...interval });
+      continue;
+    }
+    if (interval.endMs > last.endMs) {
+      last.endMs = interval.endMs;
+    }
+  }
+  return merged;
+}
+
+function beginRecordingInterval(ts = Date.now()) {
+  if (currentRecordingIntervalStartMs == null) {
+    currentRecordingIntervalStartMs = Number(ts);
+  }
+}
+
+function endRecordingInterval(ts = Date.now()) {
+  if (currentRecordingIntervalStartMs == null) return;
+  const endMs = Number(ts);
+  if (Number.isFinite(endMs) && endMs > currentRecordingIntervalStartMs) {
+    cycleRecordingIntervals.push({
+      startMs: currentRecordingIntervalStartMs,
+      endMs
+    });
+  }
+  currentRecordingIntervalStartMs = null;
+}
+
+function getRecordingIntervalsSnapshot(now = Date.now()) {
+  const intervals = [...cycleRecordingIntervals];
+  const endMs = Number(now);
+  if (currentRecordingIntervalStartMs != null && Number.isFinite(endMs) && endMs > currentRecordingIntervalStartMs) {
+    intervals.push({
+      startMs: currentRecordingIntervalStartMs,
+      endMs
+    });
+  }
+  return mergeIntervals(intervals);
+}
+
+function resetCycleRecordingIntervals(startNewInterval = false, now = Date.now()) {
+  cycleRecordingIntervals = [];
+  currentRecordingIntervalStartMs = null;
+  if (startNewInterval) {
+    beginRecordingInterval(now);
+  }
+}
 
 // Helper: is our own recorder currently active
 window.isRecorderActive = function() {
@@ -138,6 +201,17 @@ function emitAudioRestartTelemetry(reason, action) {
       event: 'audio-restart-metric',
       reason,
       action
+    });
+  } catch (_) {}
+}
+
+function emitAudioConversionMetric(action, meta = {}) {
+  try {
+    if (!window.electronAPI || typeof window.electronAPI.send !== 'function') return;
+    window.electronAPI.send('audio-device-changed', {
+      event: 'audio-conversion-metric',
+      action,
+      ...meta
     });
   } catch (_) {}
 }
@@ -389,6 +463,8 @@ window.startAudioRecording = async function(options = {}) {
     window.allowAudioResume = true;
     audioChunks = [];
     chunkTimestamps = [];
+    cycleRecordingIntervals = [];
+    currentRecordingIntervalStartMs = null;
     stopAllInputStreams();
     cleanupAudioContext(); // Ensure clean slate
     
@@ -490,6 +566,7 @@ window.startAudioRecording = async function(options = {}) {
     mediaRecorder.start(1000);
     recordingStartTime = Date.now();
     isRecording = true;
+    beginRecordingInterval(recordingStartTime);
     
     return true;
   } catch (error) {
@@ -575,6 +652,8 @@ async function restartAudioRecording() {
   if (!isRecording) return true;
   
   try {
+    const wasIntervalActive = currentRecordingIntervalStartMs != null;
+    endRecordingInterval(Date.now());
     
     // Stop the current recording cleanly
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -586,6 +665,7 @@ async function restartAudioRecording() {
     const previousChunks = [...audioChunks];
     const previousTimestamps = [...chunkTimestamps];
     const previousIntervals = [...userSpeechIntervals];
+    const previousRecordingIntervals = [...cycleRecordingIntervals];
 
     cleanupAudioContext();
     
@@ -604,6 +684,11 @@ async function restartAudioRecording() {
     audioChunks = previousChunks;
     chunkTimestamps = previousTimestamps;
     userSpeechIntervals = previousIntervals;
+    cycleRecordingIntervals = previousRecordingIntervals;
+    currentRecordingIntervalStartMs = null;
+    if (wasIntervalActive) {
+      beginRecordingInterval(Date.now());
+    }
 
     return true;
   } catch (error) {
@@ -621,6 +706,7 @@ window.restartAudioRecording = restartAudioRecording;
  */
 window.pauseAudioRecording = function() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
+    endRecordingInterval(Date.now());
     mediaRecorder.pause();
     if (audioContext && audioContext.state === 'running') {
       audioContext.suspend();
@@ -634,6 +720,7 @@ window.pauseAudioRecording = function() {
 window.resumeAudioRecording = function() {
   if (mediaRecorder && mediaRecorder.state === 'paused') {
     mediaRecorder.resume();
+    beginRecordingInterval(Date.now());
     if (audioContext && audioContext.state === 'suspended') {
       audioContext.resume();
     }
@@ -652,6 +739,123 @@ function blobToBase64(blob) {
     r.onerror = reject;
     r.readAsArrayBuffer(blob);
   });
+}
+
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function base64ToUint8Array(base64) {
+  return new Uint8Array(base64ToArrayBuffer(base64));
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const sub = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, sub);
+  }
+  return btoa(binary);
+}
+
+function concatUint8Arrays(chunks) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
+function encodeAudioBufferToWav(audioBuffer) {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const length = audioBuffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const dataSize = length * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  function writeString(offset, str) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  const channelData = [];
+  for (let c = 0; c < numChannels; c++) {
+    channelData.push(audioBuffer.getChannelData(c));
+  }
+
+  let offset = 44;
+  for (let i = 0; i < length; i++) {
+    for (let c = 0; c < numChannels; c++) {
+      const sample = Math.max(-1, Math.min(1, channelData[c][i]));
+      const int16 = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, int16, true);
+      offset += 2;
+    }
+  }
+
+  return buffer;
+}
+
+async function convertAudioBase64ToWavBase64(base64Audio) {
+  let decodeContext = null;
+  try {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+      emitAudioConversionMetric('unsupported-no-audiocontext');
+      return null;
+    }
+
+    const arrayBuffer = base64ToArrayBuffer(base64Audio);
+    decodeContext = new AudioContextCtor();
+    const decoded = await decodeContext.decodeAudioData(arrayBuffer.slice(0));
+
+    const wavBuffer = encodeAudioBufferToWav(decoded);
+    emitAudioConversionMetric('success', {
+      sampleRate: decoded.sampleRate,
+      numberOfChannels: decoded.numberOfChannels,
+      length: decoded.length
+    });
+    return arrayBufferToBase64(wavBuffer);
+  } catch (error) {
+    console.warn('Failed to convert audio payload to WAV:', error);
+    emitAudioConversionMetric('failed', {
+      error: error?.message || String(error)
+    });
+    return null;
+  } finally {
+    if (decodeContext) {
+      try { await decodeContext.close(); } catch (_) {}
+    }
+  }
 }
 
 /**
@@ -706,6 +910,107 @@ window.getAudioChunksWithTimestamps = async function(resetBuffers = false) {
     console.error('Error getting audio chunks with timestamps:', error);
     accumulatedChunks = [];
     return [];
+  }
+};
+
+function normalizeAudioChunksForCycle(audioChunksInput, recordingIntervals, systemAudioEnabled) {
+  const prepared = (audioChunksInput || [])
+    .map((chunk, index) => {
+      const rawBase64 = typeof chunk?.base64Data === 'string' && chunk.base64Data.includes(',')
+        ? chunk.base64Data.split(',')[1]
+        : chunk?.base64Data;
+      if (!rawBase64 || typeof rawBase64 !== 'string') return null;
+
+      let bytes;
+      try {
+        bytes = base64ToUint8Array(rawBase64);
+      } catch (_) {
+        return null;
+      }
+      if (!bytes || bytes.length === 0) return null;
+
+      return {
+        index,
+        bytes,
+        mimeType: (chunk?.mimeType || '').split(';')[0] || 'audio/webm',
+        startMs: Number(chunk?.startMs),
+        endMs: Number(chunk?.endMs),
+        speechIntervals: Array.isArray(chunk?.speechIntervals) ? chunk.speechIntervals : []
+      };
+    })
+    .filter((chunk) => chunk !== null)
+    .sort((a, b) => {
+      const aStart = Number.isFinite(a.startMs) ? a.startMs : Number.MAX_SAFE_INTEGER;
+      const bStart = Number.isFinite(b.startMs) ? b.startMs : Number.MAX_SAFE_INTEGER;
+      return aStart - bStart || a.index - b.index;
+    });
+
+  if (prepared.length === 0) return null;
+
+  const cycleStartMs = prepared[0].startMs;
+  const cycleEndMs = prepared[prepared.length - 1].endMs;
+  if (!Number.isFinite(cycleStartMs) || !Number.isFinite(cycleEndMs) || cycleEndMs <= cycleStartMs) {
+    return null;
+  }
+
+  const speechIntervals = mergeIntervals(
+    prepared.flatMap((chunk) => chunk.speechIntervals)
+  );
+
+  const mergedBytes = concatUint8Arrays(prepared.map((chunk) => chunk.bytes));
+  if (!mergedBytes || mergedBytes.length === 0) {
+    return null;
+  }
+
+  return {
+    base64Data: arrayBufferToBase64(mergedBytes.buffer),
+    mimeType: prepared[0].mimeType,
+    cycleStartMs,
+    cycleEndMs,
+    recordingIntervals: mergeIntervals(recordingIntervals),
+    speechIntervals,
+    segmentCount: prepared.length,
+    source: 'mixed',
+    systemAudioEnabled: !!systemAudioEnabled
+  };
+}
+
+/**
+ * Get one audio file payload per capture cycle with recording/speech metadata.
+ * @param {boolean} resetBuffers If true, rotate recorder buffers for the next cycle.
+ * @returns {Promise<Object|null>}
+ */
+window.getAudioCycleWithMetadata = async function(resetBuffers = false, includeOpenAIWav = false) {
+  try {
+    const snapshotAt = Date.now();
+    const recordingIntervalsSnapshot = getRecordingIntervalsSnapshot(snapshotAt);
+    const chunks = await window.getAudioChunksWithTimestamps(resetBuffers);
+    const audioCycle = normalizeAudioChunksForCycle(chunks, recordingIntervalsSnapshot, lastStartOptions.systemAudio);
+
+    if (audioCycle && includeOpenAIWav) {
+      const wavBase64 = await convertAudioBase64ToWavBase64(audioCycle.base64Data);
+      if (wavBase64) {
+        audioCycle.openai = {
+          base64Data: wavBase64,
+          mimeType: 'audio/wav',
+          format: 'wav'
+        };
+      }
+    }
+
+    if (resetBuffers) {
+      const isActivelyRecording = !!(isRecording && mediaRecorder && mediaRecorder.state === 'recording');
+      resetCycleRecordingIntervals(isActivelyRecording, Date.now());
+    }
+
+    return audioCycle;
+  } catch (error) {
+    console.error('Error getting audio cycle with metadata:', error);
+    if (resetBuffers) {
+      const isActivelyRecording = !!(isRecording && mediaRecorder && mediaRecorder.state === 'recording');
+      resetCycleRecordingIntervals(isActivelyRecording, Date.now());
+    }
+    return null;
   }
 };
 
@@ -766,6 +1071,7 @@ window.shutdownAudioRecording = async function() {
     muted: t.muted
   })) : [];
   if (mediaRecorder && isRecording) {
+    endRecordingInterval(Date.now());
     if (audioChunks.length > 0) {
       if (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused') {
         try { mediaRecorder.requestData(); } catch (_) {}
@@ -792,6 +1098,8 @@ window.shutdownAudioRecording = async function() {
     audioRestartInFlight = false;
     lastAutoRestartAt = 0;
     autoRestartTimestamps = [];
+    cycleRecordingIntervals = [];
+    currentRecordingIntervalStartMs = null;
   }
 
   const postActive = (() => {
@@ -810,5 +1118,6 @@ module.exports = {
   pauseAudioRecording: window.pauseAudioRecording,
   resumeAudioRecording: window.resumeAudioRecording,
   restartAudioRecording,
-  getAudioChunksWithTimestamps: window.getAudioChunksWithTimestamps
+  getAudioChunksWithTimestamps: window.getAudioChunksWithTimestamps,
+  getAudioCycleWithMetadata: window.getAudioCycleWithMetadata
 }; 

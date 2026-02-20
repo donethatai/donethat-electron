@@ -252,6 +252,8 @@ function simplifyMessagesForRetry(messages) {
         // Keep only the first 2 images and all text content
         const simplifiedContent = message.content.filter(block => {
           if (block.type === 'text') return true;
+          if (block.type === 'media') return true;
+          if (block.type === 'input_audio') return true;
           if (block.type?.startsWith?.('audio/')) return true;
           if (block.type === 'image_url') {
             const imageBlocks = message.content.filter(b => b.type === 'image_url');
@@ -317,11 +319,11 @@ function validateAndProcessImage(imageData) {
  * @param {Array<string>} validScreenshots - Current screenshot data URLs
  * @param {Array<string>} previousScreenshots - Previous snapshot data URLs for context (optional)
  * @param {string} applicationActivity - Activity text
- * @param {Array<{base64Data: string, mimeType: string, startMs: number, endMs: number}>} audioChunks - Audio chunks for multimodal input
+ * @param {Object|null} audioCycle - Audio cycle payload for multimodal input
  * @param {number} idleTime - Idle time in seconds
  * @param {string} provider - 'gemini' or 'openai' to determine image format
  */
-function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioChunks, idleTime, provider = 'gemini') {
+function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioCycle, idleTime, provider = 'gemini') {
   const spec = config.contentBlocksSpec || {};
   const imageKey = spec.imagePartKey || 'image_url';
   const blocks = [ { type: 'text', text: config.prefilledPrompt } ];
@@ -329,24 +331,59 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
   if (applicationActivity) {
     blocks.push({ type: 'text', text: `Application Activity:\n${applicationActivity}` });
   }
-  if (audioChunks && audioChunks.length > 0) {
-    blocks.push({ type: 'text', text: 'Recorded audio segments (analyse and transcribe each). Timestamps are ms since epoch:' });
-    audioChunks.forEach((chunk) => {
-      const base64 = typeof chunk.base64Data === 'string' && chunk.base64Data.includes(',')
-        ? chunk.base64Data.split(',')[1] : chunk.base64Data;
-      const mimeType = (chunk.mimeType || '').split(';')[0] || 'audio/webm';
-      if (base64 && mimeType) {
-        if (chunk.startMs != null && chunk.endMs != null) {
-          let segmentInfo = `Segment ${chunk.startMs}–${chunk.endMs}:`;
-          if (chunk.speechIntervals && chunk.speechIntervals.length > 0) {
-            const intervals = chunk.speechIntervals.map(i => `[${i.startMs}-${i.endMs}]`).join(', ');
-            segmentInfo += `\nAudio Context: The user was speaking during these intervals (ms): ${intervals}. All other audio is system/computer sound.`;
-          }
-          blocks.push({ type: 'text', text: segmentInfo });
-        }
-        blocks.push({ type: mimeType, data: base64 });
+  if (audioCycle && audioCycle.base64Data) {
+      blocks.push({
+        type: 'text',
+        text: 'Recorded audio (one file for this capture cycle). Timestamps are ms since epoch:'
+      });
+      blocks.push({
+        type: 'text',
+        text: `Combined audio range ${audioCycle.cycleStartMs}-${audioCycle.cycleEndMs} from ${audioCycle.segmentCount || 1} segment(s).`
+      });
+
+      const recordingIntervals = Array.isArray(audioCycle.recordingIntervals) ? audioCycle.recordingIntervals : [];
+      recordingIntervals.forEach((segment) => {
+        blocks.push({
+          type: 'text',
+          text: `Recording interval ${segment.startMs}-${segment.endMs}`
+        });
+      });
+
+      const speechIntervals = Array.isArray(audioCycle.speechIntervals) ? audioCycle.speechIntervals : [];
+      if (speechIntervals.length > 0) {
+        const intervals = speechIntervals
+          .map(i => `[${i.startMs}-${i.endMs}]`)
+          .join(', ');
+        blocks.push({
+          type: 'text',
+          text: `Audio Context: The user was speaking during these intervals (ms): ${intervals}. All other audio is system/computer sound.`
+        });
       }
-    });
+
+      if (provider === 'gemini') {
+        blocks.push({
+          type: 'media',
+          mimeType: audioCycle.mimeType || 'audio/webm',
+          data: audioCycle.base64Data
+        });
+      } else {
+        const openaiAudio = audioCycle.openai && audioCycle.openai.base64Data
+          ? audioCycle.openai
+          : null;
+        if (openaiAudio) {
+          blocks.push({
+            type: 'input_audio',
+            input_audio: {
+              data: openaiAudio.base64Data,
+              format: openaiAudio.format || 'wav'
+            }
+          });
+        } else {
+          log.warn('OpenAI provider selected but no WAV audio payload available; skipping audio block for this cycle');
+        }
+      }
+  } else if (audioCycle) {
+    log.warn('audioCycle present but no valid base64 payload');
   }
   
   if (idleTime !== undefined && idleTime !== null) {
@@ -410,12 +447,12 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
  * @param {Array<string>} screenshots - Current screenshot data URLs
  * @param {Array<string>} previousScreenshots - Previous snapshot data URLs for context (optional)
  * @param {string} activity - Application activity text
- * @param {Array} audioChunks - Audio chunks for multimodal input
+ * @param {Object|null} audioCycle - Audio cycle payload for multimodal input
  * @param {number} idleTime - Idle time in seconds
  * @param {string} idToken - Firebase ID token
  * @param {boolean} testMode - If true, skip Firebase submission
  */
-async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioChunks, idleTime, idToken, testMode = false) {
+async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioCycle, idleTime, idToken, testMode = false) {
   try {
     // Validate current screenshots - this is critical
     if (!screenshots || screenshots.length === 0) {
@@ -440,7 +477,7 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
     // Ensure we have up-to-date config
     const config = latestConfig || await getConfig(idToken);
     // Build content blocks using spec with correct provider format
-    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioChunks, idleTime, provider);
+    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioCycle, idleTime, provider);
 
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
@@ -547,7 +584,7 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
       ).join(', ');
     }
 
-    const audioChunks = inputData?.audioChunks ?? [];
+    const audioCycle = inputData?.audioCycle ?? null;
 
     // Get idle time
     let idleTime = undefined;
@@ -562,7 +599,7 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
         screenshots,
         prevImages,
         applicationActivity,
-        audioChunks,
+        audioCycle,
         idleTime,
         idToken,
         testMode
@@ -628,6 +665,7 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
 
 module.exports = {
   isLocalProcessingAvailable,
+  getLocalProvider,
   processDataLocally,
   // Allow main process to reset cached config and models when FE updates settings
   resetLLMModels: () => { 

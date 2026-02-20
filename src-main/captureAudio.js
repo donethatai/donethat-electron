@@ -1,7 +1,7 @@
 const log = require('electron-log')
 const { ipcMain, systemPreferences } = require('electron')
 const audioSessionDetector = require('./audioSessionDetector')
-const { recordAudioRestart } = require('./telemetry')
+const { recordAudioRestart, recordLog } = require('./telemetry')
 
 // Variables to track audio capture
 let isRecording = false
@@ -56,6 +56,17 @@ function initialize(window, config = {}) {
   ipcMain.on('audio-device-changed', (_event, info) => {
     if (info?.event === 'audio-restart-metric') {
       recordAudioRestart(info.reason, info.action)
+      return
+    }
+    if (info?.event === 'audio-conversion-metric') {
+      const action = typeof info.action === 'string' ? info.action : 'unknown'
+      const level = action === 'failed' ? 'warn' : 'info'
+      recordLog(level, 'audio-conversion', `wav-conversion-${action}`, {
+        sampleRate: info.sampleRate,
+        channels: info.numberOfChannels,
+        length: info.length,
+        error: info.error
+      })
       return
     }
     handleDeviceSwitch(info).catch((error) => {
@@ -574,28 +585,26 @@ async function startAudioTracking(config) {
 }
 
 /**
- * Get audio chunks with timestamps (for cloud or local API transcription)
+ * Get one audio file with metadata for this capture cycle
  * @param {boolean} resetBuffers If true, cycle the MediaRecorder for fresh headers
- * @returns {Promise<{audioChunks: Array}|null>} Chunks with base64Data, mimeType, startMs, endMs
+ * @param {Object} options
+ * @param {boolean} options.includeOpenAIWav If true, include WAV payload for OpenAI local path
+ * @returns {Promise<{audioCycle: Object}|null>}
  */
-async function stopRecording(resetBuffers = false) {
+async function stopRecording(resetBuffers = false, options = {}) {
   try {
-    const outputChunks = []
+    const includeOpenAIWav = options.includeOpenAIWav === true
     if (mainWindow && !mainWindow.isDestroyed()) {
-      const audioChunks = await mainWindow.webContents.executeJavaScript(
-        `window.getAudioChunksWithTimestamps && window.getAudioChunksWithTimestamps(${resetBuffers})`
+      const audioCycle = await mainWindow.webContents.executeJavaScript(
+        `window.getAudioCycleWithMetadata && window.getAudioCycleWithMetadata(${resetBuffers}, ${includeOpenAIWav})`
       )
-      if (audioChunks && Array.isArray(audioChunks) && audioChunks.length > 0) {
-        outputChunks.push(...audioChunks)
+      if (audioCycle && typeof audioCycle === 'object' && audioCycle.base64Data) {
+        return { audioCycle }
       }
-    }
-
-    if (outputChunks.length > 0) {
-      return { audioChunks: outputChunks }
     }
     return null
   } catch (error) {
-    log.error('Error retrieving audio chunks:', error)
+    log.error('Error retrieving audio cycle:', error)
     return null
   }
 }

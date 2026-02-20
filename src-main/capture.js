@@ -9,7 +9,7 @@ const {
 } = require('./captureScreenshots');
 const { ipcMain, powerMonitor } = require('electron');
 const { default: Store } = require('electron-store');
-const { isLocalProcessingAvailable, processDataLocally } = require('./processLocal');
+const { isLocalProcessingAvailable, getLocalProvider, processDataLocally } = require('./processLocal');
 const { applyAppExclusions } = require('./appExclusionMasking');
 const { applyImageDiffBoundingBoxes } = require('./imageDiff');
 const { saveCaptureDump, appendCaptureDump } = require('./captureDump');
@@ -618,7 +618,8 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
  * @param {boolean} resetBuffers - Whether to reset data buffers after collection
  * @returns {Promise<Object>} The captured input data
  */
-async function collectInputData(resetBuffers = true) {
+async function collectInputData(resetBuffers = true, options = {}) {
+  const includeOpenAIWav = options.includeOpenAIWav === true;
   let inputData = {};
   let captureErrors = {
     screen: false,
@@ -636,12 +637,12 @@ async function collectInputData(resetBuffers = true) {
     // Don't add to captureErrors as this is not a critical failure
   }
   
-  // Get audio chunks (for cloud or local API transcription)
+  // Get audio payload for this capture cycle
   if (inputDataSettings.audio) {
     try {
-      const audioInfo = await audioCapture.stopRecording(resetBuffers);
-      if (audioInfo && audioInfo.audioChunks && audioInfo.audioChunks.length > 0) {
-        inputData.audioChunks = audioInfo.audioChunks;
+      const audioInfo = await audioCapture.stopRecording(resetBuffers, { includeOpenAIWav });
+      if (audioInfo && audioInfo.audioCycle && audioInfo.audioCycle.base64Data) {
+        inputData.audioCycle = audioInfo.audioCycle;
       }
       resetFailureStreak('microphone');
       if (inputDataSettings.systemAudio) {
@@ -652,7 +653,7 @@ async function collectInputData(resetBuffers = true) {
       if (inputDataSettings.systemAudio) {
         captureErrors.systemAudio = true;
       }
-      log.error('Error capturing audio chunks:', error);
+      log.error('Error capturing audio payload:', error);
     }
   }
   
@@ -790,8 +791,9 @@ async function _sendToServer(idToken, screenshots, inputData = {}, previousScree
       }
       
       if (inputData) {
-        if (inputData.audioChunks && inputData.audioChunks.length > 0) {
-          payload.audioChunks = inputData.audioChunks;
+        if (inputData.audioCycle && inputData.audioCycle.base64Data) {
+          const { openai, ...cloudAudioCycle } = inputData.audioCycle;
+          payload.audioCycle = cloudAudioCycle;
         }
         if (inputData.idleTime !== undefined) {
           payload.idleTime = inputData.idleTime;
@@ -933,9 +935,12 @@ async function captureAndSend(idToken) {
       } catch (_) {}
     }
 
+    const localProvider = await getLocalProvider();
+    const includeOpenAIWav = localProvider === 'openai';
+
     // Get input data while resetting buffers
     const inputCollectionStartedAt = Date.now();
-    const inputData = await collectInputData(true);
+    const inputData = await collectInputData(true, { includeOpenAIWav });
     recordCyclePhaseDuration('input_collection', Date.now() - inputCollectionStartedAt);
     const moduleErrors = inputData.captureErrors || {};
     captureErrors.windows = !!moduleErrors.windows;
@@ -956,9 +961,9 @@ async function captureAndSend(idToken) {
 
     // Check if we have any data to upload
     const hasScreenshots = screenshots && screenshots.length > 0;
-    const hasAudioChunks = inputData && inputData.audioChunks && inputData.audioChunks.length > 0;
+    const hasAudioCycle = !!(inputData && inputData.audioCycle && inputData.audioCycle.base64Data);
     const hasActivity = inputData && inputData.activity && inputData.activity.length > 0;
-    const hasAnyPayloadData = !!(hasScreenshots || hasAudioChunks || hasActivity);
+    const hasAnyPayloadData = !!(hasScreenshots || hasAudioCycle || hasActivity);
     if (!hasAnyPayloadData) {
       log.debug('[capture] Uploading empty capture payload (no screenshots/audio/activity this cycle)');
     }

@@ -25,7 +25,7 @@ async function getBasePath() {
 /**
  * Save capture payload and screenshots to folder
  * @param {Array<string>} screenshots Data URLs
- * @param {Object} inputData activity, audioTranscript, idleTime
+ * @param {Object} inputData activity, audioCycle, idleTime
  * @param {number} timestamp
  * @param {'cloud'|'local'} pathType
  * @param {Object|null} previousScreenshotData { images: [{ base64Data, index }] } or null - exactly as sent to LLM/cloud
@@ -58,30 +58,57 @@ async function saveCaptureDump(screenshots, inputData, timestamp, pathType, prev
       return sendDir
     }
 
-    const audioChunks = inputData?.audioChunks || [];
-    const audioChunksMeta = [];
-    for (let i = 0; i < audioChunks.length; i++) {
-      const c = audioChunks[i];
-      const base64 = typeof c.base64Data === 'string' && c.base64Data.includes(',')
-        ? c.base64Data.split(',')[1] : c.base64Data;
-      const ext = (c.mimeType || 'audio/webm').split(';')[0].split('/').pop() || 'webm';
-      audioChunksMeta.push({ 
-        mimeType: c.mimeType, 
-        startMs: c.startMs, 
-        endMs: c.endMs, 
-        sizeBytes: base64 ? Buffer.byteLength(base64, 'base64') : 0,
-        speechIntervals: c.speechIntervals || []
-      });
-      if (base64) {
-        const buf = Buffer.from(base64, 'base64');
-        fs.writeFileSync(path.join(sendDir, `audio-${i}.${ext}`), buf);
+    const audioCycle = inputData?.audioCycle || null;
+    let audioCycleMeta = null;
+    if (audioCycle && audioCycle.base64Data) {
+      const cycleBase64 = typeof audioCycle.base64Data === 'string' && audioCycle.base64Data.includes(',')
+        ? audioCycle.base64Data.split(',')[1]
+        : audioCycle.base64Data;
+      const cycleExt = (audioCycle.mimeType || 'audio/webm').split(';')[0].split('/').pop() || 'webm';
+      const openaiAudio = audioCycle.openai && audioCycle.openai.base64Data
+        ? audioCycle.openai
+        : null;
+      const openaiBase64 = openaiAudio
+        ? (typeof openaiAudio.base64Data === 'string' && openaiAudio.base64Data.includes(',')
+            ? openaiAudio.base64Data.split(',')[1]
+            : openaiAudio.base64Data)
+        : null;
+      const openaiExt = openaiAudio
+        ? ((openaiAudio.mimeType || 'audio/wav').split(';')[0].split('/').pop() || 'wav')
+        : null;
+      audioCycleMeta = {
+        mimeType: audioCycle.mimeType,
+        cycleStartMs: audioCycle.cycleStartMs,
+        cycleEndMs: audioCycle.cycleEndMs,
+        recordingIntervals: audioCycle.recordingIntervals || [],
+        speechIntervals: audioCycle.speechIntervals || [],
+        segmentCount: audioCycle.segmentCount,
+        source: audioCycle.source,
+        systemAudioEnabled: !!audioCycle.systemAudioEnabled,
+        sizeBytes: cycleBase64 ? Buffer.byteLength(cycleBase64, 'base64') : 0,
+        ...(openaiBase64 ? {
+          openai: {
+            mimeType: openaiAudio.mimeType || 'audio/wav',
+            format: openaiAudio.format || 'wav',
+            sizeBytes: Buffer.byteLength(openaiBase64, 'base64')
+          }
+        } : {})
+      };
+      if (cycleBase64) {
+        const buf = Buffer.from(cycleBase64, 'base64');
+        fs.writeFileSync(path.join(sendDir, `audio-cycle.${cycleExt}`), buf);
+      }
+      if (openaiBase64 && openaiExt) {
+        const openaiBuf = Buffer.from(openaiBase64, 'base64');
+        fs.writeFileSync(path.join(sendDir, `audio-cycle-openai.${openaiExt}`), openaiBuf);
       }
     }
+
     const payload = {
       timestamp,
       path: pathType,
       activity: inputData?.activity || [],
-      audioChunks: audioChunksMeta,
+      audioCycle: audioCycleMeta,
       idleTime: inputData?.idleTime
     }
     fs.writeFileSync(path.join(sendDir, 'payload.json'), JSON.stringify(payload, null, 2))
@@ -113,6 +140,8 @@ async function saveCaptureDump(screenshots, inputData, timestamp, pathType, prev
 
     return sendDir
   } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[capture-dump] Failed to save capture dump:', error?.message || error)
     return null
   }
 }
