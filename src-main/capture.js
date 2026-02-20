@@ -465,13 +465,14 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     // Open system settings based on platform
     if (process.platform === 'darwin') {
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+    } else if (process.platform === 'win32') {
+      shell.openExternal('ms-settings:privacy-microphone');
     } else if (process.platform === 'linux') {
       if (mainWindow) {
         mainWindow.webContents.send('linux-audio-permission-notice');
       }
       return;
     } else {
-      // Windows/other: do not force-open settings.
       if (mainWindow) {
         mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'request' });
       }

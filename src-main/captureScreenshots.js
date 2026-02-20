@@ -492,11 +492,12 @@ function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndA
       return;
     }
 
-    // Only macOS has a meaningful direct deep-link for this permission flow.
     if (process.platform === 'darwin') {
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
+    } else if (process.platform === 'win32') {
+      shell.openExternal('ms-settings:privacy-graphicscaptureprogrammatic')
     } else {
-      // Windows/Linux: do not force-open settings. Report current denied state only.
+      // Linux/other: no direct settings deep-link here. Report current denied state only.
       stateManager?.updateScreenCapturePermission(false);
       if (mainWindow) {
         mainWindow.webContents.send('screenCapturePermission', {
