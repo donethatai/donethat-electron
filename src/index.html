@@ -576,7 +576,7 @@
                 <div>
                   <div class="text-base font-semibold text-gray-800">Meeting audio</div>
                   <div class="text-xs text-gray-500">Also record computer sound (meetings, videos) when the microphone is active.</div>
-                  <div id="waylandMeetingAudioNote" class="hidden text-xs text-amber-700 mt-1">
+                  <div id="waylandMeetingAudioNote" class="hidden text-xs text-gray-500 mt-1">
                     On some Wayland systems, enabling this can trigger a screen-sharing dialog at the start of each meeting.
                   </div>
                   <div class="mt-2">
@@ -721,6 +721,9 @@
                 <div>
                   <div class="text-base font-semibold text-gray-800">Open Chat hotkey</div>
                   <div class="text-xs text-gray-500">Always uses Cmd/Ctrl + Shift. Choose the final letter (A–Z).</div>
+                  <div id="waylandHotkeyNote" class="hidden text-xs text-gray-500 mt-1">
+                    On some Wayland systems, global hotkeys are unavailable. Use the Chat button instead.
+                  </div>
                 </div>
                 <div class="flex items-center gap-1 mt-6" title="Open Chat hotkey">
                   <span id="hotkeyCmdCap" class="inline-flex items-center justify-center h-7 px-3 text-xs bg-gray-50 border border-gray-200 rounded-md shadow-inner text-gray-500 select-none pointer-events-none" aria-disabled="true" title="Fixed modifier">Ctrl</span>

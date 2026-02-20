@@ -601,11 +601,18 @@ document.addEventListener('DOMContentLoaded', () => {
   
 
   if (openChatBtn) {
-    try {
-      const isMac = window.electronAPI && window.electronAPI.platform === 'darwin';
-      openChatBtn.textContent = `Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
-      openChatBtn.title = `Chat (${isMac ? 'Cmd' : 'Ctrl'}+Shift+D)`;
-    } catch (e) {}
+    const isWaylandLinux = window.electronAPI?.platform === 'linux' && !!window.electronAPI?.isWayland;
+    const applyChatLabel = (label) => {
+      const text = label ? `Chat (${label})` : 'Chat';
+      openChatBtn.textContent = text;
+      openChatBtn.title = text;
+    };
+    if (isWaylandLinux) {
+      openChatBtn.textContent = 'Chat';
+      openChatBtn.title = 'Chat';
+    } else {
+      applyChatLabel(null);
+    }
     
     openChatBtn.addEventListener('click', () => {
       // Only allow chat if authenticated and has valid access
@@ -618,21 +625,18 @@ document.addEventListener('DOMContentLoaded', () => {
       try { ipcRenderer.send('overlay:toggle'); } catch (e) {}
     });
 
-    // React to hotkey updates from main to refresh label
-    try {
-      ipcRenderer.on('hotkey:updated', (_event, payload) => {
-        if (!payload || !payload.label) return;
-        openChatBtn.textContent = `Chat (${payload.label})`;
-        openChatBtn.title = `Chat (${payload.label})`;
-      });
-      // Also request current label once
-      ipcRenderer.invoke('hotkey:get').then((res) => {
-        if (res && res.success && res.label) {
-          openChatBtn.textContent = `Chat (${res.label})`;
-          openChatBtn.title = `Chat (${res.label})`;
-        }
-      }).catch(() => {});
-    } catch (_) {}
+    if (!isWaylandLinux) {
+      // React to hotkey updates from main to refresh label
+      try {
+        ipcRenderer.on('hotkey:updated', (_event, payload) => {
+          applyChatLabel(payload && payload.label ? payload.label : null);
+        });
+        // Also request current label once
+        ipcRenderer.invoke('hotkey:get').then((res) => {
+          applyChatLabel(res && res.success && res.label ? res.label : null);
+        }).catch(() => {});
+      } catch (_) {}
+    }
   }
   if (openSettingsViewBtn) {
     openSettingsViewBtn.addEventListener('click', () => {

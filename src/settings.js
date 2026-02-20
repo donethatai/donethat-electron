@@ -1316,13 +1316,22 @@ function setupHotkeyConfiguration() {
   const cmdCap = document.getElementById('hotkeyCmdCap');
   const shiftCap = document.getElementById('hotkeyShiftCap');
   if (!input || !cmdCap || !shiftCap) return;
+  const isWayland = isWaylandLinuxSession();
+
+  try { cmdCap.textContent = (window.electronAPI.platform === 'darwin' ? 'Cmd' : 'Ctrl'); } catch (_) {}
+
+  if (isWayland) {
+    input.disabled = true;
+    input.classList.add('text-gray-400', 'cursor-not-allowed');
+    input.classList.remove('text-gray-900', 'focus:ring-2', 'focus:ring-indigo-400');
+    input.title = 'Global hotkeys are unavailable on Wayland sessions.';
+    return;
+  }
 
   // Load current from main
   ipcRenderer.invoke('hotkey:get').then((res) => {
     if (res && res.success) {
       try { input.value = (res.suffix || 'D'); } catch (_) {}
-      // Update Cmd/Ctrl label depending on platform
-      try { cmdCap.textContent = (window.electronAPI.platform === 'darwin' ? 'Cmd' : 'Ctrl'); } catch (_) {}
     }
   }).catch(() => {});
 
@@ -1989,6 +1998,7 @@ function setupWaylandDetection() {
   
   const waylandNote = document.getElementById('waylandNote');
   const waylandMeetingAudioNote = document.getElementById('waylandMeetingAudioNote');
+  const waylandHotkeyNote = document.getElementById('waylandHotkeyNote');
   const forcedOffNote = document.getElementById('waylandWindowsForcedOffNote');
   const windowsCheckbox = document.getElementById('windowsCheckbox');
   if (!waylandNote) return;
@@ -2001,6 +2011,7 @@ function setupWaylandDetection() {
   if (isWayland) {
     waylandNote.classList.remove('hidden');
     if (waylandMeetingAudioNote) waylandMeetingAudioNote.classList.remove('hidden');
+    if (waylandHotkeyNote) waylandHotkeyNote.classList.remove('hidden');
     if (forcedOffNote) forcedOffNote.classList.remove('hidden');
     if (windowsCheckbox) {
       windowsCheckbox.checked = false;
@@ -2009,6 +2020,7 @@ function setupWaylandDetection() {
   } else {
     waylandNote.classList.add('hidden');
     if (waylandMeetingAudioNote) waylandMeetingAudioNote.classList.add('hidden');
+    if (waylandHotkeyNote) waylandHotkeyNote.classList.add('hidden');
     if (forcedOffNote) forcedOffNote.classList.add('hidden');
     if (windowsCheckbox) {
       windowsCheckbox.disabled = !!inputDataManagedLocks.windows;
