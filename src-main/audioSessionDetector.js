@@ -395,14 +395,18 @@ class AudioSessionManager {
     const binaryName = 'donethatmicmonitor.exe';
     
     const pathsToCheck = [
+      process.resourcesPath ? path.resolve(process.resourcesPath, 'app.asar.unpacked', 'bin', binaryName) : null,
+      process.resourcesPath ? path.resolve(process.resourcesPath, 'bin', binaryName) : null,
       path.resolve(process.cwd(), 'bin', binaryName),
       path.resolve(__dirname, '..', 'bin', binaryName),
-      process.resourcesPath ? path.resolve(process.resourcesPath, 'bin', binaryName) : null,
-      process.resourcesPath ? path.resolve(process.resourcesPath, 'app.asar.unpacked', 'bin', binaryName) : null,
     ].filter(Boolean);
 
     for (const p of pathsToCheck) {
       try {
+        const normalized = p.toLowerCase();
+        if (normalized.includes(`${path.sep}app.asar${path.sep}`) && !normalized.includes(`${path.sep}app.asar.unpacked${path.sep}`)) {
+          continue;
+        }
         if (fs.existsSync(p)) return p;
       } catch (_) {}
     }
