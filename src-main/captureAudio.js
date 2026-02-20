@@ -1,5 +1,5 @@
 const log = require('electron-log')
-const { ipcMain } = require('electron')
+const { ipcMain, systemPreferences } = require('electron')
 const audioSessionDetector = require('./audioSessionDetector')
 const { recordAudioRestart } = require('./telemetry')
 
@@ -189,6 +189,39 @@ async function checkMicrophonePermission(forceRefresh = false) {
     return hasMicrophonePermission
   }
 
+  if (process.platform === 'darwin') {
+    try {
+      const status = systemPreferences.getMediaAccessStatus('microphone')
+      if (status === 'granted') {
+        hasMicrophonePermission = true
+        return true
+      }
+
+      // Only prompt on explicit user-driven checks.
+      if (forceRefresh && status === 'not-determined') {
+        const granted = await systemPreferences.askForMediaAccess('microphone')
+        hasMicrophonePermission = !!granted
+        if (!granted && mainWindow && !mainWindow.isDestroyed()) {
+          try { mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'runtime-check' }) } catch (_) {}
+        }
+        return !!granted
+      }
+
+      hasMicrophonePermission = false
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'runtime-check' }) } catch (_) {}
+      }
+      return false
+    } catch (error) {
+      log.error('Error checking microphone permission via macOS API:', error)
+      hasMicrophonePermission = false
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'runtime-check' }) } catch (_) {}
+      }
+      return false
+    }
+  }
+
   try {
     const hasPermission = await mainWindow.webContents.executeJavaScript(
       `new Promise(resolve => {
@@ -238,6 +271,17 @@ async function checkMicrophonePermissionPassive() {
     return hasMicrophonePermission
   }
 
+  if (process.platform === 'darwin') {
+    try {
+      const status = systemPreferences.getMediaAccessStatus('microphone')
+      const granted = status === 'granted'
+      hasMicrophonePermission = granted
+      return granted
+    } catch (_) {
+      return false
+    }
+  }
+
   try {
     const status = await mainWindow.webContents.executeJavaScript(
       `new Promise((resolve) => {
@@ -263,7 +307,8 @@ async function checkMicrophonePermissionPassive() {
   }
 }
 
-async function checkSystemAudioPermission() {
+async function checkSystemAudioPermission(options = {}) {
+  const activeProbe = !!options.activeProbe
   if (process.platform === 'darwin') {
       const { checkScreenCapturePermission } = require('./captureScreenshots')
     try {
@@ -271,7 +316,42 @@ async function checkSystemAudioPermission() {
       if (result === undefined) {
         return null
       }
-      return !!result
+      if (!result) {
+        return false
+      }
+      if (!activeProbe) {
+        return true
+      }
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return false
+      }
+
+      // Active loopback probe (explicit user check path): verify getDisplayMedia can
+      // actually provide a live audio track, not just screen-capture entitlement.
+      const canCaptureLoopback = await mainWindow.webContents.executeJavaScript(
+        `new Promise((resolve) => {
+          const finish = (value) => resolve(!!value);
+          (async () => {
+            try {
+              if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                finish(false);
+                return;
+              }
+              const stream = await navigator.mediaDevices.getDisplayMedia({
+                audio: true,
+                video: false
+              });
+              const track = stream && stream.getAudioTracks ? stream.getAudioTracks()[0] : null;
+              const ok = !!(track && track.readyState === 'live');
+              try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+              finish(ok);
+            } catch (_) {
+              finish(false);
+            }
+          })();
+        })`
+      )
+      return !!canCaptureLoopback
     } catch (_) {
       return false
     }
@@ -301,16 +381,50 @@ async function startRecordingInternal() {
 
   startRecordingPromise = (async () => {
     try {
-      const started = await mainWindow.webContents.executeJavaScript(
-      `window.startAudioRecording && window.startAudioRecording({
-        systemAudio: ${!!currentConfig.systemAudio}
-      });`
-      )
+      const startInRenderer = async (systemAudio) => {
+        return mainWindow.webContents.executeJavaScript(
+          `window.startAudioRecording && window.startAudioRecording({
+            systemAudio: ${!!systemAudio}
+          });`
+        )
+      }
+
+      let started = await startInRenderer(!!currentConfig.systemAudio)
 
       if (!started) {
         log.error('[AudioCapture] Failed to start audio recording in renderer', {
           systemAudioRequested: !!currentConfig.systemAudio
         })
+
+        // If system audio was requested, treat this as evidence that loopback capture
+        // is currently unavailable and immediately notify UI/state. Then retry mic-only.
+        if (currentConfig.systemAudio) {
+          try {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('systemAudioPermission', {
+                hasPermission: false,
+                source: 'runtime-start-failed'
+              })
+            }
+          } catch (_) {}
+
+          started = await startInRenderer(false)
+          if (started) {
+            log.warn('[AudioCapture] System audio start failed; continuing with microphone-only capture')
+            isRecording = true
+            return true
+          }
+        }
+
+        // Mic start failed as well; reflect this immediately in permission UI/state.
+        try {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('microphonePermission', {
+              hasPermission: false,
+              source: 'runtime-start-failed'
+            })
+          }
+        } catch (_) {}
         return false
       }
 

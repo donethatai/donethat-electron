@@ -479,17 +479,25 @@ async function handleCaptureToggleIntent(type, enabled) {
     return { success: false, reverted: true, managed: true };
   }
 
+  const nextPartial = { [type]: enabled };
+  const previousInputData = { ...inputData };
+
   inputData[type] = enabled;
+  // Meeting audio depends on microphone. Turning microphone off always forces meeting audio off.
+  if (type === 'audio' && !enabled && inputData.systemAudio) {
+    inputData.systemAudio = false;
+    nextPartial.systemAudio = false;
+  }
 
   try {
-    await saveUserSettings('inputData', { [type]: enabled, __partial: true });
-    ipcRenderer.send('updateInputDataSettings', { [type]: enabled });
+    await saveUserSettings('inputData', { ...nextPartial, __partial: true });
+    ipcRenderer.send('updateInputDataSettings', nextPartial);
     refreshCaptureDependentVisibility();
     emitCaptureStateUpdated();
     return { success: true, reverted: false };
   } catch (error) {
     console.error(`Error saving ${type} toggle state:`, error);
-    inputData[type] = !enabled;
+    inputData = previousInputData;
     refreshCaptureDependentVisibility();
     emitCaptureStateUpdated();
     return { success: false, reverted: true };

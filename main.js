@@ -138,6 +138,8 @@ app.on('activate', () => {
 
 // To show dev tools next to main window
 let DEBUG = false
+const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus'
+const PENDING_PERMISSION_POST_RESTART_FOCUS_TTL_MS = 10 * 60 * 1000
 
 // Global hotkey configuration (suffix only, final character)
 let HOTKEY_SUFFIX = 'D' // default
@@ -1765,6 +1767,10 @@ function createWindow() {
     mainWindow.once('ready-to-show', async () => {
       startupMainWindowReady = true;
       maybeShowStartupWindowForUnauthenticated();
+      const shouldForceFocusAfterPermissionRestart = await consumePendingPermissionPostRestartFocusMarker()
+      if (shouldForceFocusAfterPermissionRestart) {
+        showWindowBelowTray()
+      }
 
       mainWindow.webContents.send('screenCapturePermission', {
         hasPermission: stateManager?.hasScreenCapturePermission(),
@@ -2129,6 +2135,32 @@ function maybeShowStartupWindowForUnauthenticated() {
 
   startupUnauthedWindowShown = true;
   showWindowBelowTray();
+}
+
+async function consumePendingPermissionPostRestartFocusMarker() {
+  try {
+    const { default: Store } = await import('electron-store')
+    const store = new Store({ name: 'donethat-config' })
+    const marker = store.get(PENDING_PERMISSION_POST_RESTART_FOCUS_KEY)
+    if (!marker || typeof marker !== 'object') {
+      return false
+    }
+
+    const createdAt = Number(marker.createdAt)
+    const ageMs = Number.isFinite(createdAt) ? Date.now() - createdAt : Number.POSITIVE_INFINITY
+    if (ageMs < 0 || ageMs > PENDING_PERMISSION_POST_RESTART_FOCUS_TTL_MS) {
+      try { store.delete(PENDING_PERMISSION_POST_RESTART_FOCUS_KEY) } catch (_) {}
+      log.info('Ignoring stale post-restart focus marker', { ageMs })
+      return false
+    }
+
+    try { store.delete(PENDING_PERMISSION_POST_RESTART_FOCUS_KEY) } catch (_) {}
+    log.info('Consuming post-restart focus marker', { reason: marker.reason || 'unknown', ageMs })
+    return true
+  } catch (error) {
+    log.warn('Failed to consume post-restart focus marker:', error?.message || error)
+    return false
+  }
 }
 
 // Modify the window-all-closed handler to respect system quit

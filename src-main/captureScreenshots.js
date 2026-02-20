@@ -2,6 +2,7 @@ const { nativeImage, ipcMain, shell, app } = require('electron')
 const { execSync } = require('child_process')
 const path = require('path')
 const log = require('electron-log')
+const { default: Store } = require('electron-store')
 const { getScreenSources } = require('./screenCaptureSemaphore')
 const { recordPermissionCheck } = require('./telemetry')
 
@@ -18,6 +19,7 @@ const PREVIOUS_SCREENSHOT_SCALE_FACTOR = 0.5
 const PREVIOUS_SCREENSHOT_MAX_AGE_FACTOR = 1.5
 
 let screenPermissionFocusListener = null
+const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus'
 const DEFAULT_LINUX_SCREENSHOT_COMMAND = `bash -c 'getOriginalAnimationSetting=$(gsettings get org.gnome.desktop.interface enable-animations); getOriginalSoundSetting=$(gsettings get org.gnome.desktop.sound event-sounds); gsettings set org.gnome.desktop.interface enable-animations false; gsettings set org.gnome.desktop.sound event-sounds false; gnome-screenshot -f "%s"; gsettings set org.gnome.desktop.interface enable-animations $getOriginalAnimationSetting; gsettings set org.gnome.desktop.sound event-sounds $getOriginalSoundSetting'`
 
 ///// UTILITIES /////
@@ -48,6 +50,18 @@ function getSourceLogContext(source, index, caller) {
     displayId: source?.display_id || 'unknown',
     thumbWidth: thumbnailSize?.width || 0,
     thumbHeight: thumbnailSize?.height || 0
+  }
+}
+
+function markPermissionFocusOnNextLaunch(reason = 'screen-permission') {
+  try {
+    const store = new Store({ name: 'donethat-config' })
+    store.set(PENDING_PERMISSION_POST_RESTART_FOCUS_KEY, {
+      reason,
+      createdAt: Date.now()
+    })
+  } catch (error) {
+    log.warn('Failed to persist post-restart focus marker:', error?.message || error)
   }
 }
 
@@ -492,7 +506,16 @@ function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndA
       return;
     }
 
+    stateManager?.updateScreenCapturePermission(false);
+    if (mainWindow) {
+      mainWindow.webContents.send('screenCapturePermission', {
+        hasPermission: false,
+        source: 'request'
+      });
+    }
+
     if (process.platform === 'darwin') {
+      markPermissionFocusOnNextLaunch('screen-permission')
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
     } else if (process.platform === 'win32') {
       shell.openExternal('ms-settings:privacy-graphicscaptureprogrammatic')

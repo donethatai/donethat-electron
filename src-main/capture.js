@@ -1,6 +1,7 @@
 const log = require('electron-log');
 const { captureScreenshot, getPreviousScreenshots, saveCurrentScreenshot, scaleScreenshotToPreviousSize, checkScreenCapturePermission } = require('./captureScreenshots');
 const { ipcMain, powerMonitor } = require('electron');
+const { default: Store } = require('electron-store');
 const { isLocalProcessingAvailable, processDataLocally } = require('./processLocal');
 const { applyAppExclusions } = require('./appExclusionMasking');
 const { applyImageDiffBoundingBoxes } = require('./imageDiff');
@@ -30,9 +31,22 @@ let getIdTokenFunction = null; // Store the getIdToken function reference
 let captureCycleInFlight = false;
 let microphonePermissionFocusListener = null;
 let systemAudioPermissionFocusListener = null;
+const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus';
 
 const WINDOW_CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 let lastWindowCacheCleanupAt = 0;
+
+function markPermissionFocusOnNextLaunch(reason = 'system-audio-permission') {
+  try {
+    const store = new Store({ name: 'donethat-config' });
+    store.set(PENDING_PERMISSION_POST_RESTART_FOCUS_KEY, {
+      reason,
+      createdAt: Date.now()
+    });
+  } catch (error) {
+    log.warn('Failed to persist post-restart focus marker:', error?.message || error);
+  }
+}
 
 function isValidImageDataUrl(dataUrl) {
   if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false;
@@ -337,6 +351,11 @@ function updateInputDataSettings(settings) {
     if (isManagedInputStateForced(managedInputDataSettings.screen)) {
       inputDataSettings.screen = stateToBool(managedInputDataSettings.screen);
     }
+
+    // Keep dependency invariant: system audio cannot remain enabled when microphone is off.
+    if (!inputDataSettings.audio && inputDataSettings.systemAudio) {
+      inputDataSettings.systemAudio = false;
+    }
     
     // Stop tracking for disabled options
     if (previousSettings.audio && !inputDataSettings.audio) {
@@ -462,6 +481,10 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
       return;
     }
 
+    if (mainWindow) {
+      mainWindow.webContents.send('microphonePermission', { hasPermission: false, source: 'request' });
+    }
+
     // Open system settings based on platform
     if (process.platform === 'darwin') {
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
@@ -510,7 +533,11 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
     
     // System audio is part of screen recording permission on macOS
     if (process.platform === 'darwin') {
-      const hasSystemAudioPermission = await probePermission('systemAudio', 'request', () => checkSystemAudioPermission());
+      const hasSystemAudioPermission = await probePermission(
+        'systemAudio',
+        'request',
+        () => checkSystemAudioPermission({ activeProbe: shouldOpenSettings === true })
+      );
       if (hasSystemAudioPermission === null) {
         // Permission check was skipped/in-progress; keep current UI state.
         return;
@@ -527,6 +554,10 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
         }
         return;
       }
+      if (mainWindow) {
+        mainWindow.webContents.send('systemAudioPermission', { hasPermission: false, source: 'request' });
+      }
+      markPermissionFocusOnNextLaunch('system-audio-permission');
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
     } else if (process.platform === 'win32') {
       // Windows system audio capture does not use a dedicated OS permission dialog.
@@ -556,7 +587,11 @@ function initCapture(mainWindow, onAuthError, getIdToken) {
       app.removeListener('browser-window-focus', focusListener);
       
       if (!mainWindow) return;
-      const hasSystemAudioPermission = await probePermission('systemAudio', 'focus-recheck', () => checkSystemAudioPermission());
+      const hasSystemAudioPermission = await probePermission(
+        'systemAudio',
+        'focus-recheck',
+        () => checkSystemAudioPermission({ activeProbe: true })
+      );
       if (hasSystemAudioPermission === null) return;
       mainWindow.webContents.send('systemAudioPermission', { hasPermission: !!hasSystemAudioPermission, source: 'request' });
     };

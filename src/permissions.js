@@ -430,7 +430,7 @@ function updateSystemAudioCheckbox(hasPermission) {
   }
   const enabledByToggle = !!checkbox.checked;
   const audioEnabled = !!document.getElementById('audioCheckbox')?.checked;
-  const blockedByPermission = isKnown && enabledByToggle && audioEnabled && !!hasMicrophonePermission() && !hasPermission;
+  const blockedByPermission = isKnown && enabledByToggle && audioEnabled && !hasPermission;
   if (blockedByPermission !== permissionIssueVisibleState.systemAudio) {
     permissionIssueVisibleState.systemAudio = blockedByPermission;
     if (blockedByPermission) {
@@ -472,6 +472,9 @@ function setupScreenCaptureCheckboxBehavior() {
     }
     updateScreenCaptureCheckbox(checkbox.dataset.permissionGranted === 'true');
     updateFinishButtonVisibility();
+    if (enabled) {
+      requestScreenCapturePermission();
+    }
     emitCaptureStateUpdated();
   });
 
@@ -499,6 +502,9 @@ function setupWindowsCheckboxBehavior() {
     }
     updateWindowsCheckbox(checkbox.dataset.permissionGranted === 'true');
     updateFinishButtonVisibility();
+    if (enabled) {
+      requestWindowsPermission(true);
+    }
     emitCaptureStateUpdated();
   });
 }
@@ -520,6 +526,9 @@ function setupAudioCheckboxBehavior() {
     if (systemAudioCheckbox) {
       updateSystemAudioCheckbox(readPermissionDataset(systemAudioCheckbox));
     }
+    if (enabled) {
+      requestMicrophonePermission();
+    }
     emitCaptureStateUpdated();
   });
 }
@@ -538,6 +547,9 @@ function setupSystemAudioCheckboxBehavior() {
       return;
     }
     updateSystemAudioCheckbox(readPermissionDataset(checkbox));
+    if (enabled) {
+      requestSystemAudioPermission(true);
+    }
     emitCaptureStateUpdated();
   });
 }
