@@ -462,7 +462,7 @@ function hideMainWindowIfVisible() {
 function installUpdate(payload) {
   const runAfter = payload && payload.forceRunAfter === true;
   if (process.platform === 'win32') {
-    autoUpdater.quitAndInstall(false, runAfter);
+    autoUpdater.quitAndInstall(true, runAfter);
   } else {
     app.isQuitting = true;
     autoUpdater.quitAndInstall();
