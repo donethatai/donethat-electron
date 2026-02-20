@@ -65,6 +65,7 @@ class AudioSessionManager {
     this.platform = process.platform;
     this.isChecking = false;
     this.currentCheckPromise = null;
+    this.windowsHelperMissingLogged = false;
   }
 
   initialize(options = 1000) {
@@ -333,74 +334,57 @@ class AudioSessionManager {
   }
 
   /**
-   * Windows: Uses helper binary (donethatmicmonitor.exe) or PowerShell to check for actual microphone usage.
-   * Only returns true when an app is actually using the microphone.
+   * Windows: Uses helper binary (donethatmicmonitor.exe) to check for actual microphone usage.
+   * Only returns true when an external app is actively using the microphone.
    */
   async detectWindowsMicrophoneUsage() {
     try {
-      // Method 0: Native Helper (Preferred)
-      // Checks WASAPI for active sessions and returns PID/Name
       const helperPath = this.resolveWindowsHelperPath();
-      if (helperPath) {
-        try {
-          const { stdout } = await execAsync(`"${helperPath}"`);
-          const sessions = JSON.parse(stdout);
-          
-          // Filter out our own PID
-          const externalSessions = [];
-          for (const session of sessions) {
-            const pid = Number(session && session.pid);
-            const name = String((session && session.name) || '').toLowerCase();
-
-            const isOwnSession =
-              (Number.isInteger(pid) && (this.isOwnProcessPid(pid) || await this.isChildOfOwnProcessWindows(pid))) ||
-              name.includes('donethat');
-
-            if (!isOwnSession) {
-              externalSessions.push(session);
-            }
-          }
-          
-          if (externalSessions.length > 0) {
-            const s = externalSessions[0];
-            return {
-              isActive: true,
-              pid: s.pid,
-              name: s.name || 'Unknown Windows App',
-              path: null // path not returned by helper yet
-            };
-          }
-          return null;
-        } catch (helperError) {
-          log.warn('Windows helper failed, falling back to Registry check:', helperError.message);
+      if (!helperPath) {
+        if (!this.windowsHelperMissingLogged) {
+          this.windowsHelperMissingLogged = true;
+          log.warn('[AudioSession] Windows mic helper not found; microphone session detection disabled');
         }
+        return null;
       }
 
-      // Method 1: Check registry for active microphone usage (most reliable fallback)
-      const registryCommand = `powershell -ExecutionPolicy Bypass -Command "Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone\\*\\*' | Where-Object { $_.LastUsedTimeStop -eq 0 } | Select-Object -First 1"`;
-      
       try {
-        const { stdout } = await execAsync(registryCommand);
-        if (stdout.trim().length > 0) {
-          return { isActive: true, name: "Active Windows Device (Registry)", pid: null };
-        }
-      } catch (registryError) {
-        // Registry method failed, continue to fallback
-      }
+        const { stdout } = await execAsync(`"${helperPath}"`);
+        const sessions = JSON.parse(stdout);
+        const externalSessions = [];
+        let ownFilteredCount = 0;
 
-      // Method 2: Check for active audio sessions using a different registry path (fallback)
-      const audioSessionRegistryCommand = `powershell -ExecutionPolicy Bypass -Command "Get-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone\\NonPackaged\\*' | Where-Object { $_.LastUsedTimeStop -eq 0 } | Select-Object -First 1"`;
-      
-      try {
-        const { stdout } = await execAsync(audioSessionRegistryCommand);
-        if (stdout.trim().length > 0) {
-          return { isActive: true, name: "Active Windows Device (NonPackaged)", pid: null };
+        for (const session of sessions) {
+          const pid = Number(session && session.pid);
+          const name = String((session && session.name) || '').toLowerCase();
+
+          const isOwnSession =
+            (Number.isInteger(pid) && (this.isOwnProcessPid(pid) || await this.isChildOfOwnProcessWindows(pid))) ||
+            name.includes('donethat');
+
+          if (isOwnSession) {
+            ownFilteredCount += 1;
+            continue;
+          }
+          externalSessions.push(session);
         }
-      } catch (nonPackagedError) {
-        // Non-packaged registry method failed
+
+        log.debug(`[AudioSession] Windows helper sessions: total=${sessions.length}, ownFiltered=${ownFilteredCount}, external=${externalSessions.length}`);
+
+        if (externalSessions.length > 0) {
+          const s = externalSessions[0];
+          return {
+            isActive: true,
+            pid: s.pid,
+            name: s.name || 'Unknown Windows App',
+            path: null // path not returned by helper yet
+          };
+        }
+        return null;
+      } catch (helperError) {
+        log.error('[AudioSession] Windows helper execution failed:', helperError.message || helperError);
+        return null;
       }
-      return null;
-      
     } catch (error) {
       log.error('Error in detectWindowsMicrophoneUsage:', error.message);
       return null;
