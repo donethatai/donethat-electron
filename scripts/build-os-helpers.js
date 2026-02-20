@@ -29,61 +29,36 @@ function buildSwiftHelper({ sourcePath, outputPath, frameworks }) {
   run(`chmod +x "${outputPath}"`);
 }
 
-function findWindowsCscPath() {
-  if (runOptional('where csc')) {
-    return 'csc';
-  }
-
-  const winDir = process.env.WINDIR || 'C:\\Windows';
-  const candidates = [
-    path.join(winDir, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'),
-    path.join(winDir, 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe')
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
 function buildWindowsHelper({ sourcePath, outputPath }) {
-  const cscPath = findWindowsCscPath();
-  if (cscPath) {
-    run(`"${cscPath}" /nologo /target:exe /out:"${outputPath}" "${sourcePath}"`);
-    return true;
+  if (!runOptional('dotnet --version')) {
+    throw new Error('dotnet SDK is required to build donethatmicmonitor.exe on Windows');
   }
 
-  if (runOptional('dotnet --version')) {
-    const workDir = path.join(process.cwd(), '.build', 'windows-mic-helper');
-    fs.mkdirSync(workDir, { recursive: true });
-    const runtimeArch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const workDir = path.join(process.cwd(), '.build', 'windows-mic-helper');
+  fs.mkdirSync(workDir, { recursive: true });
+  const runtimeArch = process.arch === 'arm64' ? 'arm64' : 'x64';
 
-    const projectPath = path.join(workDir, 'donethatmicmonitor.csproj');
-    const programPath = path.join(workDir, 'Program.cs');
-    fs.writeFileSync(projectPath, [
-      '<Project Sdk="Microsoft.NET.Sdk">',
-      '  <PropertyGroup>',
-      '    <OutputType>Exe</OutputType>',
-      '    <TargetFramework>net8.0-windows</TargetFramework>',
-      '    <UseWindowsForms>false</UseWindowsForms>',
-      '    <ImplicitUsings>disable</ImplicitUsings>',
-      '    <Nullable>disable</Nullable>',
-      '  </PropertyGroup>',
-      '</Project>'
-    ].join('\n'));
-    fs.copyFileSync(sourcePath, programPath);
-    run(`dotnet publish "${projectPath}" -c Release -r win-${runtimeArch} --self-contained true -p:PublishSingleFile=true -o "${workDir}"`);
-    const publishedExe = path.join(workDir, 'donethatmicmonitor.exe');
-    if (fs.existsSync(publishedExe)) {
-      fs.copyFileSync(publishedExe, outputPath);
-      return true;
-    }
+  const projectPath = path.join(workDir, 'donethatmicmonitor.csproj');
+  const programPath = path.join(workDir, 'Program.cs');
+  fs.writeFileSync(projectPath, [
+    '<Project Sdk="Microsoft.NET.Sdk">',
+    '  <PropertyGroup>',
+    '    <OutputType>Exe</OutputType>',
+    '    <TargetFramework>net8.0-windows</TargetFramework>',
+    '    <UseWindowsForms>false</UseWindowsForms>',
+    '    <ImplicitUsings>disable</ImplicitUsings>',
+    '    <Nullable>disable</Nullable>',
+    '  </PropertyGroup>',
+    '</Project>'
+  ].join('\n'));
+  fs.copyFileSync(sourcePath, programPath);
+  run(`dotnet publish "${projectPath}" -c Release -r win-${runtimeArch} --self-contained true -p:PublishSingleFile=true -o "${workDir}"`);
+  const publishedExe = path.join(workDir, 'donethatmicmonitor.exe');
+  if (!fs.existsSync(publishedExe)) {
+    throw new Error(`dotnet publish completed but helper not found at ${publishedExe}`);
   }
-
-  return false;
+  fs.copyFileSync(publishedExe, outputPath);
+  return true;
 }
 
 function main() {
@@ -122,11 +97,7 @@ function main() {
     }
 
     console.log(`[build-os-helpers] Building Windows helper: ${helper.name}`);
-    const built = buildWindowsHelper(helper);
-    if (!built) {
-      console.warn('[build-os-helpers] Warning: Could not build Windows mic helper (no csc/dotnet). Continuing without helper.');
-      return;
-    }
+    buildWindowsHelper(helper);
     console.log(`[build-os-helpers] Built helper: ${helper.outputPath}`);
     return;
   }
