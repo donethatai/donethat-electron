@@ -44,6 +44,25 @@ function buildOwnMacBundlePrefixes() {
 }
 
 const OWN_MAC_BUNDLE_PREFIXES = buildOwnMacBundlePrefixes();
+function buildOwnWindowsIdentityHints() {
+  const hints = new Set(['donethat']);
+  try {
+    const exeBase = path.basename(process.execPath || '').toLowerCase();
+    if (exeBase) hints.add(exeBase.replace(/\.exe$/i, ''));
+  } catch (_) {}
+
+  try {
+    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const appId = packageJson && packageJson.build && packageJson.build.appId;
+    if (typeof appId === 'string' && appId.trim()) hints.add(appId.trim().toLowerCase());
+    const name = packageJson && packageJson.name;
+    if (typeof name === 'string' && name.trim()) hints.add(name.trim().toLowerCase());
+  } catch (_) {}
+
+  return [...hints].filter(Boolean);
+}
+const OWN_WINDOWS_IDENTITY_HINTS = buildOwnWindowsIdentityHints();
 
 // For com.apple.* bundles we use explicit allowlist; non-Apple bundles are allowed by default.
 const ALLOWED_APPLE_MIC_BUNDLE_IDS = new Set([
@@ -246,7 +265,12 @@ class AudioSessionManager {
   isOwnWindowsMicEntry(entry) {
     const key = String(entry?.key || '').toLowerCase();
     const leaf = String(entry?.leaf || '').toLowerCase();
-    return key.includes('donethat') || leaf.includes('donethat');
+    for (const hint of OWN_WINDOWS_IDENTITY_HINTS) {
+      if (key.includes(hint) || leaf.includes(hint)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   isOwnLinuxSession(stream) {
@@ -330,28 +354,36 @@ class AudioSessionManager {
               $isActive = ([int64]$stop -eq 0)
             }
             if ($isActive) { [PSCustomObject]@{ key = $_.Name; leaf = $_.PSChildName } }
-          } catch {}
+          } catch {
+            Write-Error ("mic-registry-probe item failure: " + $_.Exception.Message)
+          }
         }
         @($active) | ConvertTo-Json -Compress
       `
-      const { stdout } = await execFileAsync('powershell', [
+      const { stdout, stderr } = await execFileAsync('powershell', [
         '-NoProfile',
         '-ExecutionPolicy',
         'Bypass',
         '-Command',
         script
       ]);
+      const probeStderr = String(stderr || '').trim();
+      if (probeStderr) {
+        log.warn('[AudioSession] Windows mic registry probe stderr:', probeStderr);
+      }
 
       const raw = String(stdout || '').trim();
-      log.debug(`[AudioSession] Windows mic registry raw stdout: ${raw}`);
       if (!raw) {
         return null;
       }
 
       const parsed = JSON.parse(raw);
       const sessions = Array.isArray(parsed) ? parsed : [parsed];
+      const ownFiltered = sessions.filter((entry) => this.isOwnWindowsMicEntry(entry));
       const externalSessions = sessions.filter((entry) => !this.isOwnWindowsMicEntry(entry));
-      log.debug(`[AudioSession] Windows mic registry sessions: total=${sessions.length}, external=${externalSessions.length}`);
+      log.debug(
+        `[AudioSession] Windows mic registry probe: total=${sessions.length}, ownFiltered=${ownFiltered.length}, external=${externalSessions.length}`
+      );
 
       if (externalSessions.length === 0) {
         return null;
@@ -366,6 +398,9 @@ class AudioSessionManager {
       };
     } catch (error) {
       log.error('[AudioSession] Windows mic registry detection failed:', error.message || error);
+      if (error?.stack) {
+        log.error('[AudioSession] Windows mic registry detection stack:', error.stack);
+      }
       return null;
     }
   }
