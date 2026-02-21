@@ -33,6 +33,8 @@ const AUDIO_RESTART_MAX_PER_WINDOW = 6;
 let userSpeechIntervals = []; // Array of { startMs, endMs }
 let cycleRecordingIntervals = []; // Closed intervals for current capture cycle
 let currentRecordingIntervalStartMs = null; // Open interval start for current capture cycle
+let accumulatedRecordingIntervals = []; // Closed intervals accumulated across session stops within the cycle
+let accumulatedSpeechIntervals = []; // Speech intervals accumulated across session stops within the cycle
 const VAD_THRESHOLD = 0.05; // RMS threshold (adjustable)
 const VAD_MIN_SPEECH_MS = 100; // Minimum duration to consider as speech
 const VAD_HANG_OVER_MS = 500; // Time to wait before ending a speech segment
@@ -79,7 +81,7 @@ function endRecordingInterval(ts = Date.now()) {
 }
 
 function getRecordingIntervalsSnapshot(now = Date.now()) {
-  const intervals = [...cycleRecordingIntervals];
+  const intervals = [...accumulatedRecordingIntervals, ...cycleRecordingIntervals];
   const endMs = Number(now);
   if (currentRecordingIntervalStartMs != null && Number.isFinite(endMs) && endMs > currentRecordingIntervalStartMs) {
     intervals.push({
@@ -91,11 +93,45 @@ function getRecordingIntervalsSnapshot(now = Date.now()) {
 }
 
 function resetCycleRecordingIntervals(startNewInterval = false, now = Date.now()) {
+  accumulatedRecordingIntervals = [];
   cycleRecordingIntervals = [];
   currentRecordingIntervalStartMs = null;
   if (startNewInterval) {
     beginRecordingInterval(now);
   }
+}
+
+function getSpeechIntervalsSnapshot() {
+  return mergeIntervals([...accumulatedSpeechIntervals, ...userSpeechIntervals]);
+}
+
+function resetCycleSpeechIntervals() {
+  accumulatedSpeechIntervals = [];
+  userSpeechIntervals = [];
+}
+
+function filterIntervalsToWindow(intervals, windowStartMs, windowEndMs) {
+  const start = Number(windowStartMs);
+  const end = Number(windowEndMs);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return [];
+  }
+  return mergeIntervals((intervals || [])
+    .map((interval) => {
+      const intervalStart = Number(interval?.startMs);
+      const intervalEnd = Number(interval?.endMs);
+      if (!Number.isFinite(intervalStart) || !Number.isFinite(intervalEnd) || intervalEnd <= intervalStart) {
+        return null;
+      }
+      const clippedStart = Math.max(intervalStart, start);
+      const clippedEnd = Math.min(intervalEnd, end);
+      if (clippedEnd <= clippedStart) return null;
+      return {
+        startMs: clippedStart,
+        endMs: clippedEnd
+      };
+    })
+    .filter(Boolean));
 }
 
 // Helper: is our own recorder currently active
@@ -966,7 +1002,7 @@ window.getAudioChunksWithTimestamps = async function(resetBuffers = false) {
   }
 };
 
-async function normalizeAudioChunksForCycle(audioChunksInput, recordingIntervals, systemAudioEnabled) {
+async function normalizeAudioChunksForCycle(audioChunksInput, recordingIntervals, speechIntervalsInput, systemAudioEnabled) {
   const prepared = (audioChunksInput || [])
     .map((chunk, index) => {
       const rawBase64 = typeof chunk?.base64Data === 'string' && chunk.base64Data.includes(',')
@@ -1033,17 +1069,22 @@ async function normalizeAudioChunksForCycle(audioChunksInput, recordingIntervals
     return null;
   }
 
-  const speechIntervals = mergeIntervals(
-    payloadSegments.flatMap((chunk) => chunk.speechIntervals)
+  const payloadSpeechIntervals = filterIntervalsToWindow(
+    (speechIntervalsInput && speechIntervalsInput.length > 0)
+      ? speechIntervalsInput
+      : payloadSegments.flatMap((chunk) => chunk.speechIntervals),
+    cycleStartMs,
+    cycleEndMs
   );
+  const payloadRecordingIntervals = filterIntervalsToWindow(recordingIntervals, cycleStartMs, cycleEndMs);
 
   return {
     base64Data: payloadBase64,
     mimeType: payloadMimeType,
     cycleStartMs,
     cycleEndMs,
-    recordingIntervals: mergeIntervals(recordingIntervals),
-    speechIntervals,
+    recordingIntervals: payloadRecordingIntervals,
+    speechIntervals: payloadSpeechIntervals,
     segmentCount: payloadSegments.length,
     source: 'mixed',
     systemAudioEnabled: !!systemAudioEnabled
@@ -1059,8 +1100,14 @@ window.getAudioCycleWithMetadata = async function(resetBuffers = false, includeO
   try {
     const snapshotAt = Date.now();
     const recordingIntervalsSnapshot = getRecordingIntervalsSnapshot(snapshotAt);
+    const speechIntervalsSnapshot = getSpeechIntervalsSnapshot();
     const chunks = await window.getAudioChunksWithTimestamps(resetBuffers);
-    const audioCycle = await normalizeAudioChunksForCycle(chunks, recordingIntervalsSnapshot, lastStartOptions.systemAudio);
+    const audioCycle = await normalizeAudioChunksForCycle(
+      chunks,
+      recordingIntervalsSnapshot,
+      speechIntervalsSnapshot,
+      lastStartOptions.systemAudio
+    );
 
     if (audioCycle && includeOpenAIWav) {
       const alreadyWav = (audioCycle.mimeType || '').split(';')[0] === 'audio/wav';
@@ -1079,6 +1126,7 @@ window.getAudioCycleWithMetadata = async function(resetBuffers = false, includeO
     if (resetBuffers) {
       const isActivelyRecording = !!(isRecording && mediaRecorder && mediaRecorder.state === 'recording');
       resetCycleRecordingIntervals(isActivelyRecording, Date.now());
+      resetCycleSpeechIntervals();
     }
 
     return audioCycle;
@@ -1087,6 +1135,7 @@ window.getAudioCycleWithMetadata = async function(resetBuffers = false, includeO
     if (resetBuffers) {
       const isActivelyRecording = !!(isRecording && mediaRecorder && mediaRecorder.state === 'recording');
       resetCycleRecordingIntervals(isActivelyRecording, Date.now());
+      resetCycleSpeechIntervals();
     }
     return null;
   }
@@ -1119,6 +1168,8 @@ function trimAudioBuffer() {
 
   // Prune old intervals
   userSpeechIntervals = userSpeechIntervals.filter(i => i.endMs >= cutoffTime);
+  accumulatedSpeechIntervals = accumulatedSpeechIntervals.filter(i => i.endMs >= cutoffTime);
+  accumulatedRecordingIntervals = accumulatedRecordingIntervals.filter(i => i.endMs >= cutoffTime);
 }
 
 /**
@@ -1136,7 +1187,8 @@ window.stopAudioRecording = async function() {
 /**
  * Stop recording completely; saves current buffer as chunk for next capture cycle
  */
-window.shutdownAudioRecording = async function() {
+window.shutdownAudioRecording = async function(options = {}) {
+  const clearCycleState = options && options.clearCycleState === true;
   const preState = mediaRecorder ? mediaRecorder.state : 'none';
   const preTracks = (mediaRecorder && mediaRecorder.stream) ? mediaRecorder.stream.getAudioTracks().map(t => ({
     id: t.id,
@@ -1153,6 +1205,18 @@ window.shutdownAudioRecording = async function() {
   })) : [];
   if (mediaRecorder && isRecording) {
     endRecordingInterval(Date.now());
+    if (cycleRecordingIntervals.length > 0) {
+      accumulatedRecordingIntervals = mergeIntervals([
+        ...accumulatedRecordingIntervals,
+        ...cycleRecordingIntervals
+      ]);
+    }
+    if (userSpeechIntervals.length > 0) {
+      accumulatedSpeechIntervals = mergeIntervals([
+        ...accumulatedSpeechIntervals,
+        ...userSpeechIntervals
+      ]);
+    }
     if (audioChunks.length > 0) {
       if (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused') {
         try { mediaRecorder.requestData(); } catch (_) {}
@@ -1180,6 +1244,15 @@ window.shutdownAudioRecording = async function() {
     lastAutoRestartAt = 0;
     autoRestartTimestamps = [];
     cycleRecordingIntervals = [];
+    userSpeechIntervals = [];
+    currentRecordingIntervalStartMs = null;
+  }
+
+  if (clearCycleState) {
+    accumulatedRecordingIntervals = [];
+    accumulatedSpeechIntervals = [];
+    cycleRecordingIntervals = [];
+    userSpeechIntervals = [];
     currentRecordingIntervalStartMs = null;
   }
 

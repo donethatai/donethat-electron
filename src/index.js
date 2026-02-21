@@ -128,6 +128,18 @@ function updateSettingsToggleLabelGlobal() {
   } catch (_) {}
 }
 
+function updateTopbarReloadVisibility(viewName) {
+  try {
+    const reloadBtn = document.getElementById('reloadIframeBtn');
+    if (!reloadBtn) return;
+    if (viewName === 'dashboard') {
+      reloadBtn.classList.remove('hidden');
+    } else {
+      reloadBtn.classList.add('hidden');
+    }
+  } catch (_) {}
+}
+
 // Proactively send token to the embedded portal when available
 async function sendPortalLoginIfPossible() {
   try {
@@ -356,6 +368,7 @@ function navigateToView(viewName) {
   if (topbarActionsElement && viewName !== 'settings') {
     topbarActionsElement.classList.remove('hidden');
   }
+  updateTopbarReloadVisibility(viewName);
   
   // Track page view in analytics with all necessary details
   trackPageView(viewName);

@@ -625,6 +625,14 @@ async function shutdownRecording() {
       await stopRecordingInternal()
     }
 
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        await mainWindow.webContents.executeJavaScript(
+          'window.shutdownAudioRecording && window.shutdownAudioRecording({ clearCycleState: true });'
+        )
+      } catch (_) {}
+    }
+
     audioSessionDetector.shutdown()
 
     return true
