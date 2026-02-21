@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-26-large
             platform: mac
             arch: x64
             command: upload:mac:x64
@@ -54,7 +54,7 @@ jobs:
           
       - name: Install dependencies
         run: npm install --include=optional
-        
+
       - name: Create config files from secrets (Unix)
         if: runner.os != 'Windows'
         run: |
