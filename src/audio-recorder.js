@@ -29,6 +29,14 @@ const AUDIO_RESTART_MIN_INTERVAL_MS = 8000;
 const AUDIO_RESTART_WINDOW_MS = 60 * 1000;
 const AUDIO_RESTART_MAX_PER_WINDOW = 6;
 
+function isWaylandLinuxSession() {
+  try {
+    return window.electronAPI?.platform === 'linux' && !!window.electronAPI?.isWayland;
+  } catch (_) {
+    return false;
+  }
+}
+
 // VAD State & Constants
 let userSpeechIntervals = []; // Array of { startMs, endMs }
 let cycleRecordingIntervals = []; // Closed intervals for current capture cycle
@@ -540,7 +548,9 @@ window.startAudioRecording = async function(options = {}) {
       };
 
       const videoTracks = systemStream.getVideoTracks();
-      if (videoTracks.length > 0) {
+      // On Wayland, some portals tie loopback audio lifetime to the active
+      // display stream. Keep video tracks alive to avoid losing system audio.
+      if (videoTracks.length > 0 && !isWaylandLinuxSession()) {
         videoTracks.forEach((track) => track.stop());
       }
 
