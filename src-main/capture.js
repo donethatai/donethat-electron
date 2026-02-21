@@ -641,6 +641,9 @@ async function collectInputData(resetBuffers = true, options = {}) {
   if (inputDataSettings.audio) {
     try {
       const audioInfo = await audioCapture.stopRecording(resetBuffers, { includeOpenAIWav });
+      if (audioInfo && audioInfo.error) {
+        throw new Error(audioInfo.message || `Audio retrieval failed (${audioInfo.reason || 'unknown'})`);
+      }
       if (audioInfo && audioInfo.audioCycle && audioInfo.audioCycle.base64Data) {
         inputData.audioCycle = audioInfo.audioCycle;
       }

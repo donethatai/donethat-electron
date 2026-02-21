@@ -589,7 +589,7 @@ async function startAudioTracking(config) {
  * @param {boolean} resetBuffers If true, cycle the MediaRecorder for fresh headers
  * @param {Object} options
  * @param {boolean} options.includeOpenAIWav If true, include WAV payload for OpenAI local path
- * @returns {Promise<{audioCycle: Object}|null>}
+ * @returns {Promise<{audioCycle: Object}|{error: boolean, reason: string, message: string}|null>}
  */
 async function stopRecording(resetBuffers = false, options = {}) {
   try {
@@ -605,7 +605,11 @@ async function stopRecording(resetBuffers = false, options = {}) {
     return null
   } catch (error) {
     log.error('Error retrieving audio cycle:', error)
-    return null
+    return {
+      error: true,
+      reason: 'retrieve_failed',
+      message: error?.message || 'Unknown error retrieving audio cycle'
+    }
   }
 }
 

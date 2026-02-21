@@ -139,6 +139,8 @@ const validReceiveChannels = [
   'liquid-glass-active',
 
   // Webview / hotkey / updates
+  'app:window-hidden',
+  'app:window-shown',
   'webview:reload',
   'hotkey:updated',
   'update:available',

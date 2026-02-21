@@ -1000,16 +1000,7 @@ async function normalizeAudioChunksForCycle(audioChunksInput, recordingIntervals
 
   if (prepared.length === 0) return null;
 
-  const cycleStartMs = Math.min(...prepared.map((chunk) => chunk.startMs));
-  const cycleEndMs = Math.max(...prepared.map((chunk) => chunk.endMs));
-  if (!Number.isFinite(cycleStartMs) || !Number.isFinite(cycleEndMs) || cycleEndMs <= cycleStartMs) {
-    return null;
-  }
-
-  const speechIntervals = mergeIntervals(
-    prepared.flatMap((chunk) => chunk.speechIntervals)
-  );
-
+  let payloadSegments = prepared;
   const hasMultipleSegments = prepared.length > 1;
   let payloadBase64 = null;
   let payloadMimeType = prepared[0].mimeType;
@@ -1019,16 +1010,32 @@ async function normalizeAudioChunksForCycle(audioChunksInput, recordingIntervals
     if (wavBase64) {
       payloadBase64 = wavBase64;
       payloadMimeType = 'audio/wav';
+    } else {
+      // Do not byte-concatenate container formats (e.g. webm segments) because that can produce invalid media.
+      // Fall back to one valid segment (latest) to keep payload decodable.
+      payloadSegments = [prepared[prepared.length - 1]];
+      payloadMimeType = payloadSegments[0].mimeType;
+      payloadBase64 = arrayBufferToBase64(uint8ArrayToArrayBuffer(payloadSegments[0].bytes));
     }
   }
 
   if (!payloadBase64) {
-    const mergedBytes = concatUint8Arrays(prepared.map((chunk) => chunk.bytes));
+    const mergedBytes = concatUint8Arrays(payloadSegments.map((chunk) => chunk.bytes));
     if (!mergedBytes || mergedBytes.length === 0) {
       return null;
     }
     payloadBase64 = arrayBufferToBase64(mergedBytes.buffer);
   }
+
+  const cycleStartMs = Math.min(...payloadSegments.map((chunk) => chunk.startMs));
+  const cycleEndMs = Math.max(...payloadSegments.map((chunk) => chunk.endMs));
+  if (!Number.isFinite(cycleStartMs) || !Number.isFinite(cycleEndMs) || cycleEndMs <= cycleStartMs) {
+    return null;
+  }
+
+  const speechIntervals = mergeIntervals(
+    payloadSegments.flatMap((chunk) => chunk.speechIntervals)
+  );
 
   return {
     base64Data: payloadBase64,
@@ -1037,7 +1044,7 @@ async function normalizeAudioChunksForCycle(audioChunksInput, recordingIntervals
     cycleEndMs,
     recordingIntervals: mergeIntervals(recordingIntervals),
     speechIntervals,
-    segmentCount: prepared.length,
+    segmentCount: payloadSegments.length,
     source: 'mixed',
     systemAudioEnabled: !!systemAudioEnabled
   };

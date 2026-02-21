@@ -468,6 +468,7 @@ function hideMainWindowIfVisible() {
   try {
     const hasFocusedWindow = !!BrowserWindow.getFocusedWindow();
     if (!hasFocusedWindow && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+      try { mainWindow.webContents.send('app:window-hidden'); } catch (_) {}
       mainWindow.hide();
     }
   } catch (e) {}

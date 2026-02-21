@@ -1735,11 +1735,12 @@ function setupIPCHandlers() {
   ipcMain.handle('test-local-processing', async (event) => {
     try {
       const { processDataLocally } = require('./processLocal');
+      const { getInputDataSettings } = require('./capture');
+      const audioCapture = require('./captureAudio');
 
       // Use minimal dummy input data for testing - avoids complex collection that might hang
       const inputData = {
         activity: [],
-        audioChunks: [],
         idleTime: 0
       };
 
@@ -1757,12 +1758,45 @@ function setupIPCHandlers() {
       const isGemini = geminiResult.success && geminiResult.apiKey;
       const isOpenAI = !isGemini && openaiResult.success && openaiResult.config && openaiResult.config.endpoint;
       const providerName = isGemini ? 'Gemini' : (isOpenAI ? 'OpenAI-Compatible' : 'Local');
+      const captureSettings = getInputDataSettings();
+      const shouldTestAudio = !!captureSettings?.audio;
+      let audioIncludedInTest = false;
+
+      if (shouldTestAudio) {
+        let startedForTest = false;
+        try {
+          const statusBefore = audioCapture.getStatus();
+          if (!statusBefore?.recording) {
+            startedForTest = await audioCapture.startRecording();
+          }
+          if (startedForTest) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+
+          const audioInfo = await audioCapture.stopRecording(false, { includeOpenAIWav: true });
+          if (audioInfo && audioInfo.audioCycle && audioInfo.audioCycle.base64Data) {
+            inputData.audioCycle = audioInfo.audioCycle;
+            audioIncludedInTest = true;
+          }
+        } catch (audioError) {
+          log.warn('Local processing test: unable to include test audio:', audioError?.message || audioError);
+        } finally {
+          if (startedForTest) {
+            try {
+              await audioCapture.shutdownRecording();
+            } catch (_) {}
+          }
+        }
+      }
 
       // Attempt with current token; on FIREBASE auth error, request refresh and retry once
       let token = idToken || null;
       try {
         await processDataLocally(token, screenshots, inputData, true);
-        return { success: true, message: `${providerName} test successful` };
+        return {
+          success: true,
+          message: `${providerName} test successful${shouldTestAudio ? (audioIncludedInTest ? ' (audio included)' : ' (audio unavailable)') : ''}`
+        };
       } catch (err) {
         const isFirebase = err && err.source === 'FIREBASE';
         const isAuth = isFirebase && (err.code === 'TOKEN_EXPIRED' || err.code === 'AUTH_ERROR' || err.status === 401 || err.status === 403);
@@ -1795,7 +1829,10 @@ function setupIPCHandlers() {
 
         // Retry once with refreshed token
         await processDataLocally(token, screenshots, inputData, true);
-        return { success: true, message: `${providerName} test successful` };
+        return {
+          success: true,
+          message: `${providerName} test successful${shouldTestAudio ? (audioIncludedInTest ? ' (audio included)' : ' (audio unavailable)') : ''}`
+        };
       }
     } catch (error) {
       log.error('Error in local processing test:', error);

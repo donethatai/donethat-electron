@@ -454,17 +454,10 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
  */
 async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioCycle, idleTime, idToken, testMode = false) {
   try {
-    // Validate current screenshots - this is critical
-    if (!screenshots || screenshots.length === 0) {
-      throw new Error('No current screenshots available for analysis');
-    }
-
-    // Validate that all current screenshots have valid data
-    // Current screenshots come as data URLs (strings), not objects with base64Data property
-    const validScreenshots = screenshots.filter(img => img && typeof img === 'string' && img.startsWith('data:image/'));
-    if (validScreenshots.length === 0) {
-      throw new Error('No valid screenshot data available for analysis');
-    }
+    // Screenshots are optional: we can still process cycles using audio/activity/idle data.
+    const screenshotList = Array.isArray(screenshots) ? screenshots : [];
+    // Current screenshots come as data URLs (strings), not objects with base64Data property.
+    const validScreenshots = screenshotList.filter(img => img && typeof img === 'string' && img.startsWith('data:image/'));
 
     // Initialize LLM if not already done
     if (!llmModels) {
