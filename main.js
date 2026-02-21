@@ -121,10 +121,10 @@ if (true) {
     if (mainWindow) {
       // If window exists but is hidden, show it
       if (!mainWindow.isVisible()) {
-        showWindowBelowTray();
+        presentMainWindow();
       } else {
         // Focus the window to bring it to foreground
-        mainWindow.focus();
+        restoreShowAndFocusMainWindow();
       }
     }
   });
@@ -473,6 +473,17 @@ function hideMainWindowIfVisible() {
   } catch (e) {}
 }
 
+function restoreShowAndFocusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    if (typeof mainWindow.isMinimized === 'function' && mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+  } catch (e) {}
+  try { mainWindow.show(); } catch (e) {}
+  try { mainWindow.focus(); } catch (e) {}
+}
+
 function installUpdate(payload) {
   const runAfter = payload && payload.forceRunAfter === true;
   if (process.platform === 'win32') {
@@ -659,8 +670,7 @@ ipcMain.on('logout', () => {
     }
   } catch (e) {}
   if (mainWindow) {
-    try { mainWindow.show(); } catch (e) {}
-    try { mainWindow.focus(); } catch (e) {}
+    restoreShowAndFocusMainWindow();
   }
 });
 
@@ -686,8 +696,7 @@ ipcMain.on('focus-app-window', (event) => {
     }
   } catch (e) {}
   if (mainWindow) {
-    try { mainWindow.show(); } catch (e) {}
-    try { mainWindow.focus(); } catch (e) {}
+    restoreShowAndFocusMainWindow();
   }
 });
 
@@ -1327,9 +1336,9 @@ function updateTrayIcon(isActuallyRecording) {
 function navigateToView(viewName) {
   // Only show/position window if it's not already visible
   if (!mainWindow.isVisible()) {
-    showWindowBelowTray();
+    presentMainWindow();
   } else {
-    mainWindow.focus();
+    restoreShowAndFocusMainWindow();
   }
   mainWindow.webContents.send('navigate', viewName);
 }
@@ -1760,7 +1769,7 @@ function createWindow() {
       maybeShowStartupWindowForUnauthenticated();
       const shouldForceFocusAfterPermissionRestart = await consumePendingPermissionPostRestartFocusMarker()
       if (shouldForceFocusAfterPermissionRestart) {
-        showWindowBelowTray()
+        presentMainWindow()
       }
 
       mainWindow.webContents.send('screenCapturePermission', {
@@ -2108,9 +2117,8 @@ function sendOverlayState() {
   } catch (e) {}
 }
 
-// Intelligently positions the window relative to the tray icon
-// with support for multiple displays
-function showWindowBelowTray() {
+// Presents the main window and ensures it's visible in dock/taskbar.
+function presentMainWindow() {
   // Show the main window centered and focused on all platforms
   try { mainWindow.center(); } catch (e) {}
   
@@ -2122,8 +2130,7 @@ function showWindowBelowTray() {
     try { mainWindow.setSkipTaskbar(false); } catch (e) {}
   }
 
-  try { mainWindow.show(); } catch (e) {}
-  try { mainWindow.focus(); } catch (e) {}
+  restoreShowAndFocusMainWindow();
 }
 
 function maybeShowStartupWindowForUnauthenticated() {
@@ -2133,7 +2140,7 @@ function maybeShowStartupWindowForUnauthenticated() {
   if (startupIsAuthenticated !== true) {
     if (startupUnauthedWindowShown) return;
     startupUnauthedWindowShown = true;
-    showWindowBelowTray();
+    presentMainWindow();
     return;
   }
 
@@ -2149,7 +2156,7 @@ function maybeShowStartupWindowForUnauthenticated() {
   if (!shouldShowForPermissionState) return;
 
   startupPermissionWindowShown = true;
-  showWindowBelowTray();
+  presentMainWindow();
 }
 
 async function consumePendingPermissionPostRestartFocusMarker() {
