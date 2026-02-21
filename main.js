@@ -168,7 +168,6 @@ function isWaylandLinuxSession() {
 function registerGlobalShortcut() {
   try {
     if (isWaylandLinuxSession()) {
-      log.info('Skipping global shortcut registration on Wayland (unsupported by many compositors)');
       return;
     }
     const accel = getHotkeyAccelerator();
