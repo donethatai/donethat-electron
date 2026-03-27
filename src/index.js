@@ -874,15 +874,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!recordingText || !recordingBtn) return;
     lastKnownPauseState = !!isPaused;
     if (isPaused) {
-      recordingText.textContent = 'Paused';
+      recordingText.textContent = 'Resume';
       recordingText.classList.remove('active');
       recordingBtn?.classList.remove('active');
-      recordingBtn?.setAttribute('title', 'Paused');
+      recordingBtn?.setAttribute('title', 'Resume');
     } else {
-      recordingText.textContent = 'Recording';
+      recordingText.textContent = 'Pause';
       recordingText.classList.add('active'); // orange text when recording
       recordingBtn?.classList.add('active'); // orange border when recording
-      recordingBtn?.setAttribute('title', 'Recording');
+      recordingBtn?.setAttribute('title', 'Pause');
     }
     updateRecordingMenuState(isPaused);
   }
