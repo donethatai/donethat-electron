@@ -14,7 +14,7 @@ Use **GPLv3** for the desktop client.
 - `package.json` is currently `"license": "UNLICENSED"`.
 - Minimal docs only (`README.md` + 2 operational docs).
 - `README.md` says to run `npm run start`, but there is no `start` script.
-- Build/runtime depends on private backend endpoints (`*.cloudfunctions.net`, `app.donethat.ai`) and local private config (`firebase-config.js`).
+- Build/runtime depends on private backend endpoints (`*.cloudfunctions.net`, `app.donethat.ai`), but Firebase client config is now committed and no longer CI-injected.
 - Only one real test suite exists (`src-main/__tests__/main-state-workdays.test.js`).
 - Test coverage is very low overall (~8.45% statements from `npm test -- --coverage --runInBand`).
 - `npm audit --json` reports 12 vulnerabilities (10 high, 2 moderate).
@@ -22,6 +22,7 @@ Use **GPLv3** for the desktop client.
 - No contributor governance/security docs (`CONTRIBUTING`, `CODE_OF_CONDUCT`, `SECURITY`, etc.).
 - No third-party notices/SBOM currently present.
 - Git history contains two author emails; one is a personal Gmail address.
+- Local release tags appear incomplete: tags exist through `v1.4.5`, while `package.json` is currently `1.5.0`.
 
 ## What Is Missing Before Best-Practice Open Source Release
 
@@ -34,7 +35,7 @@ Use **GPLv3** for the desktop client.
   - Add explicit statement: client is open-source; server/API is proprietary.
   - Add backend compatibility/API contract doc for public understanding.
 - [ ] **Replace/clean secret-coupled setup**
-  - Provide a safe public config pattern (`firebase-config.example.js` or env-based loader).
+  - Document the committed Firebase client config pattern clearly.
   - Ensure no private credentials are required to build docs/tests locally.
 - [ ] **Add third-party license compliance artifacts**
   - Add `THIRD_PARTY_NOTICES.md` (or generated `THIRD_PARTY_LICENSES.txt`).
@@ -50,9 +51,10 @@ Use **GPLv3** for the desktop client.
   - Add complete developer bootstrap steps.
   - Document what works without proprietary backend.
 - [ ] **Align repository + release topology**
-  - Publish releases from this source repository (instead of a separate releases repo).
-  - Rename repository to `donethat-desktop` and update all metadata/links accordingly.
-  - Plan and execute an `electron-updater` feed switchover during rename/migration (update publish target repo and updater config, e.g. `package.json` `build.publish` and `dev-app-update.yml`).
+  - Open-source this existing repository as the canonical source repository; do not create or migrate to a separate `donethat-desktop` source repo.
+  - Keep `donethat-releases` as the binary/update repository used by `electron-builder` and `electron-updater`.
+  - For every shipped version, publish from an exact source tag in this repository and link that tag from the corresponding release in `donethat-releases`.
+  - Verify repository metadata (`package.json` `repository`, `bugs`, `homepage`) and release docs describe this split clearly: source lives here, binaries/updates live in `donethat-releases`.
 - [ ] **Audit and clean repository artifacts**
   - Remove unexplained tracked file `%b` if accidental.
   - Ensure only intended assets remain.
@@ -64,6 +66,7 @@ Use **GPLv3** for the desktop client.
 - [ ] **Release integrity and reproducibility**
   - Public release process doc with signed artifacts, checksums, and source/binary mapping.
   - Explain how users verify binaries match published source.
+  - Standardize release tagging so every shipped binary version has a matching source tag (current local tags do not appear to cover `1.5.0`).
 - [ ] **Dependency/security hygiene**
   - Triage and remediate current audit findings.
   - Add CI security scanning (`npm audit`, CodeQL/Dependabot/Snyk equivalent).
@@ -91,7 +94,8 @@ Use **GPLv3** for the desktop client.
 
 If the purpose is "users can inspect client code even with closed backend", add these explicit guarantees:
 
-- [ ] Client source for every shipped binary version is published and tagged.
+- [ ] Client source for every shipped binary version is published and tagged in this repository.
+- [ ] Every release in `donethat-releases` links to the exact matching source tag in this repository.
 - [ ] Deterministic or well-documented reproducible build path is available.
 - [ ] Signed release artifacts and checksums are published.
 - [ ] Remote behavior dependencies are documented (all backend endpoints, what they do, and what data they receive).
