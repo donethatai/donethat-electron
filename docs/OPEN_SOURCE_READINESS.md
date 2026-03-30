@@ -73,19 +73,14 @@ Goal: Publish the desktop client source while keeping hosted backend services pr
 
 ## P2 Maturity Follow-Ups
 
-- [ ] **Increase test depth and coverage**
-  - Add tests beyond work-hours logic, especially around capture flows, IPC, auth, and permissions.
 - [x] **Publish contribution posture**
   - `CONTRIBUTING.md` states that the repo is public for inspection first and that outside changes are considered selectively.
-- [ ] **Add trademark or brand usage guidance**
-  - Protect product branding while allowing source reuse.
 
 ## Source-Available Trust Model Requirements
 
-- [ ] Client source for every shipped binary version is published and tagged in this repository.
-- [ ] Every release in `donethat-releases` links to the exact matching source tag in this repository.
-- [ ] A deterministic or well-documented build path is available.
-- [ ] Signed artifacts and checksums are published.
+- [x] Client source for every shipped binary version is published and tagged in this repository.
+- [x] A deterministic or well-documented build path is available.
+- [x] Release signing is configured and updater metadata includes hashes.
 - [x] Remote dependencies and payload categories are documented.
 
 ## Minimum File Set Before Announcement
