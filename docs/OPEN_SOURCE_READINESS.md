@@ -8,13 +8,15 @@ Goal: Publish the desktop client source while keeping hosted backend services pr
 
 - Desktop client source is in this repository; backend services remain proprietary.
 - Legal and baseline OSS docs are now present: `LICENSE`, `README.md`, `SECURITY.md`, `SUPPORT.md`, `THIRD_PARTY_NOTICES.md`, and `CHANGELOG.md`.
-- `package.json` metadata now points at `donethatai/donethat-desktop` and uses `GPL-3.0-only`.
+- `package.json` metadata now points at `donethatai/donethat-electron` and uses `GPL-3.0-only`.
 - Firebase client config is committed, so docs/tests do not depend on CI-injected client config.
-- Public backend behavior is now documented in `BACKEND_COMPATIBILITY.md`.
+- Public backend testing posture is now documented: backend-integrated testing uses your own account or a dedicated test account.
+- Public backend behavior is now documented in `docs/BACKEND_COMPATIBILITY.md`.
+- Release automation now enforces version-tag creation/validation via `scripts/ensure-release-tag.js` before upload.
+- Release integrity and dependency-security docs are now present: `docs/RELEASE_INTEGRITY.md` and `docs/DEPENDENCY_SECURITY.md`.
 - A lightweight PR CI workflow now runs tests and `build:prepare`.
-- Local source tags still stop at `v1.4.5` while `package.json` is `1.5.0`.
 - Test coverage is still shallow; only a small number of main-process tests exist today.
-- Aikido should be the required PR security check, configured in GitHub outside this repository.
+- Aikido is handled as a required PR security check in GitHub outside this repository.
 - Git history still contains both org and personal author email addresses.
 
 ## P0 Before Public Launch
@@ -25,40 +27,44 @@ Goal: Publish the desktop client source while keeping hosted backend services pr
 - [x] **Clarify the open vs closed boundary in the public README**
   - README states that the desktop client is open source and hosted backend services remain proprietary.
 - [x] **Document backend compatibility and remote behavior**
-  - `BACKEND_COMPATIBILITY.md` documents the proprietary backend dependency surface.
+  - `docs/BACKEND_COMPATIBILITY.md` documents the proprietary backend dependency surface.
   - Remote payload categories are documented at a public, category-based level.
 - [x] **Replace the broken public dev command docs**
   - README now points to `npm run dev` and `npm run build`.
 - [x] **Expand local developer bootstrap guidance**
+  - README documents Node.js `22`, supported desktop targets, and the macOS Xcode Command Line Tools requirement for local helper builds.
   - README clarifies what can be developed and tested without proprietary backend access.
   - Backend-dependent limitations are documented publicly.
+- [x] **Document the supported public backend testing path**
+  - Backend-integrated testing uses your own account or a dedicated test account.
 - [x] **Add third-party license compliance artifacts**
   - `THIRD_PARTY_NOTICES.md` exists.
 - [x] **Add a basic security disclosure path**
   - `SECURITY.md` exists with a private reporting channel and response expectation.
 - [x] **Add a concise public trust summary**
-  - `BACKEND_COMPATIBILITY.md` includes a public summary of screenshot, activity, microphone, and system-audio handling.
+  - `docs/BACKEND_COMPATIBILITY.md` includes a public summary of screenshot, activity, microphone, and system-audio handling.
 - [x] **Align repository metadata to the source repo**
-  - `repository`, `bugs`, and `homepage` now point to `donethatai/donethat-desktop`.
-- [ ] **Align source and release topology**
+  - `repository`, `bugs`, and `homepage` now point to `donethatai/donethat-electron`.
+- [x] **Align source and release topology**
   - Keep this repository as the canonical source repository.
   - Keep `donethat-releases` as the binary/update repository.
-  - The release process now has a shared create-if-missing tag guard.
-  - Existing shipped versions still need exact source-tag linkage.
+  - The release process now has a shared create-if-missing tag guard via `scripts/ensure-release-tag.js`.
+  - Release uploads validate or create the exact `v<package.json version>` source tag before publishing binaries.
 - [x] **Audit and clean repository artifacts**
   - The unexplained `%b` root artifact is no longer present.
+- [x] **Sanitize current tracked secret templates**
+  - `.env-template` now uses descriptive placeholders instead of token-shaped example values.
 
 ## P1 Strongly Recommended
 
 - [x] **Add a minimal maintainer/support policy**
   - `SUPPORT.md` exists.
-- [ ] **Add release integrity and reproducibility docs**
-  - Document checksums, signing, and source-to-binary mapping.
-  - Explain how users verify published binaries against source.
-  - Document the new tag-guarded source tagging workflow.
-- [ ] **Improve dependency and security hygiene**
-  - Re-run `npm audit`, triage current findings, and remediate what is practical before launch.
-  - Configure the Aikido GitHub App as a required PR security check.
+- [x] **Add release integrity and reproducibility docs**
+  - `docs/RELEASE_INTEGRITY.md` documents checksums/update metadata, signing, source-to-binary mapping, and the tag-guarded release flow.
+  - The public docs now explain how to verify published binaries against source.
+- [x] **Improve dependency and security hygiene**
+  - `npm audit` was rerun on 2026-03-30 and triaged in `docs/DEPENDENCY_SECURITY.md` (`16` high, `23` moderate, `0` critical).
+  - The Aikido GitHub App is handled as a required PR security check in GitHub outside this repository.
 - [x] **Add CI quality gates**
   - PR CI now runs tests and build smoke checks.
   - The manual release workflow is no longer the only workflow in the repository.
@@ -88,7 +94,7 @@ Goal: Publish the desktop client source while keeping hosted backend services pr
 - [x] `SUPPORT.md`
 - [x] `SECURITY.md`
 - [x] `THIRD_PARTY_NOTICES.md`
-- [x] `BACKEND_COMPATIBILITY.md`
+- [x] `docs/BACKEND_COMPATIBILITY.md`
 - [x] `CONTRIBUTING.md`
 - [x] `CHANGELOG.md`
 
@@ -96,10 +102,21 @@ Goal: Publish the desktop client source while keeping hosted backend services pr
 
 Findings from local history inspection:
 
-- Author email metadata still includes both `christoph@donethat.ai` and `christoph@donethat.ai`.
-- No obvious private-key blocks were identified in the earlier scan that produced this checklist.
+- Author metadata still includes both organization and personal email identities in public history.
+- No obvious private-key blocks were identified in the latest history scan.
+- Current tracked-file review found no committed `.env` file.
+- Remaining public-history concerns are author metadata and secret-like placeholders in historical templates.
 
 Remaining actions:
 
-- [ ] Decide whether the personal email address should remain public in git history.
-- [ ] If history is rewritten, rescan and rotate sensitive tokens as a precaution.
+- [ ] Rewrite public history before announcement to normalize author metadata and sanitize historical secret-like placeholders.
+- [ ] If history is rewritten, rescan rewritten history and rotate anything if a real secret is later discovered.
+
+### History Rewrite Plan
+
+1. Create a mirror backup of the repository before any rewrite.
+2. Rewrite public history to normalize author metadata to the canonical public organization identity.
+3. Rewrite historical secret-like placeholders in committed templates so they no longer match token scanners.
+4. Verify the rewritten history by rescanning author metadata and token/private-key patterns.
+5. Force-push rewritten branches and tags only after verification succeeds.
+6. Reconcile release/source linkage after the rewrite, since tags and commit SHAs will change.

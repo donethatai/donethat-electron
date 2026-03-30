@@ -107,6 +107,8 @@ You can work on several parts of the desktop client without proprietary backend 
 - work on renderer UI, settings, and main/renderer IPC flows
 - work on packaging scripts and most desktop-only behavior
 
+For backend-integrated testing, use your own account or create a dedicated test account.
+
 You cannot fully exercise these flows without compatible backend access:
 
 - real sign-in against production-compatible Firebase/Auth configuration
@@ -126,4 +128,6 @@ The desktop client can collect sensitive workstation data depending on user sett
 
 Users should assume those categories may be transmitted to DoneThat services when the related features are enabled and a compatible backend is available.
 
-For security reporting, use [SECURITY.md](SECURITY.md). For support scope, use [SUPPORT.md](SUPPORT.md).
+For retention, deletion, and broader data-handling details, see [donethat.ai/data](https://donethat.ai/data).
+
+For security reporting, use [SECURITY.md](../SECURITY.md). For support scope, use [SUPPORT.md](../SUPPORT.md).

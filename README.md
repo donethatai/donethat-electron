@@ -2,6 +2,13 @@
 
 Open-source desktop client for DoneThat work capture and summaries.
 
+## Development Prerequisites
+
+- Node.js `22` (matches the CI environment)
+- `npm`
+- On macOS, Xcode Command Line Tools are required because local setup/build steps may compile `src-os/macos/active-mic.swift` via `xcrun swiftc`
+- Desktop build targets in this repository are macOS, Windows, and Linux
+
 ## Development
 
 - `npm install`
@@ -12,6 +19,7 @@ Open-source desktop client for DoneThat work capture and summaries.
 - `npm run build`
 - Platform builds: use `build:*` scripts in `package.json`
 - Release uploads: use `upload:*` scripts in `package.json`
+- Release uploads are maintainer-only and require GitHub publishing credentials plus platform signing credentials
 
 ## Open vs Closed
 
@@ -27,6 +35,8 @@ Primary backend dependencies:
 
 You can run tests, build the renderer bundle, and work on most desktop-only behavior without proprietary backend access.
 
+For backend-integrated testing, use your own account or create a dedicated test account.
+
 You should expect limited or unavailable behavior for:
 
 - sign-in against production-compatible services
@@ -40,8 +50,10 @@ This repository is public for transparency and inspection first. See [Contributi
 
 ## Project Docs
 
-- [Backend Compatibility](BACKEND_COMPATIBILITY.md)
+- [Backend Compatibility](docs/BACKEND_COMPATIBILITY.md)
+- [Dependency Security](docs/DEPENDENCY_SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Release Integrity](docs/RELEASE_INTEGRITY.md)
 - [Security](SECURITY.md)
 - [Support](SUPPORT.md)
 - [Third-Party Notices](THIRD_PARTY_NOTICES.md)
