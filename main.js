@@ -213,8 +213,8 @@ if (!app.isPackaged) {
 // Set interval in the capture module
 setCaptureInterval(SCREENSHOT_INTERVAL_MINUTES);
 
-let trayIconRecordingPath = path.join(__dirname, 'resources', process.platform === 'darwin' ? 'icon_recording.svg' : process.platform === 'win32' ? 'icon_recording.ico' : 'icon_recording.png')
-let trayIconPausedPath = path.join(__dirname, 'resources', process.platform === 'darwin' ? 'icon_paused.svg' : process.platform === 'win32' ? 'icon_paused.ico' : 'icon_paused.png')
+let trayIconRecordingPath = path.join(__dirname, 'resources', process.platform === 'win32' ? 'icon_recording.ico' : 'icon_recording.png')
+let trayIconPausedPath = path.join(__dirname, 'resources', process.platform === 'win32' ? 'icon_paused.ico' : 'icon_paused.png')
 let notificationIconPath = path.join(
   __dirname,
   'resources',
@@ -979,6 +979,7 @@ app.whenReady().then(async () => {
   if (process.platform === 'darwin') {
     // macOS menu bar icons should be 18-22px
     trayIcon = trayIcon.resize({ width: 18, height: 18 })
+    trayIcon.setTemplateImage(true)
   }
 
   tray = new Tray(trayIcon)
@@ -1319,6 +1320,7 @@ function updateTrayIcon(isActuallyRecording) {
   if (process.platform === 'darwin') {
     // macOS menu bar icons look best at 18-22px
     icon = icon.resize({ width: 18, height: 18 })
+    icon.setTemplateImage(true)
   }
 
   tray.setImage(icon)
