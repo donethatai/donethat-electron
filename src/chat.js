@@ -1018,7 +1018,6 @@ input0.addEventListener('input', () => {
 // IPC handlers for communication with main window
 ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
   const previousMessageCount = messages.length
-  const previousTyping = pendingMessages.some((message) => message && message.typing)
   messages = newMessages
   
   // If we're receiving an empty array, also clear pending messages to fully clear the chat
@@ -1087,16 +1086,23 @@ ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
   }
 
   renderChat()
-  if (newMessages.length > previousMessageCount && previousTyping) {
-    const lastAssistant = [...newMessages].reverse().find(m => m && m.role === 'assistant')
-    let replyMood = MASCOT_MOODS.PRODUCTIVE
-    if (lastAssistant && typeof lastAssistant.emotion === 'string') {
-      const mapped = EMOTION_TO_MOOD[lastAssistant.emotion]
-      if (mapped !== undefined) replyMood = mapped
+
+  // Incoming messages (user reply flow or proactive push): treat as user-visible even if the
+  // overlay window never received focus — wake engagement + idle, and show emotion for new coach text.
+  if (newMessages.length > previousMessageCount) {
+    markOverlayEngaged()
+    resetIdleTimer()
+    const lastMsg = newMessages[newMessages.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant') {
+      let replyMood = MASCOT_MOODS.PRODUCTIVE
+      if (typeof lastMsg.emotion === 'string') {
+        const mapped = EMOTION_TO_MOOD[lastMsg.emotion]
+        if (mapped !== undefined) replyMood = mapped
+      }
+      setMascotMoodOverride(replyMood, 2500)
     }
-    setMascotMoodOverride(replyMood, 2500)
   }
-  
+
   // Auto-show and expand if new messages arrive
   if (newMessages.length > 0) {
     // Always ensure the overlay window is visible first, but don't steal focus
