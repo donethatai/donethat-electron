@@ -12,7 +12,9 @@ const electronBinary = isElectronRuntime ? process.execPath : require('electron'
 const inputs = {
   launcherPng: path.join(resourcesDir, 'icon-launcher.png'),
   recordingSvg: path.join(resourcesDir, 'icon_recording.svg'),
-  pausedSvg: path.join(resourcesDir, 'icon_paused.svg')
+  pausedSvg: path.join(resourcesDir, 'icon_paused.svg'),
+  recordingInverseSvg: path.join(resourcesDir, 'icon_recording_inverse.svg'),
+  pausedInverseSvg: path.join(resourcesDir, 'icon_paused_inverse.svg')
 };
 
 const outputs = [
@@ -20,7 +22,9 @@ const outputs = [
   path.join(resourcesDir, 'icon_paused.png'),
   path.join(resourcesDir, 'icon_recording.ico'),
   path.join(resourcesDir, 'icon_paused.ico'),
-  path.join(resourcesDir, 'icon-launcher.ico')
+  path.join(resourcesDir, 'icon-launcher.ico'),
+  path.join(resourcesDir, 'icon_recording_inverse.png'),
+  path.join(resourcesDir, 'icon_paused_inverse.png')
 ];
 
 function fail(message) {
@@ -42,9 +46,9 @@ function ensureCommand(command) {
   }
 }
 
-function run(command, args, label) {
+function run(command, args, label, execOpts = {}) {
   try {
-    execFileSync(command, args, { stdio: 'inherit' });
+    execFileSync(command, args, { stdio: 'inherit', ...execOpts });
   } catch (error) {
     const renderedArgs = args.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ');
     fail(`Command failed: ${label || command} ${renderedArgs}`);
@@ -52,7 +56,11 @@ function run(command, args, label) {
 }
 
 function rasterizeSvg(inputPath, outputPath) {
-  run(electronBinary, [__filename, '--render-svg', inputPath, outputPath], 'electron');
+  // If ELECTRON_RUN_AS_NODE is set (e.g. by some dev tools), Electron runs as plain Node and
+  // require('electron') returns the binary path string — SVG rasterization must run real Electron.
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  run(electronBinary, [__filename, '--render-svg', inputPath, outputPath], 'electron', { env });
 }
 
 function renderTrayPng(inputPath, outputPath) {
@@ -186,12 +194,18 @@ function generateTrayIcons() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'donethat-icons-'));
   const recordingRasterPath = path.join(tempDir, 'icon_recording-raster.png');
   const pausedRasterPath = path.join(tempDir, 'icon_paused-raster.png');
+  const recordingInverseRasterPath = path.join(tempDir, 'icon_recording_inverse-raster.png');
+  const pausedInverseRasterPath = path.join(tempDir, 'icon_paused_inverse-raster.png');
 
   try {
     rasterizeSvg(inputs.recordingSvg, recordingRasterPath);
     rasterizeSvg(inputs.pausedSvg, pausedRasterPath);
+    rasterizeSvg(inputs.recordingInverseSvg, recordingInverseRasterPath);
+    rasterizeSvg(inputs.pausedInverseSvg, pausedInverseRasterPath);
     renderTrayPng(recordingRasterPath, outputs[0]);
     renderTrayPng(pausedRasterPath, outputs[1]);
+    renderTrayPng(recordingInverseRasterPath, outputs[5]);
+    renderTrayPng(pausedInverseRasterPath, outputs[6]);
     renderIco(outputs[0], outputs[2], [32, 24, 20, 16]);
     renderIco(outputs[1], outputs[3], [32, 24, 20, 16]);
     renderIco(inputs.launcherPng, outputs[4], [256, 128, 64, 48, 32, 24, 20, 16]);

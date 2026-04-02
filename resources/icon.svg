@@ -3,7 +3,7 @@
    id="Icons"
    viewBox="0 0 1024 1024.4499"
    version="1.1"
-   sodipodi:docname="icon_thick_fill_1024.svg"
+   sodipodi:docname="icon.svg"
    width="1024"
    height="1024.45"
    inkscape:version="1.4 (e7c3feb1, 2024-10-09)"
@@ -23,8 +23,8 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="0.23314181"
-     inkscape:cx="49.326201"
-     inkscape:cy="364.58496"
+     inkscape:cx="49.326202"
+     inkscape:cy="364.58497"
      inkscape:window-width="1472"
      inkscape:window-height="895"
      inkscape:window-x="0"
@@ -33,7 +33,7 @@
      inkscape:current-layer="Icons" />
   <g
      id="g7"
-     transform="translate(-5.3294445,-25.196068)">
+     transform="translate(-5.3294445,-15.196068)">
     <path
        d="m 274.84132,848.80758 c -47.194,0 -92.91618,-35.29421 -128.69876,-99.37079 -38.688,-69.24884 -60.000803,-161.90312 -60.000803,-260.9018 0,-98.99867 21.312803,-191.65295 60.000803,-260.88319 35.80169,-64.07657 81.50476,-99.37078 128.69876,-99.37078 47.19401,0 92.91619,35.29421 128.69877,99.37078 38.688,69.24884 60.0008,161.90312 60.0008,260.88319 0,98.98008 -21.3128,191.65296 -60.0008,260.9018 -35.80169,64.07658 -81.50476,99.37079 -128.69877,99.37079 z"
        fill="#ffffff"

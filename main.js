@@ -213,8 +213,20 @@ if (!app.isPackaged) {
 // Set interval in the capture module
 setCaptureInterval(SCREENSHOT_INTERVAL_MINUTES);
 
-let trayIconRecordingPath = path.join(__dirname, 'resources', process.platform === 'win32' ? 'icon_recording.ico' : 'icon_recording.png')
-let trayIconPausedPath = path.join(__dirname, 'resources', process.platform === 'win32' ? 'icon_paused.ico' : 'icon_paused.png')
+let trayIconRecordingPath = path.join(
+  __dirname,
+  'resources',
+  process.platform === 'win32'
+    ? 'icon_recording.ico'
+    : process.platform === 'darwin'
+      ? 'icon_recording_inverse.png'
+      : 'icon_recording.png'
+)
+let trayIconPausedPath = path.join(
+  __dirname,
+  'resources',
+  process.platform === 'win32' ? 'icon_paused.ico' : process.platform === 'darwin' ? 'icon_paused_inverse.png' : 'icon_paused.png'
+)
 let notificationIconPath = path.join(
   __dirname,
   'resources',
