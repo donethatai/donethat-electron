@@ -43,6 +43,7 @@ const validSendChannels = [
   // Overlay / windows
   'overlay:show-if-hidden',
   'overlay:resize',
+  'overlay:move-by',
   'overlay:hide',
   'overlay:open-main',
   'overlay:toggle',

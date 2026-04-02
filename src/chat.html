@@ -22,10 +22,9 @@
       .liquid-glass-active .overlay-root,
       .liquid-glass-active .overlay-card { border: none !important; outline: none !important; box-shadow: none; }
       .liquid-glass-active .overlay-card { box-shadow: 0 6px 18px rgba(0,0,0,0.08); }
-      .drag-region { -webkit-app-region: drag; cursor: grab; }
       .no-drag { -webkit-app-region: no-drag; }
-      /* Translucent so native liquid glass (behind web content) shows through */
-      .overlay-card { backdrop-filter: blur(12px); background: rgba(255,255,255,0.35); box-shadow: 0 6px 18px rgba(0,0,0,0.08); border-radius: 10px; }
+      /* Translucent so native liquid glass (behind web content) shows through; window move via IPC (see chat.js). */
+      .overlay-card { cursor: grab; backdrop-filter: blur(12px); background: rgba(255,255,255,0.35); box-shadow: 0 6px 18px rgba(0,0,0,0.08); border-radius: 10px; }
       .mascot-wrap { position: relative; flex-shrink: 0; width: 40px; min-width: 40px; height: 40px; border-radius: 999px; overflow: hidden; background: rgba(245, 245, 246, 0.98); border: 1px solid rgba(0, 0, 0, 0.1); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.08); }
       .mascot-canvas,
       .mascot-fallback { display: block; width: 100%; height: 100%; border-radius: inherit; }
@@ -58,7 +57,7 @@
       .icon-btn svg { width: 16px; height: 16px; display: block; }
       .tiny-text { font-size: 12px; }
       .text-btn { font-size: 12px; background: transparent; color: #111; border: none; padding: 0 2px; line-height: 18px; }
-      .bubble { max-width: 85%; border-radius: 10px; padding: 6px 8px; font-size: 12px; line-height: 1.35; -webkit-user-select: text; user-select: text; }
+      .bubble { cursor: text; max-width: 85%; border-radius: 10px; padding: 6px 8px; font-size: 12px; line-height: 1.35; -webkit-user-select: text; user-select: text; }
       .bubble-user { background: rgba(255,255,255,0.97); color: #111; }
       .bubble-system { background: rgba(255, 182, 35, 0.9); color: #111; }
       /* Markdown styling */
@@ -84,7 +83,7 @@
       .bubble h4 { font-size: 12px; font-weight: 600; opacity: 0.95; }
       .bubble h5, .bubble h6 { font-size: 12px; font-weight: 600; opacity: 0.9; }
       /* Flex child must shrink so maxHeight + overflow can scroll (default min-height:auto prevents it). */
-      #chatContainer { min-height: 0; }
+      #chatContainer { min-height: 0; cursor: default; }
       .z-chat { position: relative; z-index: 1; }
       .z-input { position: relative; z-index: 2; }
       /* Fallback visuals for non-mac non-liquid-glass overlay */
@@ -97,7 +96,7 @@
   </head>
   <body class="w-full h-full overflow-visible">
     <div id="overlayRoot" class="overlay-root relative w-full h-full">
-        <div class="overlay-card w-full p-2 relative flex flex-col drag-region">
+        <div class="overlay-card w-full p-2 relative flex flex-col">
           <div id="mascotWrap" class="mascot-wrap no-drag" hidden aria-hidden="true">
             <div id="mascotFallback" class="mascot-fallback">
               <div class="mascot-fallback-mouth"></div>
@@ -105,7 +104,7 @@
             <canvas id="mascotCanvas" class="mascot-canvas" hidden></canvas>
           </div>
           <div id="recentChatsContainer" class="recent-chats-container no-drag"></div>
-          <div id="chatContainer" class="z-chat no-drag space-y-2 overflow-y-auto pb-2 flex-1"></div>
+          <div id="chatContainer" class="z-chat space-y-2 overflow-y-auto pb-2 flex-1"></div>
           <div id="chatNotice" class="chat-notice no-drag">Don can make mistakes. Please report issues.</div>
           <div class="z-input">
             <div class="w-full flex justify-center input-row">

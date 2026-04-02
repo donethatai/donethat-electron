@@ -1400,6 +1400,50 @@ async function loadChatById(chatId) {
   }
 }
 
+function setupOverlayWindowDrag() {
+  if (!overlayCard || !ipcRenderer?.send) return
+  let drag = null
+
+  function endDrag() {
+    if (drag && drag.pointerId != null) {
+      try {
+        overlayCard.releasePointerCapture(drag.pointerId)
+      } catch (_) {}
+    }
+    drag = null
+  }
+
+  overlayCard.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return
+    if (e.target.closest('.no-drag')) return
+    if (chatContainer && chatContainer.contains(e.target)) {
+      const r = chatContainer.getBoundingClientRect()
+      if (e.clientX >= r.right - 14) return
+    }
+    e.preventDefault()
+    drag = { pointerId: e.pointerId, x: e.screenX, y: e.screenY }
+    try {
+      overlayCard.setPointerCapture(e.pointerId)
+    } catch (_) {}
+  })
+
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      if (!drag || e.pointerId !== drag.pointerId) return
+      const dx = e.screenX - drag.x
+      const dy = e.screenY - drag.y
+      drag.x = e.screenX
+      drag.y = e.screenY
+      if (dx || dy) ipcRenderer.send('overlay:move-by', { dx, dy })
+    },
+    true
+  )
+
+  window.addEventListener('pointerup', endDrag, true)
+  window.addEventListener('pointercancel', endDrag, true)
+}
+
 // Initialize
 if (overlayRoot) {
   overlayRoot.addEventListener(
@@ -1436,3 +1480,4 @@ window.addEventListener('resize', () => {
 initMascot()
 updateIncludeScreenBtn()
 renderChat()
+setupOverlayWindowDrag()

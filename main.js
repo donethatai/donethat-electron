@@ -866,13 +866,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('auth:google-signin', async (_event, payload) => {
     try {
-      log.info('[auth:google-signin] invoked fromPortal:', !!(payload && payload.fromPortal), 'requestCalendar:', !!(payload && payload.requestCalendar));
       const port = await startAuthServer();
       const requestCalendar = !!(payload && payload.requestCalendar);
       const data = await getGoogleSignInUrl({ port, requestCalendar });
       const url = data && (data.authUrl || data.url || (data.data && data.data.url));
       if (url && payload && payload.fromPortal) markPortalSigninPending(requestCalendar);
-      log.info('[auth:google-signin] url obtained:', !!url, 'marked portal pending:', !!(url && payload && payload.fromPortal));
       return url ? { success: true, url } : { success: false, error: 'No URL in response' };
     } catch (error) {
       log.error('Failed to get desktop Google Sign In URL from main:', error);
@@ -1296,6 +1294,18 @@ ipcMain.on('overlay:resize', (event, height) => {
         overlayWindow.setPosition(bounds.x, newY, false);
       }
     }
+  } catch (e) {}
+})
+
+ipcMain.on('overlay:move-by', (event, payload) => {
+  try {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
+    if (overlayWindow.webContents !== event.sender) return
+    const dx = payload && typeof payload.dx === 'number' ? payload.dx : 0
+    const dy = payload && typeof payload.dy === 'number' ? payload.dy : 0
+    if (!dx && !dy) return
+    const [x, y] = overlayWindow.getPosition()
+    overlayWindow.setPosition(Math.round(x + dx), Math.round(y + dy), false)
   } catch (e) {}
 })
 
