@@ -33,6 +33,26 @@ class AuthServer {
             const token = url.searchParams.get('token');
             const idToken = url.searchParams.get('idToken');
             const accessToken = url.searchParams.get('accessToken');
+            const action = url.searchParams.get('action');
+            const success = url.searchParams.get('success') === 'true';
+
+            if (action === 'linked' && success) {
+              if (this.onTokenReceived) {
+                this.onTokenReceived(null, { action, success });
+              }
+
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(`
+                <html>
+                  <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                    <h2>Google Calendar Connected</h2>
+                    <p>You can close this tab now</p>
+                  </body>
+                </html>
+              `);
+              return;
+            }
+
             if (token || idToken) {
               if (this.onTokenReceived) {
                 this.onTokenReceived(token, { idToken, accessToken });
@@ -69,6 +89,11 @@ class AuthServer {
       this.server.on('error', (error) => {
         if (error.code === 'EADDRINUSE') {
           // Port is in use, try next port
+          const failedServer = this.server;
+          this.server = null;
+          try {
+            failedServer?.close();
+          } catch (_) {}
           this.port++;
           this.start(onTokenReceived).then(resolve).catch(reject);
         } else {

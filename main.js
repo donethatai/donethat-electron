@@ -868,7 +868,11 @@ app.whenReady().then(async () => {
     try {
       const port = await startAuthServer();
       const requestCalendar = !!(payload && payload.requestCalendar);
-      const data = await getGoogleSignInUrl({ port, requestCalendar });
+      const idToken = requestCalendar ? stateManager?.getIdToken?.() ?? null : null;
+      if (requestCalendar && !idToken) {
+        return { success: false, error: 'Missing authenticated session for calendar linking' };
+      }
+      const data = await getGoogleSignInUrl({ port, requestCalendar, idToken });
       const url = data && (data.authUrl || data.url || (data.data && data.data.url));
       if (url && payload && payload.fromPortal) markPortalSigninPending(requestCalendar);
       return url ? { success: true, url } : { success: false, error: 'No URL in response' };

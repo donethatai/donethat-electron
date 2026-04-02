@@ -100,11 +100,23 @@ function handleDonethatUrl(urlString, mainWindow, enqueueDeepLinkToken) {
 
 /**
  * Route localhost /auth callbacks from AuthServer.
+ * - calendar link success -> portal reload
  * - reauth with Google tokens -> portal
  * - token-only -> shell
  */
 function handleAuthServerToken(token, googleTokens, mainWindow, enqueueDeepLinkToken) {
   log.info('[handleAuthServerToken] token:', !!token, 'hasGoogleTokens:', !!(googleTokens && googleTokens.idToken), 'pendingPortalReauth:', pendingPortalReauth, 'pendingPortalSignin:', pendingPortalSignin, 'requestCalendar:', pendingPortalSigninRequestCalendar);
+  if (googleTokens && googleTokens.action === 'linked' && googleTokens.success && mainWindow && !mainWindow.isDestroyed()) {
+    clearPortalReauthPending();
+    clearPortalSigninPending();
+    try {
+      mainWindow.webContents.send('auth:calendar-linked');
+    } catch (e) {
+      log.warn('Failed to send auth:calendar-linked (localhost) to renderer:', e);
+    }
+    return;
+  }
+
   const hasGoogleTokens = googleTokens && googleTokens.idToken;
   if (hasGoogleTokens && pendingPortalReauth && mainWindow && !mainWindow.isDestroyed()) {
     clearPortalReauthPending();
@@ -147,4 +159,3 @@ module.exports = {
   handleDonethatUrl,
   handleAuthServerToken,
 };
-

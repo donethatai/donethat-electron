@@ -4,6 +4,7 @@ const firebaseConfig = require('../firebase-config.js');
 
 let firebaseApp = null;
 let functionsClient = null;
+const FUNCTIONS_REGION = 'europe-west1';
 
 function getFirebaseFunctionsClient() {
   if (!firebaseApp) {
@@ -17,13 +18,37 @@ function getFirebaseFunctionsClient() {
   }
 
   if (!functionsClient) {
-    functionsClient = getFunctions(firebaseApp, 'europe-west1');
+    functionsClient = getFunctions(firebaseApp, FUNCTIONS_REGION);
   }
 
   return functionsClient;
 }
 
-async function getGoogleSignInUrl({ port, requestCalendar }) {
+async function callHttpsCallableWithAuth(functionName, params, idToken) {
+  const endpoint = `https://${FUNCTIONS_REGION}-${firebaseConfig.projectId}.cloudfunctions.net/${functionName}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ data: params }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.error) {
+    const message = payload?.error?.message || `Callable ${functionName} failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  return payload?.result ?? payload?.data ?? payload ?? null;
+}
+
+async function getGoogleSignInUrl({ port, requestCalendar, idToken }) {
+  if (requestCalendar && idToken) {
+    return callHttpsCallableWithAuth('authGoogleSignInStart', { port, requestCalendar: true }, idToken);
+  }
+
   const functions = getFirebaseFunctionsClient();
   const googleSignInStart = httpsCallable(functions, 'authGoogleSignInStart');
   const params = { port };
@@ -46,4 +71,3 @@ module.exports = {
   getGoogleSignInUrl,
   getGoogleReauthUrl
 };
-
