@@ -851,7 +851,18 @@ window.convertWebmBase64ToWavBase64 = async function(base64Webm) {
       return null;
     }
 
-    const wavBuffer = audioBufferToWav(audioBuffer);
+    // Downsample to 16kHz mono before WAV encoding — speech models don't need more,
+    // and native 48kHz stereo produces ~5x larger WAV files.
+    const targetSampleRate = 16000;
+    const frameCount = Math.ceil(audioBuffer.duration * targetSampleRate);
+    const offlineCtx = new OfflineAudioContext(1, frameCount, targetSampleRate);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+    const resampledBuffer = await offlineCtx.startRendering();
+
+    const wavBuffer = audioBufferToWav(resampledBuffer);
     return arrayBufferToBase64(wavBuffer);
   } catch (error) {
     console.error('Error converting WebM base64 to WAV base64:', error);
