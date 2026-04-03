@@ -95,7 +95,7 @@ const rowByKey = new Map()
 // Recent chats state
 let recentChats = []
 let recentChatsPage = 0
-const CHATS_PER_PAGE = 3
+const CHATS_PER_PAGE = 10
 let isLoadingChat = false
 let mascotRive = null
 let mascotInputs = {
@@ -932,8 +932,6 @@ function resetChatForNewConversation() {
   pendingMessages = []
   includeScreenOnNextMessage = true
   updateIncludeScreenBtn()
-  recentChatsPage = 0
-
   renderChat()
   collapseOverlay()
   ipcRenderer.invoke('chat:reset').catch(() => {})
@@ -1172,7 +1170,7 @@ ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
   if (newMessages.length > previousMessageCount) {
     // Always ensure the overlay window is visible first, but don't steal focus
     ipcRenderer.send('overlay:show-if-hidden', { noFocus: true })
-    
+
     // Then expand the chat if it's collapsed (with a small delay to ensure window is ready)
     if (!chatVisible) {
       setTimeout(() => {
@@ -1213,8 +1211,6 @@ ipcRenderer.on('chat:load-chat-result', (event, result) => {
   isLoadingChat = false
   if (result.success) {
     // Chat loading is successful, messages will arrive via chat:receive-messages
-    // Reset recent chats page
-    recentChatsPage = 0
   } else {
     console.error('[CHAT] Failed to load chat:', result.error)
     showMascotErrorState()
@@ -1340,13 +1336,6 @@ function renderRecentChatsList() {
     listEl.appendChild(chatItem)
   })
 
-  if (hasMore) {
-    const loadMore = document.createElement('div')
-    loadMore.className = 'recent-chats-load-more'
-    loadMore.textContent = '→'
-    listEl.appendChild(loadMore)
-  }
-
   recentChatsContainer.replaceChildren(listEl)
 
   // Infinite scroll detection and drag scrolling - attach listener to the scrollable list (horizontal scroll)
@@ -1402,15 +1391,9 @@ function renderRecentChatsList() {
       }
     })
 
-    // Infinite scroll for loading more chats
     if (hasMore) {
       listEl.addEventListener('scroll', () => {
-        const scrollLeft = listEl.scrollLeft
-        const scrollWidth = listEl.scrollWidth
-        const clientWidth = listEl.clientWidth
-        
-        // Load more when scrolled near right edge (within 50px)
-        if (scrollWidth - scrollLeft - clientWidth < 50) {
+        if (listEl.scrollWidth - listEl.scrollLeft - listEl.clientWidth < 50) {
           loadMoreRecentChats()
         }
       })
@@ -1425,6 +1408,13 @@ function renderRecentChatsList() {
   })
 }
 
+function loadMoreRecentChats() {
+  if ((recentChatsPage + 1) * CHATS_PER_PAGE < recentChats.length) {
+    recentChatsPage++
+    renderRecentChatsList()
+  }
+}
+
 function updateRecentChatsVisibility() {
   const hasActiveChat = messages.length > 0 || pendingMessages.length > 0
   if (hasActiveChat || isLoadingChat) {
@@ -1436,13 +1426,6 @@ function updateRecentChatsVisibility() {
   }
 }
 
-function loadMoreRecentChats() {
-  const currentEnd = (recentChatsPage + 1) * CHATS_PER_PAGE
-  if (currentEnd < recentChats.length) {
-    recentChatsPage++
-    renderRecentChatsList()
-  }
-}
 
 async function loadChatById(chatId) {
   if (isLoadingChat || !chatId) return

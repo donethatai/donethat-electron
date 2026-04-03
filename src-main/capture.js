@@ -847,12 +847,28 @@ async function _sendToServer(idToken, screenshots, inputData = {}, previousScree
         'Authorization': `Bearer ${idToken}`
       };
 
-      const response = await fetch(FIREBASE_CAPTURE_URL, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(60_000)
-      });
+      let response;
+      try {
+        response = await fetch(FIREBASE_CAPTURE_URL, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(120_000)
+        });
+      } catch (fetchError) {
+        if (fetchError.name === 'TimeoutError' && payload.audioCycle) {
+          log.warn('_sendToServer: Request timed out; retrying without audio payload...');
+          delete payload.audioCycle;
+          response = await fetch(FIREBASE_CAPTURE_URL, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(120_000)
+          });
+        } else {
+          throw fetchError;
+        }
+      }
 
       if (!response.ok) {
         // If response is not ok, check the detailed error

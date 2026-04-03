@@ -139,7 +139,7 @@ app.on('activate', () => {
 });
 
 // To show dev tools next to main window
-let DEBUG = false
+let DEBUG = true
 const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus'
 const PENDING_PERMISSION_POST_RESTART_FOCUS_TTL_MS = 10 * 60 * 1000
 

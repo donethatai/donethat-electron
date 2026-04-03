@@ -333,54 +333,28 @@ async function invokeWithFallback(messages, testMode = false) {
     throw new Error('No LLM models available');
   }
 
-  const maxAttemptsPerModel = testMode ? 1 : 3; // only 1 attempt in test mode
   let lastError = null;
 
   for (const llm of llmModels) {
     let attempt = 0;
-    while (attempt < maxAttemptsPerModel) {
+    while (attempt <= 2) {
       try {
-        const response = await llm.invoke(messages, { signal: AbortSignal.timeout(90_000) });
-        return response;
+        return await llm.invoke(messages, { signal: AbortSignal.timeout(120_000) });
       } catch (error) {
-        if (testMode) {
-          // In test mode, throw immediately to see the actual error
-          throw error;
-        }
-
-        attempt += 1;
+        if (testMode) throw error;
+        // Let caller handle these — no point retrying with the same payload
+        if (error.name === 'TimeoutError') throw error;
+        if (error.message && error.message.includes('Unable to process input image')) throw error;
         lastError = error;
-        const remaining = maxAttemptsPerModel - attempt;
-        
-        // Check if it's an image processing error
-        const isImageError = error.message && error.message.includes('Unable to process input image');
-        
-        if (isImageError) {
-          log.warn(`LLM image processing error on attempt ${attempt}, trying with fewer images...`);
-          // Try with fewer images on next attempt
-          if (attempt === 1) {
-            // Remove some images and retry
-            const simplifiedMessages = simplifyMessagesForRetry(messages);
-            try {
-              const response = await llm.invoke(simplifiedMessages);
-              return response;
-            } catch (retryError) {
-              log.warn(`LLM retry with fewer images also failed:`, retryError);
-            }
-          }
-        }
-        
+        attempt += 1;
+        const remaining = 2 - attempt + 1;
         log.warn(`LLM ${llm.constructor.name} attempt ${attempt} failed${remaining > 0 ? `, retrying (${remaining} left)` : ''}:`, error);
-        if (attempt >= maxAttemptsPerModel) {
-          break;
-        }
       }
     }
   }
 
-  log.warn('All LLMs failed after retries; throwing last error for higher-level handling.');
-  if (lastError) throw lastError;
-  throw new Error('Local LLM failed after retries');
+  log.warn('All LLMs failed; throwing last error for higher-level handling.');
+  throw lastError ?? new Error('Local LLM failed');
 }
 
 /**
@@ -616,10 +590,38 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
 
-    // Call LLM with fallback and retries
-    const response = await invokeWithFallback([
-      new HumanMessage({ content: blocks })
-    ], testMode);
+    // Call LLM with retry logic:
+    //   - any error with audio present → log payload diagnostics, retry once without audio
+    //   - image error (no audio) → retry once with fewer images
+    let response;
+    try {
+      response = await invokeWithFallback([new HumanMessage({ content: blocks })], testMode);
+    } catch (error) {
+      const isImageError = error.message && error.message.includes('Unable to process input image');
+
+      if (audioCycle) {
+        const imgCount = validScreenshots.length;
+        const imgBytes = validScreenshots.reduce((sum, img) => {
+          const b64 = img.split(',')[1] || '';
+          return sum + Math.round(b64.length * 0.75);
+        }, 0);
+        const audioBytes = Math.round((audioCycle.base64Data?.length || 0) * 0.75);
+        const audioDurationSec = (audioCycle.cycleEndMs && audioCycle.cycleStartMs)
+          ? ((audioCycle.cycleEndMs - audioCycle.cycleStartMs) / 1000).toFixed(1)
+          : 'unknown';
+        log.warn(`LLM failed (${error.name || 'Error'}); payload: ${imgCount} image(s) ~${(imgBytes / 1024).toFixed(0)}KB; audio ~${(audioBytes / 1024).toFixed(0)}KB ${audioDurationSec}s; total ~${((imgBytes + audioBytes) / 1024).toFixed(0)}KB`);
+        log.warn('Retrying without audio payload...');
+        const blocksNoAudio = buildBlocks(config, validScreenshots, previousScreenshots, activity, null, idleTime, provider);
+        response = await invokeWithFallback([new HumanMessage({ content: blocksNoAudio })], testMode);
+      } else if (isImageError) {
+        log.warn('LLM image error; retrying with fewer images...');
+        const simplifiedMessages = simplifyMessagesForRetry([new HumanMessage({ content: blocks })]);
+        response = await invokeWithFallback(simplifiedMessages, testMode);
+      } else {
+        log.warn(`LLM failed (${error.name || 'Error'}); retrying...`);
+        response = await invokeWithFallback([new HumanMessage({ content: blocks })], testMode);
+      }
+    }
 
     // If all LLMs failed, skip this round
     if (!response) {
