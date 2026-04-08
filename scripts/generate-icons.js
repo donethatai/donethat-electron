@@ -1,31 +1,31 @@
 #!/usr/bin/env node
 const { execFileSync } = require('child_process');
+const { Resvg } = require('@resvg/resvg-js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const isElectronRuntime = Boolean(process.versions.electron);
 const rootDir = path.resolve(__dirname, '..');
 const resourcesDir = path.join(rootDir, 'resources');
-const electronBinary = isElectronRuntime ? process.execPath : require('electron');
 
 const inputs = {
-  launcherPng: path.join(resourcesDir, 'icon-launcher.png'),
+  launcherSvg: path.join(resourcesDir, 'icon.svg'),
   recordingSvg: path.join(resourcesDir, 'icon_recording.svg'),
   pausedSvg: path.join(resourcesDir, 'icon_paused.svg'),
   recordingInverseSvg: path.join(resourcesDir, 'icon_recording_inverse.svg'),
   pausedInverseSvg: path.join(resourcesDir, 'icon_paused_inverse.svg')
 };
 
-const outputs = [
-  path.join(resourcesDir, 'icon_recording.png'),
-  path.join(resourcesDir, 'icon_paused.png'),
-  path.join(resourcesDir, 'icon_recording.ico'),
-  path.join(resourcesDir, 'icon_paused.ico'),
-  path.join(resourcesDir, 'icon-launcher.ico'),
-  path.join(resourcesDir, 'icon_recording_inverse.png'),
-  path.join(resourcesDir, 'icon_paused_inverse.png')
-];
+const outputs = {
+  launcherPng: path.join(resourcesDir, 'icon-launcher.png'),
+  launcherIco: path.join(resourcesDir, 'icon-launcher.ico'),
+  recordingPng: path.join(resourcesDir, 'icon_recording.png'),
+  pausedPng: path.join(resourcesDir, 'icon_paused.png'),
+  recordingIco: path.join(resourcesDir, 'icon_recording.ico'),
+  pausedIco: path.join(resourcesDir, 'icon_paused.ico'),
+  recordingInversePng: path.join(resourcesDir, 'icon_recording_inverse.png'),
+  pausedInversePng: path.join(resourcesDir, 'icon_paused_inverse.png')
+};
 
 function fail(message) {
   console.error(`[generate-icons] ${message}`);
@@ -56,11 +56,10 @@ function run(command, args, label, execOpts = {}) {
 }
 
 function rasterizeSvg(inputPath, outputPath) {
-  // If ELECTRON_RUN_AS_NODE is set (e.g. by some dev tools), Electron runs as plain Node and
-  // require('electron') returns the binary path string — SVG rasterization must run real Electron.
-  const env = { ...process.env };
-  delete env.ELECTRON_RUN_AS_NODE;
-  run(electronBinary, [__filename, '--render-svg', inputPath, outputPath], 'electron', { env });
+  // Use resvg directly. Electron crashes in this helper context, and ImageMagick drops the mouth path.
+  const svg = fs.readFileSync(inputPath);
+  const pngBuffer = new Resvg(svg).render().asPng();
+  fs.writeFileSync(outputPath, pngBuffer);
 }
 
 function renderTrayPng(inputPath, outputPath) {
@@ -99,137 +98,105 @@ function renderIco(inputPath, outputPath, sizes) {
   );
 }
 
-function parseViewport(svgText) {
-  const viewBoxMatch = svgText.match(/viewBox="[^"]*?\s+[^"]*?\s+([0-9.]+)\s+([0-9.]+)"/i);
-  if (viewBoxMatch) {
-    return {
-      width: Math.ceil(Number(viewBoxMatch[1])),
-      height: Math.ceil(Number(viewBoxMatch[2]))
-    };
-  }
-
-  const widthMatch = svgText.match(/width="([0-9.]+)"/i);
-  const heightMatch = svgText.match(/height="([0-9.]+)"/i);
-  if (widthMatch && heightMatch) {
-    return {
-      width: Math.ceil(Number(widthMatch[1])),
-      height: Math.ceil(Number(heightMatch[1]))
-    };
-  }
-
-  fail('Could not determine SVG viewport size.');
+function renderLauncherBackground(outputPath) {
+  run(
+    'magick',
+    [
+      '-size',
+      '904x904',
+      'xc:#ebebeb',
+      '(',
+      '-size',
+      '904x904',
+      'xc:none',
+      '-fill',
+      'white',
+      '-draw',
+      'roundrectangle 0,0 903,903 180,180',
+      ')',
+      '-alpha',
+      'off',
+      '-compose',
+      'CopyOpacity',
+      '-composite',
+      `PNG32:${outputPath}`
+    ],
+    'magick'
+  );
 }
 
-async function waitForSvgLoad(window) {
-  await window.webContents.executeJavaScript(`
-    new Promise((resolve, reject) => {
-      const image = document.getElementById('svg');
-      if (!image) {
-        reject(new Error('SVG image element not found.'));
-        return;
-      }
-      if (image.complete) {
-        resolve();
-        return;
-      }
-      image.addEventListener('load', () => resolve(), { once: true });
-      image.addEventListener('error', () => reject(new Error('Failed to load SVG image.')), { once: true });
-    });
-  `);
-}
+function renderLauncherPng(facePath, outputPath, tempDir) {
+  const backgroundPath = path.join(tempDir, 'icon-launcher-background.png');
 
-async function renderSvgWithElectron(inputPath, outputPath) {
-  const { app, BrowserWindow } = require('electron');
-  const absoluteInputPath = path.resolve(inputPath);
-  const absoluteOutputPath = path.resolve(outputPath);
+  renderLauncherBackground(backgroundPath);
 
-  if (!fs.existsSync(absoluteInputPath)) {
-    fail(`Missing input SVG: ${absoluteInputPath}`);
-  }
-
-  const svgText = fs.readFileSync(absoluteInputPath, 'utf8');
-  const { width, height } = parseViewport(svgText);
-  const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svgText).toString('base64')}`;
-  const html = `
-    <!doctype html>
-    <html>
-      <body style="margin:0;background:transparent;overflow:hidden;">
-        <img
-          id="svg"
-          src="${svgDataUrl}"
-          style="display:block;width:${width}px;height:${height}px;"
-        />
-      </body>
-    </html>
-  `;
-
-  const window = new BrowserWindow({
-    show: false,
-    width,
-    height,
-    useContentSize: true,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    webPreferences: {
-      backgroundThrottling: false
-    }
-  });
-
-  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-  await waitForSvgLoad(window);
-
-  const image = await window.webContents.capturePage({ x: 0, y: 0, width, height });
-  fs.writeFileSync(absoluteOutputPath, image.toPNG());
-
-  window.destroy();
-  app.quit();
+  run(
+    'magick',
+    [
+      '-size',
+      '1024x1024',
+      'xc:none',
+      '(',
+      backgroundPath,
+      ')',
+      '-geometry',
+      '+60+48',
+      '-composite',
+      '(',
+      facePath,
+      '-resize',
+      '809x809',
+      ')',
+      '-gravity',
+      'center',
+      '-composite',
+      `PNG32:${outputPath}`
+    ],
+    'magick'
+  );
 }
 
 function generateTrayIcons() {
   ensureCommand('magick');
-  ensureFile(electronBinary);
   Object.values(inputs).forEach(ensureFile);
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'donethat-icons-'));
+  const launcherFacePath = path.join(tempDir, 'icon-launcher-face.png');
   const recordingRasterPath = path.join(tempDir, 'icon_recording-raster.png');
   const pausedRasterPath = path.join(tempDir, 'icon_paused-raster.png');
   const recordingInverseRasterPath = path.join(tempDir, 'icon_recording_inverse-raster.png');
   const pausedInverseRasterPath = path.join(tempDir, 'icon_paused_inverse-raster.png');
 
   try {
+    rasterizeSvg(inputs.launcherSvg, launcherFacePath);
     rasterizeSvg(inputs.recordingSvg, recordingRasterPath);
     rasterizeSvg(inputs.pausedSvg, pausedRasterPath);
     rasterizeSvg(inputs.recordingInverseSvg, recordingInverseRasterPath);
     rasterizeSvg(inputs.pausedInverseSvg, pausedInverseRasterPath);
-    renderTrayPng(recordingRasterPath, outputs[0]);
-    renderTrayPng(pausedRasterPath, outputs[1]);
-    renderTrayPng(recordingInverseRasterPath, outputs[5]);
-    renderTrayPng(pausedInverseRasterPath, outputs[6]);
-    renderIco(outputs[0], outputs[2], [32, 24, 20, 16]);
-    renderIco(outputs[1], outputs[3], [32, 24, 20, 16]);
-    renderIco(inputs.launcherPng, outputs[4], [256, 128, 64, 48, 32, 24, 20, 16]);
+    renderLauncherPng(launcherFacePath, outputs.launcherPng, tempDir);
+    renderTrayPng(recordingRasterPath, outputs.recordingPng);
+    renderTrayPng(pausedRasterPath, outputs.pausedPng);
+    renderTrayPng(recordingInverseRasterPath, outputs.recordingInversePng);
+    renderTrayPng(pausedInverseRasterPath, outputs.pausedInversePng);
+    renderIco(outputs.recordingPng, outputs.recordingIco, [32, 24, 20, 16]);
+    renderIco(outputs.pausedPng, outputs.pausedIco, [32, 24, 20, 16]);
+    renderIco(outputs.launcherPng, outputs.launcherIco, [256, 128, 64, 48, 32, 24, 20, 16]);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 
   console.log('[generate-icons] Generated assets:');
-  outputs.forEach((outputPath) => {
+  Object.values(outputs).forEach((outputPath) => {
     console.log(`- ${path.relative(rootDir, outputPath)}`);
   });
 }
 
-async function main() {
-  const [mode, inputPath, outputPath] = process.argv.slice(2);
-
-  if (mode === '--render-svg') {
-    const { app } = require('electron');
-    await app.whenReady();
-    await renderSvgWithElectron(inputPath, outputPath);
-    return;
-  }
-
+function main() {
   generateTrayIcons();
 }
 
-main().catch((error) => fail(error.message));
+try {
+  main();
+} catch (error) {
+  fail(error.message);
+}
