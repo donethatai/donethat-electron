@@ -247,7 +247,7 @@ function hasPendingUserMessage() {
 }
 
 function hasWaitingForReplyState() {
-  return hasPendingUserMessage() || hasAssistantWritingState() || isLoadingChat
+  return hasPendingUserMessage() || isLoadingChat
 }
 
 function getWaitingMood() {
@@ -282,7 +282,6 @@ function setAssistantWritingState(durationMs = ASSISTANT_WRITING_HOLD_MS) {
       syncMascotState()
     }
   }, Math.max(0, assistantWritingUntil - Date.now()))
-  syncMascotState()
 }
 
 function getAssistantMoodForMessage(message) {
