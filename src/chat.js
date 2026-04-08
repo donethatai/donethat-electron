@@ -533,13 +533,6 @@ function sendOverlayHeight(height) {
   ipcRenderer.send('overlay:resize', clamped)
 }
 
-function collapseOverlay() {
-  chatVisible = false
-  applyScrollAndClamp(COLLAPSED_OVERLAY_HEIGHT)
-  sendOverlayHeight(COLLAPSED_OVERLAY_HEIGHT)
-  syncMascotState()
-}
-
 function escapeHtmlAttribute(text) {
   return String(text)
     .replace(/&/g, '&amp;')
@@ -1066,7 +1059,6 @@ function resetChatForNewConversation() {
   includeScreenOnNextMessage = true
   updateIncludeScreenBtn()
   renderChat()
-  collapseOverlay()
   ipcRenderer.invoke('chat:reset').catch(() => {})
 }
 
@@ -1344,10 +1336,6 @@ ipcRenderer.on('chat:message-update', (event, result) => {
     showMascotErrorState()
   }
   // On success, keep optimistic message until Firestore snapshot includes the new message
-})
-
-ipcRenderer.on('overlay:collapse', () => {
-  collapseOverlay()
 })
 
 // Handle recent chats list updates

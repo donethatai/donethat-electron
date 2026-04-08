@@ -2049,7 +2049,6 @@ function createOverlayWindow() {
 
     overlayWindow.on('blur', () => {
       try { overlayWindow.setAlwaysOnTop(true) } catch (e) {}
-      try { overlayWindow.webContents.send('overlay:collapse') } catch (e) {}
     })
 
     // Removed focus event that was causing auto-expansion on drag
