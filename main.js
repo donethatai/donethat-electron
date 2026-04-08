@@ -251,6 +251,7 @@ let savedOverlayPosition = null
 let saveOverlayPositionDebounce = null
 let overlayPositionUserSet = false
 let overlayDisplayMetricsListener = null
+let overlayResizeAnchorBottom = null
 const OVERLAY_COLLAPSED_HEIGHT = 52
 // Track update availability for Windows/Linux update button
 let updateAvailable = false
@@ -502,6 +503,29 @@ function restoreShowAndFocusMainWindow() {
   } catch (e) {}
   try { mainWindow.show(); } catch (e) {}
   try { mainWindow.focus(); } catch (e) {}
+}
+
+function persistOverlayPosition(x, y, height) {
+  try {
+    const roundedX = Math.round(x)
+    const roundedY = Math.round(y)
+    const resolvedHeight = Number.isFinite(height)
+      ? Math.round(height)
+      : Math.round(overlayWindow?.getBounds?.().height || OVERLAY_COLLAPSED_HEIGHT)
+    const bottom = roundedY + resolvedHeight
+    const display = screen.getDisplayNearestPoint({ x: roundedX, y: roundedY })
+    const displayId = display?.id
+
+    overlayResizeAnchorBottom = bottom
+    savedOverlayPosition = { x: roundedX, y: roundedY, bottom, displayId }
+    overlayPositionUserSet = true
+
+    if (!overlayStore) return
+    clearTimeout(saveOverlayPositionDebounce)
+    saveOverlayPositionDebounce = setTimeout(() => {
+      try { overlayStore.set('overlayPosition', savedOverlayPosition) } catch (e) {}
+    }, 200)
+  } catch (e) {}
 }
 
 function installUpdate(payload) {
@@ -1285,18 +1309,31 @@ ipcMain.on('overlay:resize', (event, height) => {
   try {
     if (overlayWindow && typeof height === 'number' && isFinite(height)) {
       const bounds = overlayWindow.getBounds();
+      const targetDisplay = screen.getDisplayMatching(bounds) || screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y }) || screen.getPrimaryDisplay()
+      const work = targetDisplay.workArea
+      const workBottom = work.y + work.height
       const MAX_H = 600
       const clamped = Math.max(OVERLAY_COLLAPSED_HEIGHT, Math.min(MAX_H, Math.floor(height)));
-      const heightDiff = clamped - bounds.height;
-      
-      // Set new size
-      overlayWindow.setSize(bounds.width, clamped, false);
-      
-      // Adjust Y position to keep top edge fixed (shrink from bottom)
-      if (heightDiff !== 0) {
-        const newY = bounds.y - heightDiff;
-        overlayWindow.setPosition(bounds.x, newY, false);
+      const anchoredBottom = Math.min(
+        Number.isFinite(overlayResizeAnchorBottom)
+        ? overlayResizeAnchorBottom
+        : (bounds.y + bounds.height),
+        workBottom
+      )
+      let newY = Math.max(work.y, anchoredBottom - clamped)
+      if (newY + clamped > workBottom) {
+        newY = workBottom - clamped
       }
+
+      // Grow upward while there is room above; once the top hits the work area, keep it pinned and grow downward.
+      // If the window cannot fit between top and bottom, prefer keeping the bottom edge visible.
+      overlayWindow.setBounds({
+        x: bounds.x,
+        y: newY,
+        width: bounds.width,
+        height: clamped
+      }, false);
+      overlayResizeAnchorBottom = clamped > work.height ? workBottom : anchoredBottom
     }
   } catch (e) {}
 })
@@ -1308,8 +1345,20 @@ ipcMain.on('overlay:move-by', (event, payload) => {
     const dx = payload && typeof payload.dx === 'number' ? payload.dx : 0
     const dy = payload && typeof payload.dy === 'number' ? payload.dy : 0
     if (!dx && !dy) return
-    const [x, y] = overlayWindow.getPosition()
-    overlayWindow.setPosition(Math.round(x + dx), Math.round(y + dy), false)
+    const bounds = overlayWindow.getBounds()
+    const nextPoint = { x: Math.round(bounds.x + dx), y: Math.round(bounds.y + dy) }
+    const targetDisplay = screen.getDisplayNearestPoint(nextPoint) || screen.getPrimaryDisplay()
+    const work = targetDisplay.workArea
+    const maxX = work.x + work.width - bounds.width
+    const maxY = work.y + work.height - bounds.height
+    const nextX = maxX < work.x
+      ? work.x
+      : Math.min(Math.max(nextPoint.x, work.x), maxX)
+    const nextY = maxY < work.y
+      ? maxY
+      : Math.min(Math.max(nextPoint.y, work.y), maxY)
+    overlayWindow.setPosition(nextX, nextY, false)
+    persistOverlayPosition(nextX, nextY, bounds.height)
   } catch (e) {}
 })
 
@@ -2058,26 +2107,8 @@ function createOverlayWindow() {
         try { screen.removeListener('display-metrics-changed', overlayDisplayMetricsListener) } catch (_) {}
         overlayDisplayMetricsListener = null
       }
+      overlayResizeAnchorBottom = null
       overlayWindow = null
-    })
-
-    // Persist position when moved (save both y and bottom to be robust)
-    overlayWindow.on('move', () => {
-      try {
-        if (!overlayStore) return
-        const [x, y] = overlayWindow.getPosition()
-        const bounds = overlayWindow.getBounds()
-        const bottom = y + bounds.height
-        // Save both y and bottom for backward/forward compatibility
-        const display = screen.getDisplayNearestPoint({ x, y })
-        const displayId = display?.id
-        savedOverlayPosition = { x, y, bottom, displayId }
-        overlayPositionUserSet = true
-        clearTimeout(saveOverlayPositionDebounce)
-        saveOverlayPositionDebounce = setTimeout(() => {
-          try { overlayStore.set('overlayPosition', savedOverlayPosition) } catch (e) {}
-        }, 200)
-      } catch (e) {}
     })
 
     // Enable context menus (copy/paste) for overlay window
@@ -2143,6 +2174,7 @@ function positionOverlayWindow() {
   }
 
   try { overlayWindow.setPosition(x, y, false) } catch (e) {}
+  overlayResizeAnchorBottom = y + winBounds.height
 }
 
 // Helper: Show overlay on the current Space (macOS) without switching Spaces
