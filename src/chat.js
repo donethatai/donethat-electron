@@ -58,8 +58,9 @@ const INACTIVITY_RESET_MS = 10 * 60 * 1000
 const COLLAPSED_OVERLAY_HEIGHT = 52
 const MAX_OVERLAY_HEIGHT = 600
 const ASSISTANT_WRITING_HOLD_MS = 2500
-const ASSISTANT_REPLY_MOOD_MS = 2500
 const ASSISTANT_EMOTION_PLAYBACK_MS = 7000
+const MASCOT_OPEN_RESET_MS = 120
+const MASCOT_OPEN_IDLE_SETTLE_MS = 500
 const MASCOT_SOURCE = '../resources/rive/donethat_mascot.riv'
 const MASCOT_ARTBOARD_NAME = 'face'
 const MASCOT_STATE_MACHINE_NAME = 'face'
@@ -73,19 +74,31 @@ const MASCOT_MOODS = Object.freeze({
   JUDGING: 6,
   PRODUCTIVE: 7,
   UNHAPPY: 8,
-  ERROR: 10
+  THINKING: 9,
+  ERROR: 10,
+  WRITING: 11,
+  GREETING: 12,
+  QUESTIONING: 13,
+  LOADING: 14,
+  PRIVACY_MODE: 15,
+  ENCOURAGING: 16
 })
 
 const EMOTION_TO_MOOD = Object.freeze({
-  neutral:     MASCOT_MOODS.IDLE,
-  greeting:    MASCOT_MOODS.IDLE, // TODO: map to a dedicated greeting animation once available in Rive
-  celebrating: MASCOT_MOODS.CELEBRATING,
-  sad:         MASCOT_MOODS.UNHAPPY,
-  relaxed:     MASCOT_MOODS.CHILLING,
-  focused:     MASCOT_MOODS.DEEPFOCUS,
-  judging:     MASCOT_MOODS.JUDGING,
-  productive:  MASCOT_MOODS.PRODUCTIVE,
+  neutral:     [MASCOT_MOODS.IDLE],
+  relaxed:     [MASCOT_MOODS.CHILLING],
+  celebrating: [MASCOT_MOODS.CELEBRATING],
+  focused:     [MASCOT_MOODS.DEEPFOCUS],
+  judging:     [MASCOT_MOODS.JUDGING, MASCOT_MOODS.QUESTIONING],
+  productive:  [MASCOT_MOODS.PRODUCTIVE, MASCOT_MOODS.ENCOURAGING],
+  sad:         [MASCOT_MOODS.UNHAPPY],
 })
+const WAITING_MOODS = Object.freeze([
+  MASCOT_MOODS.THINKING,
+  MASCOT_MOODS.WRITING,
+  MASCOT_MOODS.LOADING,
+  MASCOT_MOODS.PRIVACY_MODE
+])
 
 // Simple UI state
 let pendingMessages = []
@@ -97,6 +110,7 @@ let recentChats = []
 let recentChatsPage = 0
 const CHATS_PER_PAGE = 10
 let isLoadingChat = false
+let recordingPaused = false
 let mascotRive = null
 let mascotInputs = {
   focusLevel: null,
@@ -109,6 +123,11 @@ let isIdleSleeping = false
 let idleSleepTimer = null
 let assistantWritingTimer = null
 let assistantWritingUntil = 0
+let mascotOpenSequenceToken = 0
+let mascotIdleOverrideUntil = 0
+let activeWaitingMood = null
+let activePausedMood = null
+let lastDocumentVisibilityState = document.visibilityState
 const IDLE_SLEEP_MS = 60 * 1000
 /**
  * Whether the user is engaged with this overlay. Window focus/blur is unreliable in Electron
@@ -161,17 +180,45 @@ function setMascotMoodOverride(mood, durationMs) {
   syncMascotState()
 }
 
+function clearMascotMoodOverride() {
+  if (mascotMoodOverrideTimer) {
+    try { clearTimeout(mascotMoodOverrideTimer) } catch (_) {}
+    mascotMoodOverrideTimer = null
+  }
+  mascotMoodOverride = null
+}
+
+function setMascotIdleOverride(durationMs) {
+  mascotIdleOverrideUntil = Date.now() + Math.max(0, Number(durationMs) || 0)
+  syncMascotState()
+}
+
+function clearMascotIdleOverride() {
+  mascotIdleOverrideUntil = 0
+}
+
+function breakMascotIdleOverride() {
+  if (!mascotIdleOverrideUntil) return
+  mascotIdleOverrideUntil = 0
+  syncMascotState()
+}
+
+function holdMascotMood(mood, durationMs) {
+  if (durationMs > 0) {
+    setMascotMoodOverride(mood, durationMs)
+    return
+  }
+  clearMascotMoodOverride()
+  setMascotMood(mood)
+}
+
 function resetAssistantAnimationState() {
   assistantWritingUntil = 0
   if (assistantWritingTimer) {
     try { clearTimeout(assistantWritingTimer) } catch (_) {}
     assistantWritingTimer = null
   }
-  if (mascotMoodOverrideTimer) {
-    try { clearTimeout(mascotMoodOverrideTimer) } catch (_) {}
-    mascotMoodOverrideTimer = null
-  }
-  mascotMoodOverride = null
+  clearMascotMoodOverride()
   if (typingTimer) {
     try { clearTimeout(typingTimer) } catch (_) {}
     typingTimer = null
@@ -195,6 +242,34 @@ function hasAssistantWritingState() {
   return Date.now() < assistantWritingUntil
 }
 
+function hasPendingUserMessage() {
+  return pendingMessages.some((message) => message && message.role === 'user' && message.status === 'pending')
+}
+
+function hasWaitingForReplyState() {
+  return hasPendingUserMessage() || hasAssistantWritingState() || isLoadingChat
+}
+
+function getWaitingMood() {
+  if (WAITING_MOODS.length === 0) return MASCOT_MOODS.THINKING
+  if (activeWaitingMood === null) {
+    const nextIndex = Math.floor(Math.random() * WAITING_MOODS.length)
+    activeWaitingMood = WAITING_MOODS[nextIndex]
+  }
+  return activeWaitingMood
+}
+
+function getPausedMood() {
+  if (activePausedMood === null) {
+    activePausedMood = Math.random() < 0.5 ? MASCOT_MOODS.PAUSED : MASCOT_MOODS.SLEEPING
+  }
+  return activePausedMood
+}
+
+function normalizeEmotionKey(emotion) {
+  return String(emotion || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+}
+
 function setAssistantWritingState(durationMs = ASSISTANT_WRITING_HOLD_MS) {
   assistantWritingUntil = Date.now() + Math.max(0, Number(durationMs) || 0)
   if (assistantWritingTimer) {
@@ -212,10 +287,13 @@ function setAssistantWritingState(durationMs = ASSISTANT_WRITING_HOLD_MS) {
 
 function getAssistantMoodForMessage(message) {
   if (!message || message.role !== 'assistant' || typeof message.emotion !== 'string') return null
-  const emotion = message.emotion.trim()
+  const emotion = normalizeEmotionKey(message.emotion)
   if (!emotion) return null
-  const mappedMood = EMOTION_TO_MOOD[emotion]
-  return mappedMood === undefined ? null : mappedMood
+  if (emotion === 'greeting') return null
+  const mappedMoods = EMOTION_TO_MOOD[emotion]
+  if (!Array.isArray(mappedMoods) || mappedMoods.length === 0) return null
+  const index = Math.floor(Math.random() * mappedMoods.length)
+  return mappedMoods[index] ?? null
 }
 
 function playAssistantEmotion(message, durationMs = ASSISTANT_EMOTION_PLAYBACK_MS) {
@@ -223,13 +301,6 @@ function playAssistantEmotion(message, durationMs = ASSISTANT_EMOTION_PLAYBACK_M
   if (mood === null) return false
   setMascotMoodOverride(mood, durationMs)
   return true
-}
-
-function playLatestAssistantEmotion(durationMs = ASSISTANT_EMOTION_PLAYBACK_MS) {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (playAssistantEmotion(messages[i], durationMs)) return true
-  }
-  return false
 }
 
 function setMascotFallbackVisible(isVisible) {
@@ -302,29 +373,71 @@ function triggerMascotShake() {
 }
 
 function computeMascotMood() {
-  if (hasAssistantWritingState()) return MASCOT_MOODS.PRODUCTIVE
+  if (recordingPaused) return getPausedMood()
+  activePausedMood = null
   if (document.visibilityState !== 'visible' || !overlayWindowActive) return MASCOT_MOODS.SLEEPING
   if (isIdleSleeping) return MASCOT_MOODS.SLEEPING
-  if ((input0.value || '').trim()) return MASCOT_MOODS.DEEPFOCUS
-  if (messages.length > 0 || pendingMessages.some((message) => message && message.role === 'user')) {
-    return MASCOT_MOODS.PRODUCTIVE
-  }
-  if (recentChats.length > 0 && recentChatsContainer && recentChatsContainer.style.display !== 'none') {
-    return MASCOT_MOODS.CHILLING
-  }
+  if (hasWaitingForReplyState()) return getWaitingMood()
+  activeWaitingMood = null
+  if (Date.now() < mascotIdleOverrideUntil) return MASCOT_MOODS.IDLE
   return MASCOT_MOODS.IDLE
 }
 
 function syncMascotState() {
-  const mood = hasAssistantWritingState()
-    ? MASCOT_MOODS.PRODUCTIVE
-    : (mascotMoodOverride ?? computeMascotMood())
+  const mood = mascotMoodOverride ?? computeMascotMood()
   setMascotMood(mood)
 }
 
 function showMascotErrorState() {
+  breakMascotIdleOverride()
   triggerMascotShake()
   setMascotMoodOverride(MASCOT_MOODS.ERROR, 2200)
+}
+
+function getLatestAssistantMessage() {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message && message.role === 'assistant') return message
+  }
+  return null
+}
+
+function playMascotOpenSequence() {
+  const sequenceToken = ++mascotOpenSequenceToken
+  const latestAssistantMessage = getLatestAssistantMessage()
+  const replayMood = latestAssistantMessage ? getAssistantMoodForMessage(latestAssistantMessage) : null
+
+  clearMascotMoodOverride()
+  clearMascotIdleOverride()
+  setMascotLidsMove(0)
+  setMascotMood(MASCOT_MOODS.IDLE)
+
+  window.setTimeout(() => {
+    if (sequenceToken !== mascotOpenSequenceToken) return
+
+    if (replayMood === null) {
+      setMascotIdleOverride(MASCOT_OPEN_IDLE_SETTLE_MS)
+      window.setTimeout(() => {
+        if (sequenceToken !== mascotOpenSequenceToken) return
+        syncMascotState()
+      }, MASCOT_OPEN_IDLE_SETTLE_MS)
+      return
+    }
+
+    holdMascotMood(replayMood, ASSISTANT_EMOTION_PLAYBACK_MS)
+
+    window.setTimeout(() => {
+      if (sequenceToken !== mascotOpenSequenceToken) return
+      clearMascotMoodOverride()
+      setMascotIdleOverride(MASCOT_OPEN_IDLE_SETTLE_MS)
+      syncMascotState()
+    }, ASSISTANT_EMOTION_PLAYBACK_MS)
+
+    window.setTimeout(() => {
+      if (sequenceToken !== mascotOpenSequenceToken) return
+      syncMascotState()
+    }, ASSISTANT_EMOTION_PLAYBACK_MS + MASCOT_OPEN_IDLE_SETTLE_MS)
+  }, MASCOT_OPEN_RESET_MS)
 }
 
 function initMascot() {
@@ -970,6 +1083,7 @@ function maybeResetChatOnOverlayShow() {
 async function addMessageFromInput() {
   const text = input0.value.trim()
   if (!text) return
+  breakMascotIdleOverride()
 
   // Capture screenshot if enabled (check BEFORE disabling)
   let images = []
@@ -1048,13 +1162,17 @@ async function addMessageFromInput() {
 // Event listeners
 input0.addEventListener('keydown', (e) => {
   resetIdleTimer()
+  breakMascotIdleOverride()
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     addMessageFromInput()
   }
 })
 
-input0.addEventListener('input', () => { resetIdleTimer() })
+input0.addEventListener('input', () => {
+  resetIdleTimer()
+  breakMascotIdleOverride()
+})
 
 // Screenshot button functionality
 if (includeScreenBtn) {
@@ -1068,6 +1186,7 @@ if (includeScreenBtn) {
     }
     
     includeScreenOnNextMessage = !includeScreenOnNextMessage
+    breakMascotIdleOverride()
     updateIncludeScreenBtn()
     try { input0.focus() } catch (err) {}
   })
@@ -1179,12 +1298,11 @@ ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
   if (hasNewAssistant) {
     markOverlayEngaged()
     resetIdleTimer()
+    breakMascotIdleOverride()
     const lastMsg = newMessages[newMessages.length - 1]
     if (lastMsg && lastMsg.role === 'assistant') {
       setAssistantWritingState(ASSISTANT_WRITING_HOLD_MS)
-      if (!playAssistantEmotion(lastMsg, ASSISTANT_WRITING_HOLD_MS + ASSISTANT_EMOTION_PLAYBACK_MS)) {
-        setMascotMoodOverride(MASCOT_MOODS.PRODUCTIVE, ASSISTANT_WRITING_HOLD_MS + ASSISTANT_REPLY_MOOD_MS)
-      }
+      playAssistantEmotion(lastMsg, ASSISTANT_WRITING_HOLD_MS + ASSISTANT_EMOTION_PLAYBACK_MS)
     }
   }
 
@@ -1231,6 +1349,8 @@ ipcRenderer.on('chat:recent-chats-updated', (event, newRecentChats) => {
 // Handle chat load result
 ipcRenderer.on('chat:load-chat-result', (event, result) => {
   isLoadingChat = false
+  breakMascotIdleOverride()
+  syncMascotState()
   if (result.success) {
     // Chat loading is successful, messages will arrive via chat:receive-messages
   } else {
@@ -1280,7 +1400,6 @@ window.addEventListener('focus', () => {
       ipcRenderer.invoke('chat:get-recent-chats').catch(() => {})
     }
     resetIdleTimer()
-    playLatestAssistantEmotion()
   } catch (e) {}
 })
 
@@ -1452,8 +1571,10 @@ function updateRecentChatsVisibility() {
 async function loadChatById(chatId) {
   if (isLoadingChat || !chatId) return
   
+  breakMascotIdleOverride()
   isLoadingChat = true
   updateRecentChatsVisibility()
+  syncMascotState()
   
   try {
     const result = await ipcRenderer.invoke('chat:load-chat', chatId)
@@ -1468,8 +1589,22 @@ async function loadChatById(chatId) {
     showMascotErrorState()
     isLoadingChat = false
     updateRecentChatsVisibility()
+    syncMascotState()
   }
 }
+
+function setRecordingPausedState(isPaused) {
+  recordingPaused = !!isPaused
+  syncMascotState()
+}
+
+ipcRenderer.invoke('getInitialPauseState')
+  .then((isPaused) => setRecordingPausedState(isPaused))
+  .catch(() => {})
+
+ipcRenderer.on('pauseStateChanged', (_event, isPaused) => {
+  setRecordingPausedState(isPaused)
+})
 
 function setupOverlayWindowDrag() {
   if (!overlayCard || !ipcRenderer?.send) return
@@ -1522,6 +1657,7 @@ if (overlayRoot) {
     () => {
       markOverlayEngaged()
       resetIdleTimer()
+      breakMascotIdleOverride()
       syncMascotState()
     },
     true
@@ -1530,6 +1666,7 @@ if (overlayRoot) {
     'focusin',
     () => {
       markOverlayEngaged()
+      breakMascotIdleOverride()
     },
     true
   )
@@ -1546,6 +1683,24 @@ if (overlayRoot) {
 
 window.addEventListener('resize', () => {
   resizeMascotCanvas()
+})
+
+document.addEventListener('visibilitychange', () => {
+  const wasVisible = lastDocumentVisibilityState === 'visible'
+  const isVisible = document.visibilityState === 'visible'
+  lastDocumentVisibilityState = document.visibilityState
+
+  if (!isVisible) {
+    overlayWindowActive = false
+    syncMascotState()
+    return
+  }
+
+  if (!wasVisible) {
+    markOverlayEngaged()
+    resetIdleTimer()
+    playMascotOpenSequence()
+  }
 })
 
 initMascot()
