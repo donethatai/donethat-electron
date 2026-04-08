@@ -1,5 +1,5 @@
 const log = require('electron-log');
-const { getGeminiApiKey, getOpenAICompatibleConfig, getMainWindow } = require('./main-state');
+const { getGeminiApiKey, getLocalProcessingState, getOpenAICompatibleConfig, getMainWindow } = require('./main-state');
 
 // Firebase URLs for config and processing
 const FIREBASE_CONFIG_URL = 'https://europe-west1-donethat.cloudfunctions.net/inputConfig';
@@ -184,15 +184,18 @@ function shouldRethrowLocalProcessingError(err, testMode = false) {
  */
 async function getLocalProvider() {
   try {
+    const localProcessingState = await getLocalProcessingState();
+    if (!localProcessingState.success) {
+      return null;
+    }
+
     // Check for Gemini key first (preferred)
-    const geminiResult = await getGeminiApiKey();
-    if (geminiResult.success && geminiResult.apiKey) {
+    if (localProcessingState.state?.gemini?.hasKey) {
       return 'gemini';
     }
 
     // Check for OpenAI-compatible config
-    const openaiResult = await getOpenAICompatibleConfig();
-    if (openaiResult.success && openaiResult.config && openaiResult.config.endpoint) {
+    if (localProcessingState.state?.openAICompatible?.endpoint) {
       return 'openai';
     }
 

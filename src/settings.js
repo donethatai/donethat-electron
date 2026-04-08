@@ -920,6 +920,20 @@ function recomputeSystemAudioDependency() {
   applyInputDataManagedLockUI();
 }
 
+async function getLocalProcessingStateSummary() {
+  try {
+    const result = await ipcRenderer.invoke('get-local-processing-state');
+    if (result?.success && result.state) {
+      return result.state;
+    }
+  } catch (_) {}
+
+  return {
+    gemini: { hasKey: false, keySource: null },
+    openAICompatible: { endpoint: null, model: null, hasApiKey: false, keySource: null }
+  };
+}
+
 async function applyManagedLocalProcessingSettings(localProcessing) {
   const geminiSection = document.getElementById('geminiSettingsSection');
   const openAiSection = document.getElementById('openAiCompatibleSettingsSection');
@@ -932,6 +946,7 @@ async function applyManagedLocalProcessingSettings(localProcessing) {
   const openaiApiKeyInput = document.getElementById('openaiApiKeyInput');
   const toggleOpenaiKeyBtn = document.getElementById('toggleOpenaiKeyBtn');
   const clearOpenaiConfigBtn = document.getElementById('clearOpenaiConfigBtn');
+  const localProcessingState = await getLocalProcessingStateSummary();
 
   const geminiManaged = isManagedValue(localProcessing?.gemini);
   const openAiManaged = isManagedValue(localProcessing?.openAICompatible);
@@ -961,22 +976,14 @@ async function applyManagedLocalProcessingSettings(localProcessing) {
     } else if (isManagedValue(config.apiKey)) {
       hasKey = !!config.apiKey;
     } else {
-      try {
-        const result = await ipcRenderer.invoke('get-gemini-api-key');
-        hasKey = !!(result && result.success && result.apiKey);
-      } catch (_) {
-        hasKey = false;
-      }
+      hasKey = !!localProcessingState?.gemini?.hasKey;
     }
     geminiApiKeyInput.type = 'password';
     geminiApiKeyInput.value = hasKey ? MASKED_SECRET : '';
   } else if (!geminiManaged && geminiApiKeyInput) {
-    try {
-      const result = await ipcRenderer.invoke('get-gemini-api-key');
-      const hasKey = !!(result && result.success && result.apiKey);
-      geminiApiKeyInput.type = 'password';
-      geminiApiKeyInput.value = hasKey ? MASKED_SECRET : '';
-    } catch (_) {}
+    const hasKey = !!localProcessingState?.gemini?.hasKey;
+    geminiApiKeyInput.type = 'password';
+    geminiApiKeyInput.value = hasKey ? MASKED_SECRET : '';
   }
 
   if (openAiManaged) {
@@ -989,19 +996,13 @@ async function applyManagedLocalProcessingSettings(localProcessing) {
         openaiApiKeyInput.value = '';
       }
     } else {
-      let currentConfig = null;
-      try {
-        const result = await ipcRenderer.invoke('get-openai-compatible-config');
-        currentConfig = result?.success ? (result.config || null) : null;
-      } catch (_) {
-        currentConfig = null;
-      }
+      const currentConfig = localProcessingState?.openAICompatible || null;
 
       const endpointValue = isManagedValue(config.endpoint) ? config.endpoint : (currentConfig?.endpoint || '');
       const modelValue = isManagedValue(config.model) ? config.model : (currentConfig?.model || '');
       const hasApiKey = isManagedValue(config.apiKey)
         ? !!config.apiKey
-        : !!currentConfig?.apiKey;
+        : !!currentConfig?.hasApiKey;
 
       if (openaiEndpointInput) openaiEndpointInput.value = endpointValue;
       if (openaiModelInput) openaiModelInput.value = modelValue;
@@ -1011,16 +1012,13 @@ async function applyManagedLocalProcessingSettings(localProcessing) {
       }
     }
   } else if (!openAiManaged) {
-    try {
-      const result = await ipcRenderer.invoke('get-openai-compatible-config');
-      const config = result?.success ? result.config : null;
-      if (openaiEndpointInput) openaiEndpointInput.value = config?.endpoint || '';
-      if (openaiModelInput) openaiModelInput.value = config?.model || '';
-      if (openaiApiKeyInput) {
-        openaiApiKeyInput.type = 'password';
-        openaiApiKeyInput.value = config?.apiKey ? MASKED_SECRET : '';
-      }
-    } catch (_) {}
+    const config = localProcessingState?.openAICompatible || null;
+    if (openaiEndpointInput) openaiEndpointInput.value = config?.endpoint || '';
+    if (openaiModelInput) openaiModelInput.value = config?.model || '';
+    if (openaiApiKeyInput) {
+      openaiApiKeyInput.type = 'password';
+      openaiApiKeyInput.value = config?.hasApiKey ? MASKED_SECRET : '';
+    }
   }
 }
 
@@ -1039,11 +1037,9 @@ function setupGeminiApiKeyListeners() {
     // On mount, check if a key exists and show masked
     (async () => {
       try {
-        const result = await ipcRenderer.invoke('get-gemini-api-key');
-        hasStoredKey = !!(result && result.success && result.apiKey);
-        if (hasStoredKey) {
-          storedKeyCached = result.apiKey || '';
-        }
+        const state = await getLocalProcessingStateSummary();
+        hasStoredKey = !!state?.gemini?.hasKey;
+        storedKeyCached = '';
         if (llmManagedLocks.gemini) return;
         if (hasStoredKey) {
           geminiApiKeyInput.value = MASKED_SECRET;
@@ -1177,10 +1173,14 @@ function setupOpenAICompatibleListeners() {
     // On mount, load existing config
     (async () => {
       try {
-        const result = await ipcRenderer.invoke('get-openai-compatible-config');
-        if (result && result.success && result.config) {
-          storedConfig = result.config;
-          hasStoredConfig = !!(storedConfig.endpoint || storedConfig.model || storedConfig.apiKey);
+        const state = await getLocalProcessingStateSummary();
+        if (state?.openAICompatible) {
+          storedConfig = {
+            endpoint: state.openAICompatible.endpoint || null,
+            model: state.openAICompatible.model || null,
+            apiKey: null
+          };
+          hasStoredConfig = !!(storedConfig.endpoint || storedConfig.model || state.openAICompatible.hasApiKey);
           if (llmManagedLocks.openAICompatible) return;
           if (storedConfig.endpoint) {
             openaiEndpointInput.value = storedConfig.endpoint;
@@ -1188,7 +1188,7 @@ function setupOpenAICompatibleListeners() {
           if (storedConfig.model) {
             openaiModelInput.value = storedConfig.model;
           }
-          if (storedConfig.apiKey) {
+          if (state.openAICompatible.hasApiKey) {
             openaiApiKeyInput.value = MASKED_SECRET;
             openaiApiKeyInput.type = 'password';
           }
@@ -1206,32 +1206,28 @@ function setupOpenAICompatibleListeners() {
       const rawApiKey = openaiApiKeyInput.value.trim();
 
       let apiKey = null;
+      let preserveApiKey = false;
       if (!isShowingKey && rawApiKey === MASKED_SECRET) {
-        // Still masked, keep existing key from store (fresh fetch to avoid stale closure state)
-        try {
-          const latest = await ipcRenderer.invoke('get-openai-compatible-config');
-          const latestConfig = latest?.success ? (latest.config || {}) : {};
-          storedConfig = latestConfig;
-          hasStoredConfig = !!(latestConfig.endpoint || latestConfig.model || latestConfig.apiKey);
-          apiKey = latestConfig.apiKey || null;
-        } catch (_) {
-          apiKey = storedConfig.apiKey || null;
-        }
+        preserveApiKey = true;
       } else if (rawApiKey) {
         apiKey = rawApiKey;
       }
 
       try {
-        if (endpoint || model || apiKey) {
-          await ipcRenderer.invoke('save-openai-compatible-config', { endpoint, model, apiKey });
+        if (endpoint || model || apiKey || preserveApiKey) {
+          await ipcRenderer.invoke('save-openai-compatible-config', { endpoint, model, apiKey, preserveApiKey });
           logAnalyticsEvent('openai_config_saved', {
             has_endpoint: !!endpoint,
             has_model: !!model,
-            has_key: !!apiKey
+            has_key: !!(apiKey || preserveApiKey)
           });
           hasStoredConfig = true;
-          storedConfig = { endpoint, model, apiKey };
-          if (apiKey && !isShowingKey) {
+          storedConfig = {
+            endpoint,
+            model,
+            apiKey: preserveApiKey ? storedConfig.apiKey : apiKey
+          };
+          if ((apiKey || preserveApiKey) && !isShowingKey) {
             openaiApiKeyInput.value = MASKED_SECRET;
             openaiApiKeyInput.type = 'password';
           }

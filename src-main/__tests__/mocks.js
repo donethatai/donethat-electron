@@ -75,6 +75,17 @@ const mockPowerMonitor = {
   on: jest.fn()
 };
 
+const mockSafeStorage = {
+  isEncryptionAvailable: jest.fn(() => true),
+  encryptString: jest.fn((value) => Buffer.from(`enc:${value}`, 'utf8')),
+  decryptString: jest.fn((buffer) => {
+    const value = Buffer.isBuffer(buffer) ? buffer.toString('utf8') : String(buffer || '');
+    return value.startsWith('enc:') ? value.slice(4) : value;
+  }),
+  getSelectedStorageBackend: jest.fn(() => 'mock'),
+  setUsePlainTextEncryption: jest.fn()
+};
+
 // Mock electron Notification
 const mockNotification = {
   isSupported: jest.fn(() => true)
@@ -83,6 +94,7 @@ const mockNotification = {
 jest.mock('electron', () => ({
   ipcMain: mockIpcMain,
   app: mockApp,
+  safeStorage: mockSafeStorage,
   BrowserWindow: jest.fn(() => mockBrowserWindow),
   powerMonitor: mockPowerMonitor,
   Notification: mockNotification,
@@ -100,6 +112,7 @@ module.exports = {
   mockBrowserWindow,
   mockPowerMonitor,
   mockNotification,
+  mockSafeStorage,
   resetMocks: () => {
     mockStore.store = {};
     mockStore.get.mockClear();
@@ -121,6 +134,16 @@ module.exports = {
     mockBrowserWindow.focus.mockClear();
     mockPowerMonitor.getSystemIdleTime.mockClear();
     mockPowerMonitor.on.mockClear();
+    mockSafeStorage.isEncryptionAvailable.mockClear();
+    mockSafeStorage.isEncryptionAvailable.mockReturnValue(true);
+    mockSafeStorage.encryptString.mockClear();
+    mockSafeStorage.encryptString.mockImplementation((value) => Buffer.from(`enc:${value}`, 'utf8'));
+    mockSafeStorage.decryptString.mockClear();
+    mockSafeStorage.decryptString.mockImplementation((buffer) => {
+      const value = Buffer.isBuffer(buffer) ? buffer.toString('utf8') : String(buffer || '');
+      return value.startsWith('enc:') ? value.slice(4) : value;
+    });
+    mockSafeStorage.getSelectedStorageBackend.mockClear();
+    mockSafeStorage.setUsePlainTextEncryption.mockClear();
   }
 };
-

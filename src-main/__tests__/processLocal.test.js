@@ -7,6 +7,7 @@ jest.mock('electron-log', () => ({
 
 jest.mock('../main-state', () => ({
   getGeminiApiKey: jest.fn(),
+  getLocalProcessingState: jest.fn(),
   getOpenAICompatibleConfig: jest.fn(),
   getMainWindow: jest.fn()
 }));

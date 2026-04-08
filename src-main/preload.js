@@ -81,6 +81,7 @@ const validInvokeChannels = [
   'save-linux-screenshot-command',
   'test-linux-screenshot-command',
   'get-gemini-api-key',
+  'get-local-processing-state',
   'save-gemini-api-key',
   'clear-gemini-api-key',
   'get-openai-compatible-config',

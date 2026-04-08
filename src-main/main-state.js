@@ -1647,6 +1647,10 @@ function setupIPCHandlers() {
     }
   });
 
+  ipcMain.handle('get-local-processing-state', async () => {
+    return getLocalProcessingState();
+  });
+
   ipcMain.handle('clear-gemini-api-key', async (event) => {
     try {
       if (isLocalProcessingManaged()) {
@@ -1684,6 +1688,7 @@ function setupIPCHandlers() {
       }
 
       const { endpoint, apiKey } = config;
+      const preserveApiKey = !!config.preserveApiKey;
 
       if (endpoint && typeof endpoint !== 'string') {
         throw new Error('Invalid endpoint provided');
@@ -1693,10 +1698,25 @@ function setupIPCHandlers() {
         throw new Error('Invalid API key provided');
       }
 
+      if (preserveApiKey && apiKey) {
+        throw new Error('Cannot preserve and replace OpenAI-compatible API key at the same time');
+      }
+
+      const existingConfig = safeStoreOperation(() => {
+        if (!store) return {};
+        return store.get('openaiCompatibleConfig') || {};
+      }, 'read existing OpenAI-compatible config before save') || {};
+      const existingKeySource = safeStoreOperation(() => {
+        if (!store) return null;
+        return store.get(OPENAI_KEY_SOURCE_STORE_KEY) || null;
+      }, 'read existing OpenAI-compatible API key source before save');
+
       // Encrypt the API key if provided
       let encryptedKey = null;
       if (apiKey) {
         encryptedKey = encryptData(apiKey);
+      } else if (preserveApiKey) {
+        encryptedKey = existingConfig.apiKey || null;
       }
 
       // Save config to store
@@ -1709,6 +1729,8 @@ function setupIPCHandlers() {
           });
           if (apiKey) {
             store.set(OPENAI_KEY_SOURCE_STORE_KEY, API_KEY_SOURCE_USER);
+          } else if (preserveApiKey && existingKeySource && encryptedKey) {
+            store.set(OPENAI_KEY_SOURCE_STORE_KEY, existingKeySource);
           } else {
             store.delete(OPENAI_KEY_SOURCE_STORE_KEY);
           }
@@ -1718,11 +1740,15 @@ function setupIPCHandlers() {
       }, 'save OpenAI-compatible config');
 
       // Cache the decrypted config in memory
-      cachedOpenAICompatibleConfig = {
-        endpoint: endpoint || null,
-        model: config.model || null,
-        apiKey: apiKey || null
-      };
+      if (preserveApiKey && encryptedKey) {
+        cachedOpenAICompatibleConfig = null;
+      } else {
+        cachedOpenAICompatibleConfig = {
+          endpoint: endpoint || null,
+          model: config.model || null,
+          apiKey: apiKey || null
+        };
+      }
 
       try { require('./processLocal').resetLLMModels(); } catch (_) {}
       log.info('OpenAI-compatible config saved successfully');
@@ -2505,6 +2531,49 @@ async function getGeminiApiKey() {
   }
 }
 
+function getLocalProcessingState() {
+  try {
+    const geminiStoredKey = safeStoreOperation(() => {
+      if (!store) return null;
+      return store.get('geminiApiKey');
+    }, 'get Gemini API key presence');
+
+    const openaiStoredConfig = safeStoreOperation(() => {
+      if (!store) return null;
+      return store.get('openaiCompatibleConfig');
+    }, 'get OpenAI-compatible config summary');
+
+    const geminiKeySource = safeStoreOperation(() => {
+      if (!store) return null;
+      return store.get(GEMINI_KEY_SOURCE_STORE_KEY) || null;
+    }, 'get Gemini API key source');
+
+    const openaiKeySource = safeStoreOperation(() => {
+      if (!store) return null;
+      return store.get(OPENAI_KEY_SOURCE_STORE_KEY) || null;
+    }, 'get OpenAI-compatible API key source');
+
+    return {
+      success: true,
+      state: {
+        gemini: {
+          hasKey: !!geminiStoredKey,
+          keySource: geminiKeySource || null
+        },
+        openAICompatible: {
+          endpoint: openaiStoredConfig?.endpoint || null,
+          model: openaiStoredConfig?.model || null,
+          hasApiKey: !!openaiStoredConfig?.apiKey,
+          keySource: openaiKeySource || null
+        }
+      }
+    };
+  } catch (error) {
+    log.error('Error retrieving local processing state:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 /**
  * Get OpenAI-compatible config (for internal use)
  */
@@ -2626,6 +2695,7 @@ module.exports = {
   isManualPauseAllowed,
   getClientTelemetryEnabled,
   getGeminiApiKey,
+  getLocalProcessingState,
   getOpenAICompatibleConfig,
   getAutoSubmit: () => autoSubmit
 }
