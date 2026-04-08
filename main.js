@@ -2028,6 +2028,8 @@ function createOverlayWindow() {
 
     overlayWindow.loadFile(path.join(__dirname, 'src', 'chat.html'))
 
+    try { overlayWindow.setHasShadow(false) } catch (_) {}
+
     // Debug inspector and console piping for overlay (same as main window)
     if (DEBUG) {
       overlayWindow.webContents.openDevTools();
@@ -2041,7 +2043,6 @@ function createOverlayWindow() {
 
     overlayWindow.webContents.once('did-finish-load', () => {
       if (applyLiquidGlass(overlayWindow)) {
-        try { overlayWindow.setHasShadow(false); } catch (_) {}
         try { overlayWindow.webContents.send('liquid-glass-active'); } catch (_) {}
       }
     });
