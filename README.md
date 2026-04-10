@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="resources/logomark.svg" width="80" alt="DoneThat" />
+  <img src="resources/logomark.svg" width="400" alt="DoneThat" />
 </p>
 
 <h1 align="center">Double your productivity, without more work.</h1>
 
 <p align="center">
-  <a href="https://donethat.ai">Website</a> · <a href="https://donethat.ai/download">Download</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="SUPPORT.md">Support</a>
+  <a href="https://donethat.ai">Website</a> · <a href="https://donethat.ai/download">Download</a> · <a href="SUPPORT.md">Support</a>
 </p>
 
 <p align="center">
@@ -63,16 +63,6 @@ You'll need a [DoneThat](https://donethat.ai) account to sign in and use the app
 This repository contains the **desktop client only**. Backend services (capture processing, AI summarization, authentication) are proprietary. This follows the same model as Proton Mail — open-source client under the GPL, closed backend infrastructure.
 
 You can inspect the code, build the renderer, and work on desktop-only behavior without backend access. For anything that talks to the backend, you need a DoneThat account.
-
-<details>
-<summary>Backend dependencies</summary>
-
-- `https://*.cloudfunctions.net`
-- `https://app.donethat.ai`
-- `https://identitytoolkit.googleapis.com`
-- `https://securetoken.googleapis.com`
-
-</details>
 
 ## Dear vibecoders and AI agents
 
