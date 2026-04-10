@@ -33,29 +33,32 @@
     <!-- Global Top Bar (visible on all views except auth screens) -->
     <div id="appTopbar" class="dashboard-topbar hidden">
       <div class="topbar-left">
-        <button id="openSettingsViewBtn" class="btn-secondary topbar-btn" title="Setup">Setup</button>
-        <button id="openFeedbackBtn" class="btn-secondary topbar-btn" title="Feedback">Feedback</button>
-        <button id="reloadIframeBtn" class="btn-secondary topbar-btn" title="Reload Dashboard" style="padding: 0.5rem 0.75rem;">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+        <button id="openSettingsViewBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button" title="Setup">Setup</button>
+        <button id="openFeedbackBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button" title="Feedback">Feedback</button>
+        <button id="reloadIframeBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button dt-button--icon" title="Reload Dashboard" aria-label="Reload Dashboard">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 2v6h-6" />
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+            <path d="M3 22v-6h6" />
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
           </svg>
         </button>
-        <button id="updateBtn" class="btn-primary topbar-btn hidden" title="Update">Install Update</button>
+        <button id="updateBtn" class="dt-button dt-button--primary dt-button--small dt-topbar-button hidden" title="Update">Install Update</button>
       </div>
       <div class="topbar-actions">
-        <button id="generateSummaryBtn" class="btn-secondary topbar-btn">Finish Day</button>
-        <button id="openChatBtn" class="btn-secondary topbar-btn">Chat</button>
+        <button id="generateSummaryBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button">Finish Day</button>
+        <button id="openChatBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button">Chat</button>
         <div class="recording-control">
-          <button id="recordingStateBtn" class="topbar-btn btn-secondary" title="Pause">
+          <button id="recordingStateBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button" title="Pause">
             <span id="recordingStateText" class="recording-text">Pause</span>
           </button>
-          <div id="recordingMenu" class="recording-menu hidden">
-            <button data-pause="300000" class="recording-menu-item">Pause 5 min</button>
-            <button data-pause="900000" class="recording-menu-item">Pause 15 min</button>
-            <button data-pause="1800000" class="recording-menu-item">Pause 30 min</button>
-            <button data-pause="3600000" class="recording-menu-item">Pause 1 hour</button>
-            <button id="pauseTodayBtn" class="recording-menu-item">Pause today</button>
-            <button id="resumeNowBtn" class="recording-menu-item">Resume</button>
+          <div id="recordingMenu" class="dt-menu recording-menu hidden">
+            <button data-pause="300000" class="dt-menu-item">Pause 5 min</button>
+            <button data-pause="900000" class="dt-menu-item">Pause 15 min</button>
+            <button data-pause="1800000" class="dt-menu-item">Pause 30 min</button>
+            <button data-pause="3600000" class="dt-menu-item">Pause 1 hour</button>
+            <button id="pauseTodayBtn" class="dt-menu-item">Pause today</button>
+            <button id="resumeNowBtn" class="dt-menu-item">Resume</button>
           </div>
         </div>
       </div>
@@ -69,12 +72,12 @@
             <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
           </svg>
           <div class="flex flex-col">
-            <span id="inappNotificationTitle" class="font-semibold"></span>
+            <span id="inappNotificationTitle" class="font-normal"></span>
             <span id="inappNotificationMessage"></span>
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <button id="inappNotificationAction" class="btn-secondary topbar-btn hidden"></button>
+          <button id="inappNotificationAction" class="dt-button dt-button--secondary dt-button--small dt-topbar-button hidden"></button>
           <button id="inappNotificationClose" class="banner-close" aria-label="Close notification">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -95,11 +98,11 @@
 
     <!-- Summary Overlay Modal -->
     <div id="summaryOverlay" class="summary-overlay hidden">
-      <div class="summary-overlay-content">
+      <div class="dt-dialog summary-dialog">
         <div class="summary-subtitle">
           <div class="summary-subtitle-header">
             <h2 id="summaryHeadline" class="summary-headline">Today</h2>
-            <button id="summaryCloseBtn" class="summary-close-btn" aria-label="Close summary">
+            <button id="summaryCloseBtn" class="dt-button dt-button--ghost dt-button--icon dt-button--small summary-close-button" aria-label="Close summary">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
               </svg>
@@ -123,21 +126,21 @@
               <!-- Custom bullets will be inserted here -->
             </div>
             <div class="summary-add-custom">
-              <input type="text" id="summaryCustomInput" class="summary-custom-input" placeholder="Add work..." />
-              <input type="number" id="summaryCustomTimeInput" class="summary-custom-time-input" placeholder="hours" min="0.1" step="0.1" />
-              <button id="summaryAddCustomBtn" class="summary-add-custom-btn">Add</button>
+              <input type="text" id="summaryCustomInput" class="dt-input summary-custom-input" placeholder="Add work..." />
+              <input type="number" id="summaryCustomTimeInput" class="dt-input summary-custom-time-input" placeholder="hours" min="0.1" step="0.1" />
+              <button id="summaryAddCustomBtn" class="dt-button dt-button--primary dt-button--small">Add</button>
             </div>
           </div>
           
           <div class="summary-comment-section">
-            <label for="summaryCommentInput" class="summary-comment-label">Comment (optional)</label>
-            <input type="text" id="summaryCommentInput" class="summary-comment-input" placeholder="What else would you like to share about your day?" />
+            <label for="summaryCommentInput" class="dt-label summary-comment-label">Comment (optional)</label>
+            <input type="text" id="summaryCommentInput" class="dt-input summary-comment-input" placeholder="What else would you like to share about your day?" />
           </div>
         </div>
         
         <div class="summary-actions">
-          <button id="summaryCancelBtn" class="summary-cancel-btn">Cancel</button>
-          <button id="summarySubmitBtn" class="summary-submit-btn">Submit</button>
+          <button id="summaryCancelBtn" class="dt-button dt-button--secondary">Cancel</button>
+          <button id="summarySubmitBtn" class="dt-button dt-button--primary">Submit</button>
         </div>
         <div class="summary-pause-note">
           <p class="summary-pause-text">DoneThat pauses after you submit your daily summary</p>
@@ -147,11 +150,11 @@
 
     <!-- Feedback Overlay Modal -->
     <div id="feedbackOverlay" class="summary-overlay hidden">
-      <div class="summary-overlay-content">
+      <div class="dt-dialog summary-dialog">
         <div class="summary-subtitle">
           <div class="summary-subtitle-header">
             <h2 class="summary-headline">Share your feedback</h2>
-            <button id="feedbackCloseBtn" class="summary-close-btn" aria-label="Close feedback">
+            <button id="feedbackCloseBtn" class="dt-button dt-button--ghost dt-button--icon dt-button--small summary-close-button" aria-label="Close feedback">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
               </svg>
@@ -164,7 +167,7 @@
           <div class="summary-section">
             <textarea 
               id="feedbackTextarea" 
-              class="feedback-textarea" 
+              class="dt-textarea" 
               placeholder="What's on your mind?"
               rows="6"
             ></textarea>
@@ -183,8 +186,8 @@
         </div>
         
         <div class="summary-actions">
-          <button id="feedbackCancelBtn" class="summary-cancel-btn">Cancel</button>
-          <button id="feedbackSubmitBtn" class="summary-submit-btn">Submit</button>
+          <button id="feedbackCancelBtn" class="dt-button dt-button--secondary">Cancel</button>
+          <button id="feedbackSubmitBtn" class="dt-button dt-button--primary">Submit</button>
         </div>
       </div>
     </div>
@@ -195,13 +198,13 @@
         <div class="auth-header">
           <img src="../resources/logomark.svg" alt="DoneThat" class="auth-logo" />
         </div>
-        <div class="settings-container">
-          <div class="auth-card">
-            <div class="mb-4">
+        <div class="auth-container">
+          <div class="dt-card dt-card-page">
+            <div class="mb-6">
               <button
                 type="button"
                 id="googleSignInBtn"
-                class="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded-xl shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none"
+                class="dt-button dt-button--secondary dt-button--full flex justify-center items-center gap-2 px-4 py-2"
               >
                 <svg class="w-5 h-5 mr-2" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -213,18 +216,18 @@
               </button>
             </div>
 
-            <div class="relative mb-4">
+            <div class="relative mb-6">
               <div class="absolute inset-0 flex items-center">
                 <div class="w-full border-t border-gray-300"></div>
               </div>
-              <div class="relative flex justify-center text-sm bg-white">
-                <span class="px-2 text-gray-500">Or continue with email</span>
+              <div class="relative flex justify-center text-sm">
+                <span class="px-2 text-gray-500 bg-(--dt-color-surface-default)">Or continue with email</span>
               </div>
             </div>
 
-            <form id="signInForm" class="form-group" autocomplete="on">
+            <form id="signInForm" class="auth-form" autocomplete="on">
               <div>
-                <label for="signInEmail" class="form-label">
+                <label for="signInEmail" class="dt-label">
                   Email address
                 </label>
                 <input
@@ -233,11 +236,11 @@
                   name="email"
                   autocomplete="username email"
                   required
-                  class="form-input rounded-xl py-2.5"
+                  class="dt-input"
                 />
               </div>
               <div>
-                <label for="signInPassword" class="form-label">
+                <label for="signInPassword" class="dt-label">
                   Password
                 </label>
                 <div class="relative w-full">
@@ -247,9 +250,9 @@
                     name="password"
                     autocomplete="current-password"
                     required
-                    class="form-input rounded-xl py-2.5 pr-10"
+                    class="dt-input dt-input--with-trailing-action"
                   />
-                  <button type="button" id="toggleSignInPasswordBtn" class="icon-toggle-btn cursor-pointer" aria-label="Toggle password visibility">
+                  <button type="button" id="toggleSignInPasswordBtn" class="dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-icon-button cursor-pointer" aria-label="Toggle password visibility">
                     <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                   </button>
                 </div>
@@ -257,16 +260,18 @@
               <div>
                 <button
                   type="submit"
-                  class="btn-primary rounded-xl py-2.5"
+                  class="dt-button dt-button--solid dt-button--full"
                 >
-                  Sign In
+                  Log in
                 </button>
               </div>
-              <div class="flex items-center justify-between mt-2">
-                <a href="#" id="showSignUp" class="text-sm text-gray-500 hover:text-gray-700 underline">
+              <div class="flex items-center justify-between">
+                <a href="#" id="showSignUp" class="auth-link">
                   Sign up
                 </a>
-                <button type="button" id="showResetPassword" class="text-sm text-gray-500 hover:text-gray-700 underline cursor-pointer">Reset password</button>
+                <a href="#" id="showResetPassword" class="auth-link">
+                  Reset password
+                </a>
               </div>
             </form>
           </div>
@@ -286,12 +291,12 @@
         <div class="auth-header">
           <img src="../resources/logomark.svg" alt="DoneThat" class="auth-logo" />
         </div>
-        <div class="settings-container">
-          <div class="auth-card">
+        <div class="auth-container">
+          <div class="dt-card dt-card-page">
             <p class="text-sm text-gray-600 mb-4">Enter the code from your authenticator app.</p>
-            <form id="mfaForm" class="form-group" autocomplete="off">
+            <form id="mfaForm" class="auth-form" autocomplete="off">
               <div>
-                <label for="mfaCodeInput" class="form-label">Verification code</label>
+                <label for="mfaCodeInput" class="dt-label">Verification code</label>
                 <input
                   type="text"
                   id="mfaCodeInput"
@@ -299,13 +304,13 @@
                   autocomplete="one-time-code"
                   maxlength="8"
                   placeholder="000000"
-                  class="form-input rounded-xl py-2.5 text-center tracking-widest"
+                  class="dt-input dt-input--center tracking-widest"
                 />
               </div>
               <div id="mfaError" class="hidden text-sm text-red-600 mt-2" role="alert"></div>
               <div class="flex gap-2 mt-4">
-                <button type="button" id="mfaCancelBtn" class="btn-secondary rounded-xl py-2.5 flex-1">Cancel</button>
-                <button type="submit" id="mfaVerifyBtn" class="btn-primary rounded-xl py-2.5 flex-1">Verify</button>
+                <button type="button" id="mfaCancelBtn" class="dt-button dt-button--secondary flex-1">Cancel</button>
+                <button type="submit" id="mfaVerifyBtn" class="dt-button dt-button--solid flex-1">Verify</button>
               </div>
             </form>
           </div>
@@ -320,10 +325,10 @@
           <img src="../resources/logomark.svg" alt="DoneThat" class="auth-logo" />
         </div>
         <div class="auth-container">
-          <div class="auth-card">
-            <form id="signUpForm" class="form-group" autocomplete="on">
+          <div class="dt-card dt-card-page">
+            <form id="signUpForm" class="auth-form" autocomplete="on">
               <div>
-                <label for="signUpEmail" class="form-label">
+                <label for="signUpEmail" class="dt-label">
                   Email address
                 </label>
                 <input
@@ -332,11 +337,11 @@
                   name="email"
                   autocomplete="username email"
                   required
-                  class="form-input rounded-xl py-2.5"
+                  class="dt-input"
                 />
               </div>
               <div>
-                <label for="signUpPassword" class="form-label">
+                <label for="signUpPassword" class="dt-label">
                   Password
                 </label>
                 <div class="relative w-full">
@@ -346,9 +351,9 @@
                     name="password"
                     autocomplete="new-password"
                     required
-                    class="form-input rounded-xl py-2.5 pr-10"
+                    class="dt-input dt-input--with-trailing-action"
                   />
-                  <button type="button" id="toggleSignUpPasswordBtn" class="icon-toggle-btn cursor-pointer" aria-label="Toggle password visibility">
+                  <button type="button" id="toggleSignUpPasswordBtn" class="dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-icon-button cursor-pointer" aria-label="Toggle password visibility">
                     <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                   </button>
                 </div>
@@ -356,13 +361,13 @@
               <div>
                 <button
                   type="submit"
-                  class="btn-primary rounded-xl py-2.5"
+                  class="dt-button dt-button--solid dt-button--full"
                 >
                   Sign Up
                 </button>
               </div>
               <div class="text-center mt-2">
-                <a href="#" id="backToSignIn" class="text-sm text-gray-500 hover:text-gray-700 underline">Back to Sign In</a>
+                <a href="#" id="backToSignIn" class="auth-link">Back to Sign In</a>
               </div>
             </form>
           </div>
@@ -381,13 +386,12 @@
       <div class="auth-page">
         <div class="auth-header">
           <img src="../resources/logomark.svg" alt="DoneThat" class="auth-logo" />
-          <h1 class="auth-title">Reset your password</h1>
         </div>
         <div class="auth-container">
-          <div class="auth-card">
-            <form id="resetForm" class="form-group" autocomplete="on">
+          <div class="dt-card dt-card-page">
+            <form id="resetForm" class="auth-form" autocomplete="on">
               <div>
-                <label for="resetEmail" class="form-label">
+                <label for="resetEmail" class="dt-label">
                   Email address
                 </label>
                 <input
@@ -396,21 +400,21 @@
                   name="email"
                   autocomplete="username email"
                   required
-                  class="form-input rounded-xl py-2.5"
+                  class="dt-input"
                 />
               </div>
               <div>
                 <button
                   type="submit"
-                  class="btn-primary rounded-xl py-2.5"
+                  class="dt-button dt-button--solid dt-button--full"
                 >
                   Reset Password
                 </button>
               </div>
+              <div class="text-center">
+                <a href="#" id="backToSignInFromReset" class="auth-link">Back to Sign In</a>
+              </div>
             </form>
-          </div>
-          <div class="text-center mt-2">
-            <a href="#" id="backToSignInFromReset" class="text-sm text-gray-500 hover:text-gray-700 underline">Back to Sign In</a>
           </div>
         </div>
       </div>
@@ -422,7 +426,7 @@
         <div id="dashboardCaptureWarning" class="hidden mx-4 mt-2 mb-2 rounded-lg border border-gray-300 bg-gray-100 px-3 py-2">
           <div class="flex items-center justify-between gap-3">
             <div id="dashboardCaptureWarningText" class="dashboard-warning-text text-sm text-gray-700 leading-5 flex-1 min-w-0">We couldn't record Screenshare. That impacts the accuracy of your data. Please check your permissions.</div>
-            <button id="dashboardCaptureWarningSetupBtn" class="btn-secondary topbar-btn whitespace-nowrap">Open Setup</button>
+            <button id="dashboardCaptureWarningSetupBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button whitespace-nowrap">Open Setup</button>
           </div>
         </div>
         <!-- Embedded web portal area -->
@@ -438,9 +442,9 @@
           <div id="portalSuspendedPlaceholder" class="webview-error hidden">
             <div class="flex flex-col items-center justify-center h-full p-8 text-center">
               <div class="text-gray-500 mb-4">
-                <p class="text-lg font-medium mb-2">Dashboard paused while app is hidden</p>
+                <p class="text-lg font-normal mb-2">Dashboard paused while app is hidden</p>
                 <p class="text-sm text-gray-400 mb-4">Resume the dashboard if it does not reload automatically.</p>
-                <button id="reloadSuspendedPortalBtn" class="btn-primary px-4 py-2 rounded-lg text-sm">
+                <button id="reloadSuspendedPortalBtn" class="dt-button dt-button--primary dt-button--small">
                   Reload Dashboard
                 </button>
               </div>
@@ -464,130 +468,127 @@
       <div class="auth-page">
         
         <div class="auth-container">
-            <div class="auth-card" id="requiredPermissionsCard">
-            <div class="section-divider"><span class="section-divider-label">Required permissions</span></div>
-            <p class="text-sm text-gray-600 mb-4">
-              To understand your work, we need to see what you are working on. We never store any of the raw data requested here, all data is immediately deleted after processing, including screenshots shared in the chat.
-              <a href="https://donethat.ai/data" target="_blank" rel="noopener noreferrer" class="underline">Learn how data is processed</a>.
-            </p>
-            <div class="space-y-5 mb-6">
-              <div id="linuxInstallGuideNote" class="hidden text-xs text-gray-500">
-                Need Linux setup help? <a href="https://donethat.ai/install/linux" target="_blank" rel="noopener noreferrer" class="underline">Read the Linux install guide</a>.
-              </div>
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="text-base font-semibold text-gray-800">Screenshare</div>
-                  <div class="text-xs text-gray-500">By seeing what you see, we can understand what you're doing. We never store your raw screenshots, only process once to understand your work. </div>
-                  <div class="mt-2">
-                    <button id="recheckScreenPermissionBtn" class="btn-primary permission-check-btn hidden">Check Permissions</button>
-                  </div>
+          <div class="dt-card dt-settings-card" id="requiredPermissionsCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">Required permissions</h2>
+              <p class="dt-card-description">
+                To understand your work, we need to see what you are working on. We never store any of the raw data requested here, all data is immediately deleted after processing, including screenshots shared in the chat.
+                <a href="https://donethat.ai/data" target="_blank" rel="noopener noreferrer" class="underline">Learn how data is processed</a>.
+              </p>
+            </div>
+            <div class="dt-card-content">
+              <div class="space-y-5">
+                <div id="linuxInstallGuideNote" class="dt-supporting-text hidden">
+                  Need Linux setup help? <a href="https://donethat.ai/install/linux" target="_blank" rel="noopener noreferrer" class="underline">Read the Linux install guide</a>.
                 </div>
-                <label class="toggle"><input type="checkbox" id="screenCheckbox" checked><span class="slider"></span></label>
-              </div>
-
-
-              <!-- Custom screenshot command configuration (Linux only) -->
-              <div id="linuxScreenshotSection" class="hidden mt-4">
-                <h3 class="linux-section-heading">Screenshot Command</h3>
-                <p class="instruction-text text-sm mb-3">Taking background screenshots on Linux is not as easy as it sounds. Please adapt the script below to make it work on your installation. The command should capture all monitors merged into one image. The settings juggling in the default command deactivates the screenshot animation in Ubuntu. Changes are automatically saved.</p>
-                
-                <div class="space-y-3">
+                <div class="flex items-center justify-between">
                   <div>
-                    <label for="linuxScreenshotCommand" class="block text-sm font-medium text-gray-700 mb-1">Screenshot Command</label>
-                    <div class="space-y-2">
-                      <textarea 
-                        id="linuxScreenshotCommand" 
-                        class="form-input w-full text-xs py-2 px-3 font-mono resize-none" 
-                        rows="8"
-                        placeholder="gnome-screenshot -f" 
-                        title="Command to take screenshot. Use %s as placeholder for output file path"
-                        style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; line-height: 1.4;"
-                      ></textarea>
-                      <div class="flex gap-2">
-                        <button id="testScreenshotCommand" class="btn-secondary text-xs py-1.5 px-3">Test</button>
-                        <button id="restoreDefaultScreenshot" class="btn-secondary text-xs py-1.5 px-3">Restore Default</button>
+                    <div class="dt-section-title">Screenshare</div>
+                    <div class="dt-supporting-text">By seeing what you see, we can understand what you're doing. We never store your raw screenshots, only process once to understand your work.</div>
+                    <div class="mt-2">
+                      <button id="recheckScreenPermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check Permissions</button>
+                    </div>
+                  </div>
+                  <label class="toggle"><input type="checkbox" id="screenCheckbox" checked><span class="slider"></span></label>
+                </div>
+
+                <div id="linuxScreenshotSection" class="hidden mt-4">
+                  <h3 class="linux-section-heading">Screenshot Command</h3>
+                  <p class="instruction-text text-sm mb-3">Taking background screenshots on Linux is not as easy as it sounds. Please adapt the script below to make it work on your installation. The command should capture all monitors merged into one image. The settings juggling in the default command deactivates the screenshot animation in Ubuntu. Changes are automatically saved.</p>
+                  <div class="space-y-3">
+                    <div>
+                      <label for="linuxScreenshotCommand" class="block text-sm font-normal text-gray-700 mb-1">Screenshot Command</label>
+                      <div class="space-y-2">
+                        <textarea
+                          id="linuxScreenshotCommand"
+                          class="dt-textarea dt-input--compact dt-input--mono w-full"
+                          rows="8"
+                          placeholder="gnome-screenshot -f"
+                          title="Command to take screenshot. Use %s as placeholder for output file path"
+                          style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; line-height: 1.4;"
+                        ></textarea>
+                        <div class="flex gap-2">
+                          <button id="testScreenshotCommand" class="dt-button dt-button--secondary dt-button--small">Test</button>
+                          <button id="restoreDefaultScreenshot" class="dt-button dt-button--secondary dt-button--small">Restore Default</button>
+                        </div>
                       </div>
                     </div>
-
-                    </div>
-                    <p class="text-xs text-gray-500 mt-1">Use %s as placeholder for the output file path</p>
-                  </div>
-                  
-                  <div id="screenshotTestResult" class="hidden">
-                    <div class="p-3 rounded-lg border">
-                      <div class="flex items-center gap-2">
-                        <div id="screenshotTestIcon" class="w-4 h-4"></div>
-                        <span id="screenshotTestMessage" class="text-sm font-medium"></span>
+                    <p class="dt-supporting-text mt-1">Use %s as placeholder for the output file path</p>
+                    <div id="screenshotTestResult" class="hidden">
+                      <div class="p-3 rounded-lg border">
+                        <div class="flex items-center gap-2">
+                          <div id="screenshotTestIcon" class="w-4 h-4"></div>
+                          <span id="screenshotTestMessage" class="text-sm font-normal"></span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="text-base font-semibold text-gray-800">Active applications</div>
-                  <div class="text-xs text-gray-500">This allows us to know which apps are active. This helps to understand what happens in between screenshots. On macOS, you may see a permission request to control your browser to capture the active URL.</div>
-                  <div class="mt-2">
-                    <button id="recheckWindowsPermissionBtn" class="btn-primary permission-check-btn hidden">Check Permissions</button>
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="dt-section-title">Active applications</div>
+                    <div class="dt-supporting-text">This allows us to know which apps are active. This helps to understand what happens in between screenshots. On macOS, you may see a permission request to control your browser to capture the active URL.</div>
+                    <div class="mt-2">
+                      <button id="recheckWindowsPermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check Permissions</button>
+                    </div>
+                  </div>
+                  <label class="toggle"><input type="checkbox" id="windowsCheckbox"><span class="slider"></span></label>
+                </div>
+
+                <div id="linuxWindowsSection" class="hidden mt-4">
+                  <h3 class="linux-section-heading">Window Tracking Permission Required</h3>
+                  <p class="instruction-text">DoneThat needs permission to track active windows.</p>
+                  <div class="p-4 bg-gray-100 rounded-lg">
+                    <p class="font-normal mb-2">On Linux:</p>
+                    <ul class="list-disc pl-5 mt-2 space-y-1 text-xs">
+                      <li>Grant accessibility permissions in your system settings</li>
+                      <li>For Wayland sessions, some window tracking features may be limited</li>
+                      <li>Ensure DoneThat has permission to access window information</li>
+                    </ul>
                   </div>
                 </div>
-                <label class="toggle"><input type="checkbox" id="windowsCheckbox"><span class="slider"></span></label>
-              </div>
-              <!-- Linux-specific windows permission notification (hidden by default) -->
-              <div id="linuxWindowsSection" class="hidden mt-4">
-                <h3 class="linux-section-heading">Window Tracking Permission Required</h3>
-                <p class="instruction-text">DoneThat needs permission to track active windows.</p>
-                <div class="p-4 bg-gray-100 rounded-lg">
-                  <p class="font-medium mb-2">On Linux:</p>
-                  <ul class="list-disc pl-5 mt-2 space-y-1 text-xs">
-                    <li>Grant accessibility permissions in your system settings</li>
-                    <li>For Wayland sessions, some window tracking features may be limited</li>
-                    <li>Ensure DoneThat has permission to access window information</li>
-                  </ul>
+
+                <div id="waylandNote" class="hidden mt-4">
+                  <p class="dt-supporting-text">
+                    <strong>Note:</strong> You are on Wayland. Application detection doesn't work for most apps due to its security architecture. Your data will be less accurate.
+                  </p>
                 </div>
-              </div>
-              
-              <!-- Wayland detection note (hidden by default) -->
-              <div id="waylandNote" class="hidden mt-4">
-                <p class="text-xs text-gray-500">
-                  <strong>Note:</strong> You are on Wayland. Application detection doesn't work for most apps due to its security architecture. Your data will be less accurate.
-                </p>
               </div>
             </div>
           </div>
 
-            <div class="auth-card" id="microphonePermissionsCard">
-            <div class="section-divider"><span class="section-divider-label">Audio permissions</span></div>
-            <p class="text-sm text-gray-600 mb-4">These inputs help us understand your work better but are not required. You can enable or disable them at any time.</p>
-            <div class="space-y-5">
+          <div class="dt-card dt-settings-card" id="microphonePermissionsCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">Audio permissions</h2>
+              <p class="dt-card-description">These inputs help us understand your work better but are not required. You can enable or disable them at any time.</p>
+            </div>
+            <div class="dt-card-content space-y-5">
               <div class="flex items-center justify-between">
                 <div>
-                  <div class="text-base font-semibold text-gray-800">Microphone</div>
-                  <div class="text-xs text-gray-500">We check if your microphone is active to see if you are in a meeting. During meetings, we process your voice to understand what you are working on.</div>
+                  <div class="dt-section-title">Microphone</div>
+                  <div class="dt-supporting-text">We check if your microphone is active to see if you are in a meeting. During meetings, we process your voice to understand what you are working on.</div>
                   <div class="mt-2">
-                    <button id="recheckMicrophonePermissionBtn" class="btn-primary permission-check-btn hidden">Check Microphone Permission</button>
+                    <button id="recheckMicrophonePermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check Microphone Permission</button>
                   </div>
                 </div>
                 <label class="toggle"><input type="checkbox" id="audioCheckbox"><span class="slider"></span></label>
               </div>
 
-              <!-- System audio (dependent on microphone) -->
               <div class="flex items-center justify-between">
                 <div>
-                  <div class="text-base font-semibold text-gray-800">Meeting audio</div>
-                  <div class="text-xs text-gray-500">Also record computer sound (meetings, videos) when the microphone is active.</div>
-                  <div id="waylandMeetingAudioNote" class="hidden text-xs text-gray-500 mt-1">
+                  <div class="dt-section-title">Meeting audio</div>
+                  <div class="dt-supporting-text">Also record computer sound (meetings, videos) when the microphone is active.</div>
+                  <div id="waylandMeetingAudioNote" class="dt-supporting-text hidden mt-1">
                     On some Wayland systems, enabling this can trigger a screen-sharing dialog at the start of each meeting, and system audio capture can also be unreliable.
                   </div>
                   <div class="mt-2">
-                    <button id="recheckSystemAudioPermissionBtn" class="btn-primary permission-check-btn hidden">Check System Audio Permission</button>
+                    <button id="recheckSystemAudioPermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check System Audio Permission</button>
                   </div>
                 </div>
                 <label class="toggle"><input type="checkbox" id="systemAudioCheckbox"><span class="slider"></span></label>
               </div>
-              
-              <!-- Linux-specific pactl missing notification (hidden by default) -->
+
               <div id="linuxPactlSection" class="hidden mt-4">
                 <h3 class="linux-section-heading">Audio Session Detection Tool Required</h3>
                 <p class="instruction-text">DoneThat needs pactl to detect when your microphone is active.</p>
@@ -599,140 +600,148 @@
             </div>
           </div>
 
-          <div class="auth-card" id="appMaskingCard">
-            <div class="section-divider"><span class="section-divider-label">App masking</span></div>
-            <p class="text-sm text-gray-600 mb-4">Mask apps with gray fill to protect sensitive data. Use keywords to ignore specific windows or fully exclude an app's activity. Use this for meeting apps (Zoom, Teams, etc.) to keep them private.</p>
-            <div id="appExclusionsList" class="space-y-3 mb-3">
-              <!-- Exclusion entries will be added here dynamically -->
+          <div class="dt-card dt-settings-card" id="appMaskingCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">App masking</h2>
+              <p class="dt-card-description">Mask apps with gray fill to protect sensitive data. Use keywords to ignore specific windows or fully exclude an app's activity. Use this for meeting apps (Zoom, Teams, etc.) to keep them private.</p>
             </div>
-            <button id="addAppExclusionBtn" class="btn-secondary text-xs py-1.5 px-3 mb-4">Add app</button>
-            <div class="grid grid-cols-2 items-center gap-4 mt-4">
-              <div>
-                <div class="text-base font-semibold text-gray-800">Test Exclusions</div>
-                <div class="text-xs text-gray-500 mt-1">Note: Apps must be active for at least 2 seconds to cover others</div>
+            <div class="dt-card-content">
+              <div id="appExclusionsList" class="space-y-3 mb-3">
+                <!-- Exclusion entries will be added here dynamically -->
               </div>
-              <div>
-                <button id="testAppExclusions" class="btn-secondary w-full py-2.5 text-sm">Test</button>
-              </div>
-              <div id="appExclusionsTestResult" class="hidden col-span-2 mt-3">
-                <div class="p-3 rounded-lg border">
-                  <div class="flex items-center gap-2 mb-2">
-                    <div id="appExclusionsTestIcon" class="w-4 h-4"></div>
-                    <span id="appExclusionsTestMessage" class="text-sm font-medium"></span>
-                  </div>
-                  <div id="appExclusionsTestScreenshots" class="flex flex-wrap gap-2 mt-2">
-                    <!-- Screenshot thumbnails will be added here -->
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="auth-card" id="contextCaptureCard">
-            <div class="section-divider"><span class="section-divider-label">Context capture (experimental)</span></div>
-            <p class="text-sm text-gray-600 mb-4">Capture specific app windows when you work in them and send cropped screenshots to our context API for extra context. Data is sent to our servers. Requires screen capture and active applications permissions.</p>
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <div class="text-base font-semibold text-gray-800">Enable context capture</div>
-                <div class="text-xs text-gray-500">Captures after ~10s in an app, then every 60s while you stay in it.</div>
-              </div>
-              <label class="toggle"><input type="checkbox" id="contextCaptureEnabled"><span class="slider"></span></label>
-            </div>
-            <div id="contextAppsSection" class="hidden">
-              <div class="text-sm font-medium text-gray-700 mb-2">Context apps</div>
-              <div id="contextAppsList" class="space-y-3 mb-3">
-                <!-- Context app entries will be added here dynamically -->
-              </div>
-              <button id="addContextAppBtn" class="btn-secondary text-xs py-1.5 px-3">Add app</button>
-            </div>
-          </div>
-
-          <div class="auth-card" id="llmSettingsCard">
-            <div class="section-divider"><span class="section-divider-label">Bring your own LLM (optional)</span></div>
-            <p class="text-sm text-gray-600 mb-4">Process screenshots and other raw data with your own LLM. Keys are encrypted and stored on your device. This only affects raw data. The processed data will still be synced to our servers and further analzed there to eg detect tasks.<br><br>You can further increase privacy by deleting intermediary data at the end of every day automatically in your settings in the dashboard.<br><br>Note that raw data shared with the chat will also be processed on our servers (and deleted after).</p>
-            <div class="mt-0" id="geminiSettingsSection">
-              <div class="text-base font-semibold text-gray-800">Gemini API Key</div>
-              <p class="text-xs text-gray-500 mb-3">Add your Google Gemini API key to process raw data directly with Gemini.</p>
-              <div class="relative w-full">
-                <input type="password" id="geminiApiKeyInput" class="form-input pr-6 text-xs py-1.5" placeholder="Enter your Gemini API key" autocomplete="new-password" />
-                <button id="toggleGeminiKeyBtn" class="add-email-btn cursor-pointer" aria-label="Toggle API key visibility">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                </button>
-              </div>
-              <div class="flex items-center mt-2">
-                <button id="clearGeminiKeyBtn" class="text-xs text-gray-500 hover:text-gray-700 underline">Clear API key</button>
-              </div>
-            </div>
-            <div class="mt-6" id="openAiCompatibleSettingsSection">
-              <div class="text-base font-semibold text-gray-800">OpenAI-compatible API</div>
-              <p class="text-xs text-gray-500 mb-3">Configure an OpenAI-compatible API endpoint. Local or cloud. Used when Gemini key is not available.</p>
-              <p class="text-xs text-gray-500 mb-3">Note: Use a multimodal model that supports image and audio inputs (e.g. GPT-4o, Gemini). Need help? <a href="https://donethat.ai/support" class="underline">Visit our support page</a>.</p>
-              <div class="space-y-3">
+              <button id="addAppExclusionBtn" class="dt-button dt-button--secondary dt-button--small dt-button--full mb-4">Add app</button>
+              <div class="grid grid-cols-2 items-center gap-4 mt-4">
                 <div>
-                  <label for="openaiEndpointInput" class="block text-sm font-medium text-gray-700 mb-1">Endpoint URL</label>
-                  <input type="url" id="openaiEndpointInput" class="form-input text-xs py-1.5" placeholder="https://openrouter.ai/api/v1" />
+                  <div class="dt-section-title">Test Exclusions</div>
+                  <div class="dt-supporting-text mt-1">Note: Apps must be active for at least 2 seconds to cover others</div>
                 </div>
                 <div>
-                  <label for="openaiModelInput" class="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
-                  <input type="text" id="openaiModelInput" class="form-input text-xs py-1.5" placeholder="google/gemini-2.5-flash-lite-preview-09-2025" />
+                  <button id="testAppExclusions" class="dt-button dt-button--secondary dt-button--small dt-button--full">Test</button>
                 </div>
-                <div>
-                  <label for="openaiApiKeyInput" class="block text-sm font-medium text-gray-700 mb-1">API Key (optional)</label>
-                  <div class="relative w-full">
-                    <input type="password" id="openaiApiKeyInput" class="form-input pr-6 text-xs py-1.5" placeholder="Enter your API key" autocomplete="new-password" />
-                    <button id="toggleOpenaiKeyBtn" class="add-email-btn cursor-pointer" aria-label="Toggle API key visibility">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div class="flex items-center mt-2">
-                <button id="clearOpenaiConfigBtn" class="text-xs text-gray-500 hover:text-gray-700 underline">Clear configuration</button>
-              </div>
-            </div>
-            <div class="mt-6">
-              <div class="grid grid-cols-2 items-center gap-4">
-                <div>
-                  <div class="text-base font-semibold text-gray-800">Test LLM Configuration</div>
-                  <div class="text-xs text-gray-500">Test whichever LLM is configured with a sample capture.</div>
-                </div>
-                <div>
-                  <button id="testLocalProcessing" class="btn-secondary w-full py-2.5 text-sm">Test</button>
-                </div>
-                <div id="localProcessingTestResult" class="hidden col-span-2 mt-3">
+                <div id="appExclusionsTestResult" class="hidden col-span-2 mt-3">
                   <div class="p-3 rounded-lg border">
-                    <div class="flex items-center gap-2">
-                      <div id="localProcessingTestIcon" class="w-4 h-4"></div>
-                      <span id="localProcessingTestMessage" class="text-sm font-medium"></span>
+                    <div class="flex items-center gap-2 mb-2">
+                      <div id="appExclusionsTestIcon" class="w-4 h-4"></div>
+                      <span id="appExclusionsTestMessage" class="text-sm font-normal"></span>
+                    </div>
+                    <div id="appExclusionsTestScreenshots" class="flex flex-wrap gap-2 mt-2">
+                      <!-- Screenshot thumbnails will be added here -->
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-
           </div>
 
-          <div class="auth-card" id="appConfigCard">
-            <div class="section-divider"><span class="section-divider-label">App config</span></div>
-            <p class="text-sm text-gray-600 mb-4">Manage your application settings and logs.</p>
-            
-            <div class="space-y-6">
+          <div class="dt-card dt-settings-card" id="contextCaptureCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">Context capture (experimental)</h2>
+              <p class="dt-card-description">Capture specific app windows when you work in them and send cropped screenshots to our context API for extra context. Data is sent to our servers. Requires screen capture and active applications permissions. Context capture is active whenever at least one app is configured below.</p>
+            </div>
+            <div class="dt-card-content">
+              <div id="contextAppsSection">
+                <div class="dt-section-title mb-2">Context apps</div>
+                <div class="dt-supporting-text mb-4">Captures after ~10s in an app, then every 60s while you stay in it.</div>
+                <div id="contextAppsList" class="space-y-3 mb-3">
+                  <!-- Context app entries will be added here dynamically -->
+                </div>
+                <button id="addContextAppBtn" class="dt-button dt-button--secondary dt-button--small dt-button--full">Add app</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="dt-card dt-settings-card" id="llmSettingsCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">Bring your own LLM (optional)</h2>
+              <p class="dt-card-description">Process screenshots and other raw data with your own LLM. Keys are encrypted and stored on your device. This only affects raw data. The processed data will still be synced to our servers and further analzed there to eg detect tasks.</p>
+              <p class="dt-card-description">You can further increase privacy by deleting intermediary data at the end of every day automatically in your settings in the dashboard.</p>
+              <p class="dt-card-description">Note that raw data shared with the chat will also be processed on our servers (and deleted after).</p>
+            </div>
+            <div class="dt-card-content">
+              <div id="geminiSettingsSection">
+                <div class="dt-section-title">Gemini API Key</div>
+                <p class="dt-supporting-text mb-3">Add your Google Gemini API key to process raw data directly with Gemini.</p>
+                <div class="relative w-full">
+                  <input type="password" id="geminiApiKeyInput" class="dt-input dt-input--compact dt-input--with-trailing-action" placeholder="Enter your Gemini API key" autocomplete="new-password" />
+                  <button id="toggleGeminiKeyBtn" class="dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-icon-button cursor-pointer" aria-label="Toggle API key visibility">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                </div>
+                <div class="flex items-center mt-2">
+                  <button id="clearGeminiKeyBtn" class="text-xs text-gray-500 hover:text-gray-700 underline">Clear API key</button>
+                </div>
+              </div>
+              <div class="mt-6" id="openAiCompatibleSettingsSection">
+                <div class="dt-section-title">OpenAI-compatible API</div>
+                <p class="dt-supporting-text mb-3">Configure an OpenAI-compatible API endpoint. Local or cloud. Used when Gemini key is not available.</p>
+                <p class="dt-supporting-text mb-3">Note: Use a multimodal model that supports image and audio inputs (e.g. GPT-4o, Gemini). Need help? <a href="https://donethat.ai/support" class="underline">Visit our support page</a>.</p>
+                <div class="space-y-3">
+                  <div>
+                    <label for="openaiEndpointInput" class="block text-sm font-normal text-gray-700 mb-1">Endpoint URL</label>
+                    <input type="url" id="openaiEndpointInput" class="dt-input dt-input--compact" placeholder="https://openrouter.ai/api/v1" />
+                  </div>
+                  <div>
+                    <label for="openaiModelInput" class="block text-sm font-normal text-gray-700 mb-1">Model Name</label>
+                    <input type="text" id="openaiModelInput" class="dt-input dt-input--compact" placeholder="google/gemini-2.5-flash-lite-preview-09-2025" />
+                  </div>
+                  <div>
+                    <label for="openaiApiKeyInput" class="block text-sm font-normal text-gray-700 mb-1">API Key (optional)</label>
+                    <div class="relative w-full">
+                      <input type="password" id="openaiApiKeyInput" class="dt-input dt-input--compact dt-input--with-trailing-action" placeholder="Enter your API key" autocomplete="new-password" />
+                      <button id="toggleOpenaiKeyBtn" class="dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-icon-button cursor-pointer" aria-label="Toggle API key visibility">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center mt-2">
+                  <button id="clearOpenaiConfigBtn" class="text-xs text-gray-500 hover:text-gray-700 underline">Clear configuration</button>
+                </div>
+              </div>
+              <div class="mt-6">
+                <div class="grid grid-cols-2 items-center gap-4">
+                  <div>
+                    <div class="dt-section-title">Test LLM Configuration</div>
+                    <div class="dt-supporting-text">Test whichever LLM is configured with a sample capture.</div>
+                  </div>
+                  <div>
+                    <button id="testLocalProcessing" class="dt-button dt-button--secondary dt-button--small dt-button--full">Test</button>
+                  </div>
+                  <div id="localProcessingTestResult" class="hidden col-span-2 mt-3">
+                    <div class="p-3 rounded-lg border">
+                      <div class="flex items-center gap-2">
+                        <div id="localProcessingTestIcon" class="w-4 h-4"></div>
+                        <span id="localProcessingTestMessage" class="text-sm font-normal"></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dt-card dt-settings-card" id="appConfigCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">App config</h2>
+              <p class="dt-card-description">Manage your application settings and logs.</p>
+            </div>
+            <div class="dt-card-content space-y-6">
               <!-- Hotkey Section -->
               <div class="flex items-start justify-between">
                 <div>
-                  <div class="text-base font-semibold text-gray-800">Open Chat hotkey</div>
-                  <div class="text-xs text-gray-500">Always uses Cmd/Ctrl + Shift. Choose the final letter (A–Z).</div>
-                  <div id="waylandHotkeyNote" class="hidden text-xs text-gray-500 mt-1">
+                  <div class="dt-section-title">Open Chat hotkey</div>
+                  <div class="dt-supporting-text">Always uses Cmd/Ctrl + Shift. Choose the final letter (A–Z).</div>
+                  <div id="waylandHotkeyNote" class="dt-supporting-text hidden mt-1">
                     On some Wayland systems, global hotkeys are unavailable. Use the Chat button instead.
                   </div>
                 </div>
                 <div class="flex items-center gap-1 mt-6" title="Open Chat hotkey">
-                  <span id="hotkeyCmdCap" class="inline-flex items-center justify-center h-7 px-3 text-xs bg-gray-50 border border-gray-200 rounded-md shadow-inner text-gray-500 select-none pointer-events-none" aria-disabled="true" title="Fixed modifier">Ctrl</span>
+                  <span id="hotkeyCmdCap" class="dt-hotkey-cap" aria-disabled="true" title="Fixed modifier">Ctrl</span>
                   <span class="text-gray-300 select-none">+</span>
-                  <span id="hotkeyShiftCap" class="inline-flex items-center justify-center h-7 px-3 text-xs bg-gray-50 border border-gray-200 rounded-md shadow-inner text-gray-500 select-none pointer-events-none" aria-disabled="true" title="Fixed modifier">Shift</span>
+                  <span id="hotkeyShiftCap" class="dt-hotkey-cap" aria-disabled="true" title="Fixed modifier">Shift</span>
                   <span class="text-gray-300 select-none">+</span>
-                  <span class="inline-flex items-center justify-center h-7 px-0 bg-white border border-gray-300 rounded-md shadow-inner cursor-text" title="Click to change final letter">
-                    <input type="text" id="hotkeyLetterInput" maxlength="1" class="w-6 h-full text-center text-xs bg-transparent outline-none font-semibold text-gray-900 focus:ring-2 focus:ring-indigo-400 rounded-sm" placeholder="D" aria-label="Hotkey letter" />
+                  <span class="dt-hotkey-input-shell" title="Click to change final letter">
+                    <input type="text" id="hotkeyLetterInput" maxlength="1" class="dt-hotkey-input hotkey-letter-input" placeholder="D" aria-label="Hotkey letter" />
                   </span>
                 </div>
               </div>
@@ -741,14 +750,14 @@
               <div id="saveCaptureDataSection">
                 <div class="flex items-center justify-between mb-2">
                   <div>
-                    <div class="text-base font-semibold text-gray-800">Save capture data to folder</div>
-                    <div class="text-xs text-gray-500">Writes one folder per send, organized by day.</div>
+                    <div class="dt-section-title">Save capture data to folder</div>
+                    <div class="dt-supporting-text">Writes one folder per send, organized by day.</div>
                   </div>
                   <label class="toggle"><input type="checkbox" id="saveCaptureDataCheckbox"><span class="slider"></span></label>
                 </div>
                 <div id="saveCaptureDataPathSection" class="hidden">
                   <div class="mt-3">
-                    <input type="text" id="saveCaptureDataPathInput" readonly class="form-input w-full text-sm py-2 px-3 text-gray-500 leading-none cursor-pointer hover:bg-gray-50" />
+                    <input type="text" id="saveCaptureDataPathInput" readonly class="dt-input dt-input--readonly" />
                   </div>
                 </div>
               </div>
@@ -756,8 +765,8 @@
               <div id="clientTelemetrySection">
                 <div class="flex items-center justify-between">
                   <div>
-                    <div class="text-base font-semibold text-gray-800">Client telemetry</div>
-                    <div class="text-xs text-gray-500">Send diagnostic usage logs to help with product development</div>
+                    <div class="dt-section-title">Client telemetry</div>
+                    <div class="dt-supporting-text">Send diagnostic usage logs to help with product development</div>
                   </div>
                   <label class="toggle"><input type="checkbox" id="clientTelemetryCheckbox"><span class="slider"></span></label>
                 </div>
@@ -766,9 +775,9 @@
               <div id="linuxAutostartSection" class="hidden">
                 <div class="flex items-center justify-between">
                   <div>
-                    <div class="text-base font-semibold text-gray-800">Start on login</div>
-                    <div class="text-xs text-gray-500">On Linux this creates <code>donethat.desktop</code> in your autostart folder and always launches with <code>--no-sandbox</code>.</div>
-                    <div id="linuxAutostartStatus" class="text-xs text-gray-500 mt-1 hidden"></div>
+                    <div class="dt-section-title">Start on login</div>
+                    <div class="dt-supporting-text">On Linux this creates <code>donethat.desktop</code> in your autostart folder and always launches with <code>--no-sandbox</code>.</div>
+                    <div id="linuxAutostartStatus" class="dt-supporting-text mt-1 hidden"></div>
                     <div id="linuxAutostartError" class="text-xs text-red-600 mt-1 hidden"></div>
                   </div>
                   <label class="toggle"><input type="checkbox" id="linuxAutostartCheckbox"><span class="slider"></span></label>
@@ -784,7 +793,7 @@
         </div>
         
         <div id="finishButtonContainer" class="finish-button-container">
-          <button id="finishButton" class="btn-primary finish-button">
+          <button id="finishButton" class="dt-button dt-button--solid dt-button--small finish-button">
             Finish
           </button>
         </div>

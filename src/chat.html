@@ -14,17 +14,17 @@
     <title>Chat</title>
     <style>
       html, body { height: 100%; }
-      body { background: transparent; }
+      body { background: transparent; font-family: var(--dt-font-body); color: var(--dt-color-text-default); }
       .overlay-root { }
       /* When liquid glass is active, remove any window/content border */
       .liquid-glass-active html,
       .liquid-glass-active body,
       .liquid-glass-active .overlay-root,
-      .liquid-glass-active .overlay-card { border: none !important; outline: none !important; box-shadow: none; }
+      .liquid-glass-active .overlay-card { border: none !important; outline: none !important; }
       .no-drag { -webkit-app-region: no-drag; }
       /* Translucent so native liquid glass (behind web content) shows through; window move via IPC (see chat.js). */
-      .overlay-card { cursor: grab; backdrop-filter: blur(12px); background: rgba(255,255,255,0.35); box-shadow: none; border-radius: 10px; }
-      .mascot-wrap { position: relative; flex-shrink: 0; width: 40px; min-width: 40px; height: 40px; border-radius: 999px; overflow: hidden; background: #fff; border: 1px solid rgba(0, 0, 0, 0.1); box-shadow: none; }
+      .overlay-card { cursor: grab; backdrop-filter: blur(12px); background: rgba(255,255,255,0.42); border: 1px solid rgba(229,231,235,0.88); border-radius: 12px; }
+      .mascot-wrap { position: relative; flex-shrink: 0; width: 40px; min-width: 40px; height: 40px; border-radius: 999px; overflow: hidden; background: #fff; border: 1px solid rgba(229,231,235,0.92); }
       .mascot-canvas,
       .mascot-fallback { display: block; width: 100%; height: 100%; border-radius: inherit; }
       .mascot-canvas,
@@ -37,32 +37,38 @@
       .mascot-fallback::before { left: 13px; }
       .mascot-fallback::after { right: 13px; }
       .mascot-fallback-mouth { position: absolute; left: 50%; bottom: 11px; width: 12px; height: 6px; transform: translateX(-50%); border-bottom: 2px solid rgba(74, 33, 0, 0.85); border-radius: 0 0 999px 999px; }
-      .speech { position: absolute; right: 0; bottom: 60px; max-width: 220px; background: #111; color: #fff; border-radius: 8px; padding: 6px 8px; box-shadow: none; font-size: 11px; }
-      .speech:after { content: ''; position: absolute; right: 10px; bottom: -6px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 6px solid #111; }
+      .speech { position: absolute; right: 0; bottom: 60px; max-width: 220px; background: rgba(31,41,55,0.96); color: var(--dt-color-text-inverse); border: 1px solid rgba(75,85,99,0.4); border-radius: 8px; padding: 6px 8px; font-size: 11px; }
+      .speech:after { content: ''; position: absolute; right: 10px; bottom: -6px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 6px solid rgba(31,41,55,0.96); }
       /* Three right icon buttons: subtle glass-like default, stronger on hover */
-      .icon-btn { appearance: none; -webkit-appearance: none; width: 28px; height: 28px; text-align: center; border-radius: 50%; font-size: 0; line-height: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); box-shadow: none; transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
-      .icon-btn:hover { background: rgba(255,255,255,0.28); border-color: rgba(255,255,255,0.4); box-shadow: none; }
+      .icon-btn { appearance: none; -webkit-appearance: none; width: 32px; height: 32px; text-align: center; border-radius: 999px; font-size: 0; line-height: 0; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; background: rgba(255,255,255,0.55); border: 1px solid rgba(229,231,235,0.9); transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; color: var(--dt-color-text-default); }
+      .icon-btn:hover { background: rgba(249,250,251,0.96); border-color: rgba(209,213,219,0.95); }
       .icon-btn:active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.35); }
-      .icon-btn.active { color: var(--color-primary); }
-      #includeScreenBtn { color: #111; pointer-events: auto; }
+      .icon-btn.active { color: var(--dt-color-brand-primary); }
+      .icon-btn:focus-visible,
+      .screen-toggle:focus-visible,
+      .input-wrap textarea:focus {
+        outline: 2px solid var(--dt-color-focus-default);
+        outline-offset: 2px;
+      }
+      #includeScreenBtn { color: var(--dt-color-text-default); pointer-events: auto; }
       /* Screen button (inside input): transparent, hover-only */
-      .screen-toggle { appearance: none; -webkit-appearance: none; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; min-width: 16px; min-height: 16px; display: flex; align-items: center; justify-content: center; z-index: 10; background: transparent; border: none; box-shadow: none; transition: background 0.15s ease, opacity 0.15s ease; }
-      .screen-toggle:hover { background: rgba(255,255,255,0.2); }
+      .screen-toggle { appearance: none; -webkit-appearance: none; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; min-width: 18px; min-height: 18px; display: flex; align-items: center; justify-content: center; z-index: 10; background: transparent; border: none; transition: background 0.15s ease, opacity 0.15s ease; border-radius: 999px; }
+      .screen-toggle:hover { background: rgba(255,255,255,0.4); }
       .screen-toggle:active { background: rgba(255,255,255,0.15); opacity: 0.9; }
       .screen-toggle svg { width: 10px; height: 10px; }
       /* Robust centering using flex */
       .input-row { display: flex; align-items: center; gap: 6px; }
       .input-wrap { position: relative; flex: 1 1 auto; }
-      .input-wrap textarea { padding-right: 28px !important; padding-top: 5px !important; padding-bottom: 5px !important; background: rgba(255,255,255,0.88) !important; border: 1px solid rgba(0,0,0,0.08) !important; min-height: 28px; height: 28px; max-height: 28px; line-height: 18px; display: block; resize: none; overflow-y: auto; outline: none !important; text-align: left; }
+      .input-wrap textarea { padding-right: 28px !important; padding-top: 5px !important; padding-bottom: 5px !important; background: rgba(255,255,255,0.9) !important; border: 1px solid rgba(229,231,235,0.96) !important; border-radius: 8px; min-height: 32px; height: 32px; max-height: 32px; line-height: 18px; display: block; resize: none; overflow-y: auto; outline: none !important; text-align: left; color: var(--dt-color-text-default); font-family: var(--dt-font-body); }
       .input-wrap textarea::placeholder,
       .input-wrap textarea::-webkit-input-placeholder { text-align: right; }
-      .input-wrap textarea:focus { outline: none !important; box-shadow: none !important; background: rgba(255,255,255,0.92) !important; border-color: rgba(0,0,0,0.08) !important; }
+      .input-wrap textarea:focus { background: rgba(255,255,255,0.96) !important; border-color: rgba(209,213,219,0.96) !important; }
       .icon-btn svg { width: 16px; height: 16px; display: block; }
       .tiny-text { font-size: 12px; }
-      .text-btn { font-size: 12px; background: transparent; color: #111; border: none; padding: 0 2px; line-height: 18px; }
-      .bubble { cursor: text; max-width: 85%; border-radius: 10px; padding: 6px 8px; font-size: 12px; line-height: 1.35; -webkit-user-select: text; user-select: text; }
-      .bubble-user { background: rgba(255,255,255,0.97); color: #111; }
-      .bubble-system { background: rgba(255, 182, 35, 0.9); color: #111; }
+      .text-btn { font-size: 12px; background: transparent; color: var(--dt-color-text-default); border: none; padding: 0 2px; line-height: 18px; }
+      .bubble { cursor: text; max-width: 85%; border-radius: 12px; padding: 8px 10px; font-size: 12px; line-height: 1.4; -webkit-user-select: text; user-select: text; border: 1px solid transparent; }
+      .bubble-user { background: rgba(255,255,255,0.97); color: var(--dt-color-text-default); border-color: rgba(229,231,235,0.94); }
+      .bubble-system { background: rgba(255, 182, 35, 0.92); color: var(--dt-color-text-default); border-color: rgba(252,210,138,0.95); }
       /* Markdown styling */
       .bubble strong { font-weight: 600; }
       .bubble em { font-style: italic; }
@@ -74,7 +80,7 @@
       .bubble ul { list-style: disc; padding-left: 18px; margin: 4px 0; }
       .bubble ol { list-style: decimal; padding-left: 18px; margin: 4px 0; }
       .bubble li { margin: 2px 0; }
-      .bubble a { color: var(--color-primary); text-decoration: underline; word-break: break-all; }
+      .bubble a { color: var(--dt-color-brand-primary-hover); text-decoration: underline; word-break: break-all; }
 .bubble a:hover { text-decoration: underline; cursor: pointer; }
       .bubble table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 12px; }
       .bubble th, .bubble td { border: 1px solid rgba(0,0,0,0.12); padding: 4px 6px; text-align: left; }
@@ -90,9 +96,9 @@
       .z-chat { position: relative; z-index: 1; }
       .z-input { position: relative; z-index: 2; }
       /* Fallback visuals for non-mac non-liquid-glass overlay */
-      html.non-mac.fallback-overlay .overlay-card { background: rgba(255,255,255,0.9); }
+      html.non-mac.fallback-overlay .overlay-card { background: rgba(255,255,255,0.92); }
       html.non-mac.fallback-overlay .input-wrap textarea,
-      html.non-mac.fallback-overlay .input-wrap textarea:focus { background: rgba(255,255,255,0.92) !important; }
+      html.non-mac.fallback-overlay .input-wrap textarea:focus { background: rgba(255,255,255,0.95) !important; }
       html.non-mac.fallback-overlay .input-wrap textarea { padding-right: 40px !important; }
       html.non-mac.fallback-overlay .screen-toggle { right: 18px; }
     </style>

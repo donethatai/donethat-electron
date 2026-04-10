@@ -1117,7 +1117,7 @@ function setupGeminiApiKeyListeners() {
           }).catch(() => { input.value = ''; });
         }
         toggleGeminiKeyBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
             <line x1="1" y1="1" x2="23" y2="23"></line>
           </svg>
@@ -1129,7 +1129,7 @@ function setupGeminiApiKeyListeners() {
           input.value = MASKED_SECRET;
         }
         toggleGeminiKeyBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
@@ -1267,7 +1267,7 @@ function setupOpenAICompatibleListeners() {
           });
         }
         toggleOpenaiKeyBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
             <line x1="1" y1="1" x2="23" y2="23"></line>
           </svg>
@@ -1279,7 +1279,7 @@ function setupOpenAICompatibleListeners() {
           input.value = MASKED_SECRET;
         }
         toggleOpenaiKeyBtn.innerHTML = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
@@ -1451,12 +1451,12 @@ function setupAppExclusionsListeners() {
     exclusionsList.innerHTML = '';
     exclusions.forEach((exclusion, index) => {
       const entry = document.createElement('div');
-      entry.className = 'space-y-3 p-4 border border-gray-200 rounded-lg bg-white mb-3';
+      entry.className = 'dt-card dt-card--subtle dt-settings-entry';
       
       const appNameRow = document.createElement('div');
-      appNameRow.className = '';
+      appNameRow.className = 'dt-settings-field';
       const appNameLabel = document.createElement('label');
-      appNameLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+      appNameLabel.className = 'dt-label';
       appNameLabel.textContent = 'App name';
       
       // Container for input and remove button
@@ -1465,7 +1465,7 @@ function setupAppExclusionsListeners() {
       
       const appNameInput = document.createElement('input');
       appNameInput.type = 'text';
-      appNameInput.className = 'form-input text-xs py-1.5 pr-8';
+      appNameInput.className = 'dt-input dt-input--compact dt-input--with-trailing-action';
       appNameInput.placeholder = 'e.g., Slack, Chrome, Candy Crush';
       appNameInput.value = exclusion.appName || '';
       appNameInput.dataset.index = index;
@@ -1474,7 +1474,7 @@ function setupAppExclusionsListeners() {
       // Remove button (x) on the right
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
-      removeBtn.className = 'absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 w-4 h-4 flex items-center justify-center text-sm';
+      removeBtn.className = 'dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-remove-button';
       removeBtn.dataset.index = index;
       removeBtn.innerHTML = '×';
       removeBtn.title = 'Remove exclusion';
@@ -1485,9 +1485,9 @@ function setupAppExclusionsListeners() {
       appNameRow.appendChild(appNameInputContainer);
       
       const titlePatternRow = document.createElement('div');
-      titlePatternRow.className = '';
+      titlePatternRow.className = 'dt-settings-field';
       const titlePatternLabel = document.createElement('label');
-      titlePatternLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+      titlePatternLabel.className = 'dt-label';
       titlePatternLabel.textContent = 'Window name keywords (optional)';
       
       // Convert old format (single string) to new format (array)
@@ -1501,7 +1501,7 @@ function setupAppExclusionsListeners() {
       
       // Container for chips and input
       const titlePatternContainer = document.createElement('div');
-      titlePatternContainer.className = 'flex flex-wrap gap-2 p-1.5 border border-gray-300 rounded min-h-[32px] items-center';
+      titlePatternContainer.className = 'dt-chip-input';
       titlePatternContainer.dataset.index = index;
       
       // Render chips
@@ -1515,14 +1515,14 @@ function setupAppExclusionsListeners() {
           if (!pattern || !pattern.trim()) return;
           
           const chip = document.createElement('div');
-          chip.className = 'title-pattern-chip inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm';
+          chip.className = 'dt-chip title-pattern-chip';
           
           const chipText = document.createElement('span');
           chipText.textContent = pattern;
           
           const chipRemove = document.createElement('button');
           chipRemove.type = 'button';
-          chipRemove.className = 'text-gray-500 hover:text-gray-700 ml-1';
+          chipRemove.className = 'dt-chip-remove';
           chipRemove.innerHTML = '×';
           chipRemove.addEventListener('click', () => {
             if (exclusionsManaged) return;
@@ -1587,7 +1587,7 @@ function setupAppExclusionsListeners() {
       const ignoreActivityRow = document.createElement('div');
       ignoreActivityRow.className = 'flex items-center justify-between';
       const ignoreActivityLabel = document.createElement('label');
-      ignoreActivityLabel.className = 'block text-sm font-medium text-gray-700';
+      ignoreActivityLabel.className = 'text-sm font-normal text-gray-700';
       ignoreActivityLabel.textContent = 'Ignore activity';
       const ignoreActivityToggle = document.createElement('label');
       ignoreActivityToggle.className = 'toggle';
@@ -1748,33 +1748,32 @@ function setupAppExclusionsListeners() {
 
 // Set up context capture (experimental) listeners
 function setupContextCaptureListeners() {
-  const enabledCheckbox = document.getElementById('contextCaptureEnabled');
   const appsSection = document.getElementById('contextAppsSection');
   const appsList = document.getElementById('contextAppsList');
   const addBtn = document.getElementById('addContextAppBtn');
 
-  if (!enabledCheckbox || !appsSection || !appsList || !addBtn) return;
+  if (!appsSection || !appsList || !addBtn) return;
 
   let contextApps = [];
   let contextManaged = false;
   let contextMode = null;
-  let contextEnabledManaged = false;
+  let contextDisabledManaged = false;
+
+  function isContextEditingLocked() {
+    return contextManaged || contextDisabledManaged;
+  }
 
   async function loadContextCaptureState() {
     try {
-      const enabledResult = await ipcRenderer.invoke('get-context-capture-enabled');
       const appsResult = await ipcRenderer.invoke('get-context-apps');
-      if (contextManaged) return;
-      if (enabledResult?.success) {
-        enabledCheckbox.checked = !!enabledResult.enabled;
-      }
+      if (isContextEditingLocked()) return;
       if (appsResult?.success && Array.isArray(appsResult.apps)) {
         contextApps = appsResult.apps.map((app) => ({
           appName: app.appName || '',
           titlePatterns: app.titlePatterns || []
         }));
       }
-      appsSection.classList.toggle('hidden', !enabledCheckbox.checked);
+      appsSection.classList.remove('hidden');
       renderContextAppsList();
     } catch (error) {
       console.error('Error loading context capture state:', error);
@@ -1785,8 +1784,8 @@ function setupContextCaptureListeners() {
     if (!isManagedValue(managedContextCaptureConfig)) {
       contextManaged = false;
       contextMode = null;
-      contextEnabledManaged = false;
-      enabledCheckbox.disabled = false;
+      contextDisabledManaged = false;
+      appsSection.classList.remove('hidden');
       setManagedCardLock('contextCaptureCard', false);
       await loadContextCaptureState();
       return;
@@ -1795,27 +1794,18 @@ function setupContextCaptureListeners() {
     const normalized = normalizeManagedContextCaptureConfig(managedContextCaptureConfig);
     contextMode = normalized?.mode || MANAGED_LIST_MODE_FIXED;
     contextManaged = contextMode === MANAGED_LIST_MODE_FIXED;
-    contextEnabledManaged = isManagedValue(normalized?.enabled);
+    contextDisabledManaged = normalized?.enabled === false;
 
-    setManagedCardLock('contextCaptureCard', contextManaged);
-    enabledCheckbox.disabled = contextManaged || contextEnabledManaged;
+    setManagedCardLock('contextCaptureCard', contextManaged || contextDisabledManaged);
 
-    if (contextEnabledManaged) {
-      enabledCheckbox.checked = !!normalized.enabled;
-    }
-
-    if (contextManaged) {
+    if (contextManaged || contextDisabledManaged) {
       contextApps = normalized?.apps || [];
-      appsSection.classList.toggle('hidden', !enabledCheckbox.checked);
+      appsSection.classList.toggle('hidden', contextDisabledManaged);
       renderContextAppsList();
       return;
     }
 
     await loadContextCaptureState();
-    if (contextEnabledManaged) {
-      enabledCheckbox.checked = !!normalized.enabled;
-      appsSection.classList.toggle('hidden', !enabledCheckbox.checked);
-    }
   }
 
   applyContextCaptureManagedConfig = applyManagedContextCapture;
@@ -1824,24 +1814,25 @@ function setupContextCaptureListeners() {
     appsList.innerHTML = '';
     contextApps.forEach((app, index) => {
       const entry = document.createElement('div');
-      entry.className = 'space-y-3 p-4 border border-gray-200 rounded-lg bg-white mb-3';
+      entry.className = 'dt-card dt-card--subtle dt-settings-entry';
 
       const appNameRow = document.createElement('div');
+      appNameRow.className = 'dt-settings-field';
       const appNameLabel = document.createElement('label');
-      appNameLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+      appNameLabel.className = 'dt-label';
       appNameLabel.textContent = 'App name';
       const appNameInputContainer = document.createElement('div');
       appNameInputContainer.className = 'relative';
       const appNameInput = document.createElement('input');
       appNameInput.type = 'text';
-      appNameInput.className = 'form-input text-xs py-1.5 pr-8';
+      appNameInput.className = 'dt-input dt-input--compact dt-input--with-trailing-action';
       appNameInput.placeholder = 'e.g., Notion, Google Chrome, Calendar';
       appNameInput.value = app.appName || '';
       appNameInput.dataset.index = index;
       appNameInput.dataset.field = 'appName';
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
-      removeBtn.className = 'absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 w-4 h-4 flex items-center justify-center text-sm';
+      removeBtn.className = 'dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-remove-button';
       removeBtn.dataset.index = index;
       removeBtn.innerHTML = '×';
       removeBtn.title = 'Remove';
@@ -1851,13 +1842,14 @@ function setupContextCaptureListeners() {
       appNameRow.appendChild(appNameInputContainer);
 
       const titlePatternRow = document.createElement('div');
+      titlePatternRow.className = 'dt-settings-field';
       const titlePatternLabel = document.createElement('label');
-      titlePatternLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+      titlePatternLabel.className = 'dt-label';
       titlePatternLabel.textContent = 'Window name keywords (optional)';
       let titlePatterns = app.titlePatterns || [];
       if (!Array.isArray(titlePatterns)) titlePatterns = [];
       const titlePatternContainer = document.createElement('div');
-      titlePatternContainer.className = 'flex flex-wrap gap-2 p-1.5 border border-gray-300 rounded min-h-[32px] items-center';
+      titlePatternContainer.className = 'dt-chip-input';
       titlePatternContainer.dataset.index = index;
 
       const renderChips = () => {
@@ -1865,17 +1857,17 @@ function setupContextCaptureListeners() {
         titlePatterns.forEach((pattern) => {
           if (!pattern || !pattern.trim()) return;
           const chip = document.createElement('div');
-          chip.className = 'context-pattern-chip inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm';
+          chip.className = 'dt-chip context-pattern-chip';
 
           const chipText = document.createElement('span');
           chipText.textContent = pattern;
           const chipRemove = document.createElement('button');
           chipRemove.type = 'button';
-          chipRemove.className = 'text-gray-500 hover:text-gray-700 ml-1 chip-remove';
+          chipRemove.className = 'dt-chip-remove';
           chipRemove.textContent = '×';
 
           chipRemove.addEventListener('click', () => {
-            if (contextManaged) return;
+            if (isContextEditingLocked()) return;
             const i = titlePatterns.indexOf(pattern);
             if (i !== -1) {
               titlePatterns.splice(i, 1);
@@ -1895,7 +1887,7 @@ function setupContextCaptureListeners() {
       titlePatternInput.placeholder = titlePatterns.length === 0 ? 'e.g. todos, projects' : 'Add another...';
       titlePatternInput.dataset.index = index;
       titlePatternInput.addEventListener('keydown', async (e) => {
-        if (contextManaged) return;
+        if (isContextEditingLocked()) return;
         if (e.key === 'Enter' && titlePatternInput.value.trim()) {
           e.preventDefault();
           const newPattern = titlePatternInput.value.trim();
@@ -1909,7 +1901,7 @@ function setupContextCaptureListeners() {
         }
       });
       titlePatternInput.addEventListener('blur', async () => {
-        if (contextManaged) return;
+        if (isContextEditingLocked()) return;
         if (titlePatternInput.value.trim() && !titlePatterns.includes(titlePatternInput.value.trim())) {
           titlePatterns.push(titlePatternInput.value.trim());
           contextApps[index].titlePatterns = titlePatterns;
@@ -1930,7 +1922,7 @@ function setupContextCaptureListeners() {
 
     appsList.querySelectorAll('input[data-field="appName"]').forEach((input) => {
       input.addEventListener('blur', async () => {
-        if (contextManaged) return;
+        if (isContextEditingLocked()) return;
         const index = parseInt(input.dataset.index);
         if (contextApps[index]) {
           contextApps[index].appName = input.value.trim() || '';
@@ -1946,7 +1938,7 @@ function setupContextCaptureListeners() {
     appsList.querySelectorAll('button[data-index]').forEach((btn) => {
       if (btn.textContent === '×') {
         btn.addEventListener('click', async () => {
-          if (contextManaged) return;
+          if (isContextEditingLocked()) return;
           const index = parseInt(btn.dataset.index);
           contextApps.splice(index, 1);
           renderContextAppsList();
@@ -1957,7 +1949,7 @@ function setupContextCaptureListeners() {
   }
 
   async function saveContextApps() {
-    if (contextManaged) return;
+    if (isContextEditingLocked()) return;
     try {
       const result = await ipcRenderer.invoke('save-context-apps', contextApps);
       if (!result?.success) {
@@ -1972,17 +1964,8 @@ function setupContextCaptureListeners() {
     }
   }
 
-  enabledCheckbox.addEventListener('change', async () => {
-    if (contextManaged || contextEnabledManaged) {
-      enabledCheckbox.checked = !enabledCheckbox.checked;
-      return;
-    }
-    ipcRenderer.send('update-context-capture-enabled', enabledCheckbox.checked);
-    appsSection.classList.toggle('hidden', !enabledCheckbox.checked);
-  });
-
   addBtn.addEventListener('click', () => {
-    if (contextManaged) return;
+    if (isContextEditingLocked()) return;
     contextApps.push({ appName: '', titlePatterns: [] });
     renderContextAppsList();
     const newInput = appsList.querySelector(`input[data-index="${contextApps.length - 1}"][data-field="appName"]`);

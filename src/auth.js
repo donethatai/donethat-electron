@@ -606,14 +606,14 @@ signInForm.addEventListener("submit", (e) => {
     
     try {
       showSpinner();
-      try { googleSignInBtn.disabled = true; googleSignInBtn.classList.add('disabled-btn'); } catch (_) {}
+      try { googleSignInBtn.disabled = true; } catch (_) {}
       ipcRenderer.invoke('auth:google-signin', { requestCalendar: false })
         .then((result) => {
           if (!result || result.success === false) {
             console.error('Google Sign In main-process error:', result && result.error);
             showBanner(`Failed to start Google Sign In: ${result && result.error ? result.error : 'Unknown error'}`, { title: 'Google Sign In', sticky: true });
             hideSpinner();
-            try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+            try { googleSignInBtn.disabled = false; } catch (_) {}
             return;
           }
           const url = result.url;
@@ -623,19 +623,19 @@ signInForm.addEventListener("submit", (e) => {
                 console.error('open-external failed:', res && res.error);
                 showBanner('Failed to open browser for Google Sign In.', { title: 'Google Sign In', sticky: true });
                 hideSpinner();
-                try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+                try { googleSignInBtn.disabled = false; } catch (_) {}
               }
             }).catch((err) => {
               console.error('open-external threw error:', err);
               showBanner('Failed to open browser for Google Sign In.', { title: 'Google Sign In', sticky: true });
               hideSpinner();
-              try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+              try { googleSignInBtn.disabled = false; } catch (_) {}
             });
           } else {
             console.error('No URL found in result:', JSON.stringify(result, null, 2));
             showBanner('No URL returned from Google Sign In function.', { title: 'Google Sign In', sticky: true });
             hideSpinner();
-            try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+            try { googleSignInBtn.disabled = false; } catch (_) {}
           }
         })
         .catch((error) => {
@@ -646,13 +646,13 @@ signInForm.addEventListener("submit", (e) => {
           });
           showBanner(`Failed to start Google Sign In: ${error.message}`, { title: 'Google Sign In', sticky: true });
           hideSpinner();
-          try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+          try { googleSignInBtn.disabled = false; } catch (_) {}
         });
     } catch (error) {
       console.error('Google Sign In setup error:', error);
       showBanner(`Failed to setup Google Sign In: ${error.message}`, { title: 'Google Sign In', sticky: true });
       hideSpinner();
-      try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+      try { googleSignInBtn.disabled = false; } catch (_) {}
       // Stop the auth server on setup error
       try { ipcRenderer.invoke('auth:stop-server'); } catch (_) {}
     }
@@ -665,7 +665,7 @@ signInForm.addEventListener("submit", (e) => {
       .then((userCredential) => {
         logAnalyticsEvent('google_sign_in_success');
         hideSpinner();
-        try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+        try { googleSignInBtn.disabled = false; } catch (_) {}
       })
       .catch((error) => {
         if (error.code === 'auth/multi-factor-auth-required') {
@@ -679,7 +679,7 @@ signInForm.addEventListener("submit", (e) => {
         showBanner('Failed to complete Google Sign In. Please try again.', { title: 'Google Sign In', sticky: true });
         console.error("Firebase custom token sign-in error:", error);
         hideSpinner();
-        try { googleSignInBtn.disabled = false; googleSignInBtn.classList.remove('disabled-btn'); } catch (_) {}
+        try { googleSignInBtn.disabled = false; } catch (_) {}
         // Stop the auth server on error too
         ipcRenderer.invoke('auth:stop-server');
       });

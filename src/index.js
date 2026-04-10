@@ -120,10 +120,10 @@ function updateSettingsToggleLabelGlobal() {
     const v = getCurrentView();
     if (v === 'settings' || v === 'permissions') {
       settingsToggleBtn.textContent = 'Dashboard';
-      settingsToggleBtn.className = 'btn-primary topbar-btn'; // Bright orange when on permissions
+      settingsToggleBtn.className = 'dt-button dt-button--primary dt-button--small dt-topbar-button'; // Bright orange when on permissions
     } else {
       settingsToggleBtn.textContent = 'Setup';
-      settingsToggleBtn.className = 'btn-secondary topbar-btn'; // Normal style otherwise
+      settingsToggleBtn.className = 'dt-button dt-button--secondary dt-button--small dt-topbar-button'; // Normal style otherwise
     }
   } catch (_) {}
 }
@@ -324,7 +324,7 @@ function navigateToView(viewName) {
       try {
         const container = document.querySelector('#settingsView .auth-container');
         if (container) {
-          const cards = Array.from(document.querySelectorAll('#settingsView .auth-card'));
+          const cards = Array.from(document.querySelectorAll('#settingsView [data-settings-card]'));
           cards.forEach((el) => { if (!container.contains(el)) container.appendChild(el); });
         }
       } catch (_) {}
@@ -452,7 +452,7 @@ function showWebviewError() {
             </svg>
             <p class="text-lg font-medium mb-2">You seem to be offline</p>
             <p class="text-sm text-gray-400 mb-4">Check your connection and try again</p>
-            <button id="webviewRetryBtn" class="btn-primary px-4 py-2 rounded-lg text-sm">
+            <button id="webviewRetryBtn" class="dt-button dt-button--primary">
               Try again
             </button>
           </div>

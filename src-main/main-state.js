@@ -493,13 +493,12 @@ function applyManagedAppSettings(rawSettings = null) {
     const contextCaptureConfig = managedAppSettings.capture.contextCapture;
     safeStoreOperation(() => {
       if (!store) return;
-      if (isManagedValue(contextCaptureConfig.enabled)) {
-        store.set('contextCaptureEnabled', !!contextCaptureConfig.enabled);
-      }
       const existingApps = normalizeManagedContextApps(store.get('contextApps') || []);
-      const nextApps = contextCaptureConfig.mode === 'minimum'
-        ? mergeMinimumContextApps(existingApps, contextCaptureConfig.apps)
-        : contextCaptureConfig.apps;
+      const nextApps = contextCaptureConfig.enabled === false
+        ? []
+        : contextCaptureConfig.mode === 'minimum'
+          ? mergeMinimumContextApps(existingApps, contextCaptureConfig.apps)
+          : contextCaptureConfig.apps;
       store.set('contextApps', nextApps);
     }, 'apply managed context capture');
   }
@@ -2010,8 +2009,9 @@ function setupIPCHandlers() {
   // Context capture (experimental) handlers
   ipcMain.handle('get-context-capture-enabled', async () => {
     try {
-      const enabled = safeStoreOperation(() => store?.get('contextCaptureEnabled') || false, 'get contextCaptureEnabled');
-      return { success: true, enabled: !!enabled };
+      const apps = safeStoreOperation(() => normalizeManagedContextApps(store?.get('contextApps') || []), 'get contextApps for context capture enabled');
+      const enabled = Array.isArray(apps) && apps.length > 0;
+      return { success: true, enabled };
     } catch (error) {
       return { success: false, enabled: false };
     }
@@ -2022,9 +2022,12 @@ function setupIPCHandlers() {
     if (isManagedValue(managedContextConfig?.enabled)) {
       return;
     }
+    if (enabled) {
+      return;
+    }
     safeStoreOperation(() => {
-      if (store) store.set('contextCaptureEnabled', !!enabled);
-    }, 'save contextCaptureEnabled');
+      if (store) store.set('contextApps', []);
+    }, 'clear contextApps when disabling context capture');
   });
 
   ipcMain.handle('get-context-apps', async () => {

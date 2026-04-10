@@ -52,9 +52,9 @@ function getDisplayForWindowBounds(windowBounds, displays) {
 
 async function getContextConfig() {
   const store = await getStore()
-  const enabled = store.get('contextCaptureEnabled')
   const apps = store.get('contextApps') || []
-  return { enabled: !!enabled, apps: Array.isArray(apps) ? apps : [] }
+  const normalizedApps = Array.isArray(apps) ? apps : []
+  return { enabled: normalizedApps.length > 0, apps: normalizedApps }
 }
 
 async function captureContextForActiveWindow(activeWin) {

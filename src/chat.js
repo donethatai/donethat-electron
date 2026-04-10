@@ -1192,7 +1192,9 @@ function updateIncludeScreenBtn() {
   // Update SVG stroke to brand orange when active
   const svg = includeScreenBtn.querySelector('svg')
   if (svg) {
-    includeScreenBtn.style.color = includeScreenOnNextMessage ? 'var(--color-primary)' : '#111'
+    includeScreenBtn.style.color = includeScreenOnNextMessage
+      ? 'var(--dt-color-brand-primary)'
+      : 'var(--dt-color-text-default)'
     // Force reflow of color for some platforms
     svg.style.color = 'currentColor'
     svg.style.stroke = 'currentColor'
