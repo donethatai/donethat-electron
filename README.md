@@ -27,30 +27,37 @@
 
 ---
 
-> **This is the open-source desktop client for [DoneThat](https://donethat.ai).** It does not run standalone — it requires the DoneThat backend to function. The repository is public for transparency and code inspection, following a similar model to [Proton Mail](https://github.com/ProtonMail): open-source client under GPL, proprietary backend services.
+> **This is the open-source desktop client for [DoneThat](https://donethat.ai).** It does not run standalone. It requires the DoneThat backend to function. The repository is public for transparency and code inspection, following a similar model to [Proton Mail](https://github.com/ProtonMail): open-source client under GPL, proprietary backend services.
 
 ---
 
 ## What is DoneThat?
 
-DoneThat is a desktop app that quietly captures your work — screenshots, active windows, and optionally audio — then turns it into structured summaries using AI. No manual time tracking, no context switching.
+DoneThat is an automated work tracker and productivity coach. It reconstructs your work from activity on your device, turns that into summaries and structured history, and uses that history for review, reporting, and coaching.
+
+No timers, no manual logging, no end-of-week guessing.
 
 ## How it works
 
-1. **Capture** — Runs on a configurable interval (default 5 min), collecting screenshots, active window timelines, and optional audio transcription.
-2. **Summarize** — Captures are processed into concise activity summaries, locally when possible, otherwise via secure cloud functions.
-3. **Chat** — A global-hotkey overlay lets you ask questions about your recent work without leaving your current context.
+### Capture
 
-## Features
+The desktop app runs quietly in the background. Every five minutes it collects screenshots, an active window timeline, and optionally audio transcription. Raw inputs are processed in real time and discarded, not stored. You control when capture runs through work hours, manual pause, and per-app exclusions. See [data privacy measures](https://donethat.ai/data) for details.
 
-| Feature | Description |
-| --- | --- |
-| **Background capture** | Screenshots, window tracking, and audio on a configurable schedule |
-| **AI summaries** | Automatic work summaries from raw captures |
-| **Overlay chat** | Quick-access chat via global hotkey (`Cmd/Ctrl+Shift+D`, configurable) |
-| **Work hours** | Configurable schedule — pauses capture outside your hours |
-| **Local processing** | On-device summarization when available; minimal data sent to cloud |
-| **Auto-updates** | Silent updates on macOS, user-notified on Windows/Linux |
+### Summarize
+
+At the end of each day, either when you click "Finish Day" or automatically around midnight, your activity is turned into a structured summary: tasks with titles, descriptions, and classifications. You can review and edit before finalizing. Tasks are automatically grouped into projects and visible on a calendar view.
+
+### Coach
+
+Don is the built-in AI coach. He reviews your work patterns, helps you set goals, spots drift and overload, and nudges you when you go off track. You pick the coaching style that works for you.
+
+### Share
+
+Summaries can stay fully private or be shared with followers, teammates, or your organization. Share via the app, Slack, or email. Visibility is private by default and always under your control.
+
+### Chat
+
+A global-hotkey overlay (`Cmd/Ctrl+Shift+D`, configurable) gives you quick access to ask questions about your work, search your history, or get help without leaving your current context.
 
 ## Download
 
@@ -60,7 +67,7 @@ You'll need a [DoneThat](https://donethat.ai) account to sign in and use the app
 
 ## Open vs. Closed
 
-This repository contains the **desktop client only**. Backend services (capture processing, AI summarization, authentication) are proprietary. This follows the same model as Proton Mail — open-source client under the GPL, closed backend infrastructure.
+This repository contains the **desktop client only**. Backend services (capture processing, AI summarization, authentication) are proprietary. This follows the same model as Proton Mail: open-source client under the GPL, closed backend infrastructure.
 
 You can inspect the code, build the renderer, and work on desktop-only behavior without backend access. For anything that talks to the backend, you need a DoneThat account.
 
@@ -68,7 +75,7 @@ You can inspect the code, build the renderer, and work on desktop-only behavior 
 
 This code is licensed under the [GNU General Public License v3.0](LICENSE). You're welcome to read it, learn from it, and have your AI explain how it works.
 
-However, if you or your AI tools use this code — including by having an AI rewrite, adapt, or reproduce substantial portions of it — the result is a derivative work under the GPL. That means your project must also be released under the GPL with full source code.
+However, if you or your AI tools use this code, including by having an AI rewrite, adapt, or reproduce substantial portions of it, the result is a derivative work under the GPL. That means your project must also be released under the GPL with full source code.
 
 Asking an AI to "rewrite this in my own style" or "use this as a reference implementation" does not circumvent the license. If the output is derived from GPL-licensed code, the GPL applies to the output.
 
@@ -101,7 +108,7 @@ This repository is public for transparency and inspection first. See [Contributi
 
 ## Security
 
-Found a vulnerability? Please report it responsibly via [SECURITY.md](SECURITY.md) — not through public issues.
+Found a vulnerability? Please report it responsibly via [SECURITY.md](SECURITY.md), not through public issues.
 
 ## Docs
 
