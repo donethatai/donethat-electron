@@ -62,7 +62,7 @@ Request categories:
 - processing parameters used to produce that structured output
 - optional client diagnostic metadata when enabled in the app
 
-This endpoint is used after local image/audio processing. Local processing does not make the workflow fully offline; processed results are still sent to DoneThat services.
+This endpoint is used after local processing. "Local processing" means the desktop client sends screenshots and audio to a third-party LLM provider (Google Gemini using a stored API key, or a user-configured OpenAI-compatible endpoint) for summarization, then sends the structured result to this DoneThat endpoint. Raw screenshots and audio are not sent to DoneThat in this path, but they are sent to the configured LLM provider. Local processing does not make the workflow fully offline.
 
 ### `captureScreenshot`
 
@@ -75,7 +75,7 @@ Request categories:
 - optional audio capture payload for the cycle
 - optional client diagnostic metadata when enabled in the app
 
-This is the default cloud-backed capture path when local processing is not available.
+This is the cloud-backed capture path used when local processing is not configured. In this path, raw screenshots, audio, and activity data are sent directly to DoneThat services for processing.
 
 ### `contextCapture`
 
@@ -126,7 +126,7 @@ The desktop client can collect sensitive workstation data depending on user sett
 - Microphone capture: may include spoken audio recorded from the microphone when enabled.
 - System audio capture: may include playback audio when enabled and supported by the operating system.
 
-Users should assume those categories may be transmitted to DoneThat services when the related features are enabled and a compatible backend is available.
+Users should assume those categories may be transmitted to DoneThat services when the related features are enabled and a compatible backend is available. When local processing is configured, raw screenshots and audio are sent to the configured third-party LLM provider (Google Gemini or a user-configured OpenAI-compatible endpoint) instead of to DoneThat, but structured results are still sent to DoneThat.
 
 For retention, deletion, and broader data-handling details, see [donethat.ai/data](https://donethat.ai/data).
 
