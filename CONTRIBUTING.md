@@ -24,3 +24,11 @@ We may review small, well-scoped pull requests when they:
 Large refactors, speculative rewrites, and backend-facing protocol changes are unlikely to be accepted.
 
 Before investing significant work in a pull request, open an issue first so we can confirm it is in scope.
+
+## Contribution Policy
+
+By making a contribution to this project:
+
+1. You assign any and all copyright related to the contribution to Letss BV.
+2. You certify that the contribution was created in whole by you.
+3. You understand and agree that this project and the contribution are public and that a record of the contribution (including all personal information you submit with it) is maintained indefinitely and may be redistributed with this project or the open source license(s) involved.

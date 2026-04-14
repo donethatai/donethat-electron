@@ -45,7 +45,7 @@
     "name": "DoneThat",
     "email": "support@donethat.ai"
   },
-  "license": "GPL-3.0-only",
+  "license": "GPL-3.0-or-later",
   "bugs": {
     "url": "https://github.com/donethatai/donethat-electron/issues"
   },

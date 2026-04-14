@@ -94,6 +94,13 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - Auth via Firebase ID token; token expiry detected and relayed.
 - Gemini API key stored encrypted via `src-main/encryption.js`; getters in `main-state`.
 
+## Changelog
+
+- Always update `CHANGELOG.md` when making user-facing or doc changes.
+- Add entries under `## Unreleased`. When a version ships, the maintainer moves entries under a version heading.
+- Keep entries concise: one line per change, imperative mood (e.g. "Add …", "Fix …", "Update …").
+- Group by category if there are many entries: Features, Fixes, Docs, Internal.
+
 ## Coding Conventions & Constraints
 
 - Keep code readable (descriptive names, early returns, minimal nesting). Avoid comments for trivial logic.

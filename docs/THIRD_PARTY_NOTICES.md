@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This project uses third-party open-source dependencies. All production dependency licenses are compatible with GPL-3.0-only. License terms are provided by each dependency in its `node_modules` directory.
+This project uses third-party open-source dependencies. All production dependency licenses are compatible with GPL-3.0. License terms are provided by each dependency in its `node_modules` directory.
 
 ## Production Dependency License Summary
 

@@ -1,5 +1,7 @@
 # Security
 
+This covers vulnerabilities in the desktop client source code in this repository.
+
 Please report security vulnerabilities privately to `support@donethat.ai`.
 
 Include:

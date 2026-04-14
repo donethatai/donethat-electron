@@ -1,14 +1,14 @@
 # Open-Source Readiness Checklist: DoneThat Desktop
 
 Date: 2026-03-30
-Scope: Entire repository at `/Users/christoph/repos/donethat-electron`
+Scope: Entire repository (`donethatai/donethat-electron`)
 Goal: Publish the desktop client source while keeping hosted backend services proprietary.
 
 ## Current State Snapshot
 
 - Desktop client source is in this repository; backend services remain proprietary.
 - Legal and baseline OSS docs are now present: `LICENSE`, `README.md`, `SECURITY.md`, `SUPPORT.md`, `THIRD_PARTY_NOTICES.md`, and `CHANGELOG.md`.
-- `package.json` metadata now points at `donethatai/donethat-electron` and uses `GPL-3.0-only`.
+- `package.json` metadata now points at `donethatai/donethat-electron` and uses `GPL-3.0-or-later`.
 - Firebase client config is committed, so docs/tests do not depend on CI-injected client config.
 - Public backend testing posture is now documented: backend-integrated testing uses your own account or a dedicated test account.
 - Public backend behavior is now documented in `docs/BACKEND_COMPATIBILITY.md`.
@@ -23,7 +23,7 @@ Goal: Publish the desktop client source while keeping hosted backend services pr
 
 - [x] **Add license files and legal metadata**
   - `LICENSE` added.
-  - `package.json` license updated to `GPL-3.0-only`.
+  - `package.json` license updated to `GPL-3.0-or-later`.
 - [x] **Clarify the open vs closed boundary in the public README**
   - README states that the desktop client is open source and hosted backend services remain proprietary.
 - [x] **Document backend compatibility and remote behavior**

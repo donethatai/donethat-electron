@@ -1,14 +1,10 @@
 # Backend Compatibility
 
-This repository contains the open-source desktop client for DoneThat. Hosted backend services remain proprietary.
+This repository contains the open-source desktop client for DoneThat. The [GPL-3.0 license](../LICENSE) applies only to the source code in this repository. No other DoneThat code, service, or infrastructure is covered by this license.
 
 ## Open vs Closed Boundary
 
-The desktop client code in this repository is public. The following remain closed and are not implemented here:
-
-- hosted APIs and Cloud Functions
-- the `app.donethat.ai` web app loaded inside the desktop client
-- backend-side data storage, processing, billing, and access control
+The desktop client code in this repository is public. Everything else — backend services, APIs, infrastructure — is closed and proprietary.
 
 The desktop client expects those remote services to remain compatible with the payload categories documented below.
 
