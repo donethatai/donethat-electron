@@ -35,6 +35,10 @@
 
 DoneThat automatically tracks all work and uses this context to boost your productivity: Automated timesheets, long-term memory for AIs, proactive coaching, and social sharing for accountability and remote trust. DoneThat is built privacy-first, cross-platform, and takes five minutes to set up.
 
+## Data Flow
+
+The main reason this client is open source is so you can inspect how it interacts with the backend and what data is shared in local and cloud processing modes. See [Data Flow](docs/DATA_FLOW.md) for a repo-level explanation of what the app sends, what stays local, and how to verify that in the code.
+
 ## How it works
 
 ### Capture
@@ -106,7 +110,7 @@ Found a vulnerability? Please report it responsibly via [SECURITY.md](SECURITY.m
 
 ## Docs
 
-- [Backend Compatibility](docs/BACKEND_COMPATIBILITY.md)
+- [Data Flow](docs/DATA_FLOW.md)
 - [Release Integrity](docs/RELEASE_INTEGRITY.md)
 - [Security](SECURITY.md)
 - [Third-Party Notices](docs/THIRD_PARTY_NOTICES.md)
