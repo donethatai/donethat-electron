@@ -1,5 +1,7 @@
 # DigiCert Code Signing Setup for DoneThat
 
+> Internal maintainer release doc. This is only useful for maintainers managing Windows code-signing credentials and release infrastructure.
+
 This document explains how to set up DigiCert KeyLocker code signing for the DoneThat application on Windows.
 
 ## Prerequisites

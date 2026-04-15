@@ -61,8 +61,8 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - Main proxies message processing and pushes updates back to overlay (`chat:*` channels).
 
 ### Updates
-- `electron-updater` with per-OS strategies: silent on macOS, user-notified on Windows/Linux.
-- Autostart is configured per-OS on first ready; Linux currently not supported.
+- `electron-updater` with per-OS strategies: silent install on macOS and Windows after download; Linux uses an in-app notification and explicit install action.
+- Autostart is configured per-OS on first ready, including Linux via a managed autostart desktop entry.
 - A daily auth check at 10:00 prompts login if unauthenticated.
 
 ## IPC Contract (non-exhaustive)
@@ -100,6 +100,12 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - Add entries under `## Unreleased`. When a version ships, the maintainer moves entries under a version heading.
 - Keep entries concise: one line per change, imperative mood (e.g. "Add …", "Fix …", "Update …").
 - Group by category if there are many entries: Features, Fixes, Docs, Internal.
+
+## Dependency Docs
+
+- When changing production dependencies in `package.json` or `package-lock.json`, also refresh `docs/THIRD_PARTY_NOTICES.md`.
+- Refresh it by running `npx license-checker --production --summary`, then update the license counts and notable non-MIT/Apache/BSD entries in `docs/THIRD_PARTY_NOTICES.md` to match the current output.
+- If dependency changes do not affect production licenses, note that in the final response after checking.
 
 ## Coding Conventions & Constraints
 

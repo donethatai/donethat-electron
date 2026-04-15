@@ -35,7 +35,6 @@ This means the release version and the source tag are locked together by the rel
 - Windows release builds use DigiCert KeyLocker signing.
 - The workflow provisions the DigiCert client certificate and required environment variables.
 - `scripts/digicert-sign-windows.js` signs the produced artifact and immediately verifies it with `smctl sign verify`.
-- Additional setup details live in [digicert-signing.md](digicert-signing.md).
 
 ### Linux
 

@@ -1,6 +1,6 @@
 # Backend Compatibility
 
-This repository contains the open-source desktop client for DoneThat. The [GPL-3.0 license](../LICENSE) applies only to the source code in this repository. No other DoneThat code, service, or infrastructure is covered by this license.
+This repository contains the open-source desktop client for DoneThat. The [GPL-3.0-or-later license](../LICENSE) applies only to the source code in this repository. No other DoneThat code, service, or infrastructure is covered by this license.
 
 ## Open vs Closed Boundary
 
@@ -121,6 +121,7 @@ The desktop client can collect sensitive workstation data depending on user sett
 - Activity tracking: may include app names, window titles, durations, and idle-time summaries.
 - Microphone capture: may include spoken audio recorded from the microphone when enabled.
 - System audio capture: may include playback audio when enabled and supported by the operating system.
+- Client telemetry: may include diagnostic metrics and logs when enabled.
 
 Users should assume those categories may be transmitted to DoneThat services when the related features are enabled and a compatible backend is available. When local processing is configured, raw screenshots and audio are sent to the configured third-party LLM provider (Google Gemini or a user-configured OpenAI-compatible endpoint) instead of to DoneThat, but structured results are still sent to DoneThat.
 

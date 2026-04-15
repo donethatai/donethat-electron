@@ -2,7 +2,9 @@
 
 This covers vulnerabilities in the desktop client source code in this repository.
 
-Please report security vulnerabilities privately to `support@donethat.ai`.
+We use Aikido to monitor dependency and repository security issues as part of ongoing maintenance.
+
+Please report security vulnerabilities privately to [support@donethat.ai](mailto:support@donethat.ai).
 
 Include:
 - impact summary

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/donethatai/donethat-electron/releases/latest"><img src="https://img.shields.io/github/v/release/donethatai/donethat-electron?label=latest" alt="Latest Release" /></a>
+  <a href="https://github.com/donethatai/donethat-electron/tags"><img src="https://img.shields.io/github/v/tag/donethatai/donethat-electron?label=latest%20tag&sort=semver" alt="Latest Tag" /></a>
   <a href="https://github.com/donethatai/donethat-electron/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="License" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platforms" />
   <img src="https://img.shields.io/badge/electron-latest-47848F?logo=electron&logoColor=white" alt="Electron" />
@@ -33,9 +33,7 @@
 
 ## What is DoneThat?
 
-DoneThat is an automated work tracker and productivity coach. It reconstructs your work from activity on your device, turns that into summaries and structured history, and uses that history for review, reporting, and coaching.
-
-No timers, no manual logging, no end-of-week guessing.
+DoneThat automatically tracks all work and uses this context to boost your productivity: Automated timesheets, long-term memory for AIs, proactive coaching, and social sharing for accountability and remote trust. DoneThat is built privacy-first, cross-platform, and takes five minutes to set up.
 
 ## How it works
 
@@ -59,6 +57,10 @@ Summaries can stay fully private or be shared with followers, teammates, or your
 
 A global-hotkey overlay (`Cmd/Ctrl+Shift+D`, configurable) gives you quick access to ask questions about your work, search your history, or get help without leaving your current context.
 
+### Integrations
+
+DoneThat exposes both an API and MCP so you can work with your data in external tools, agents, and custom workflows.
+
 ## Download
 
 Get the app at [donethat.ai/download](https://donethat.ai/download) or from the [donethat-releases](https://github.com/donethatai/donethat-releases) repo.
@@ -67,7 +69,7 @@ You'll need a [DoneThat](https://donethat.ai) account to sign in and use the app
 
 ## Open vs. Closed
 
-This repository contains the **desktop client only**. The [GPL-3.0 license](LICENSE) applies exclusively to the source code in this repository. No other DoneThat code, service, or infrastructure is covered by this license.
+This repository contains the **desktop client only**. The [GPL-3.0-or-later license](LICENSE) applies exclusively to the source code in this repository. No other DoneThat code, service, or infrastructure is covered by this license.
 
 This follows the same model as [Proton Mail](https://github.com/ProtonMail): open-source client under the GPL, closed backend infrastructure.
 
@@ -105,7 +107,6 @@ Found a vulnerability? Please report it responsibly via [SECURITY.md](SECURITY.m
 ## Docs
 
 - [Backend Compatibility](docs/BACKEND_COMPATIBILITY.md)
-- [Dependency Security](docs/DEPENDENCY_SECURITY.md)
 - [Release Integrity](docs/RELEASE_INTEGRITY.md)
 - [Security](SECURITY.md)
 - [Third-Party Notices](docs/THIRD_PARTY_NOTICES.md)

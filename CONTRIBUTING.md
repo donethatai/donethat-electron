@@ -16,7 +16,7 @@ We are not currently operating this repository as a general open contribution pr
 We may review small, well-scoped pull requests when they:
 
 - clearly affect only the desktop client in this repository
-- align with the public roadmap at `https://donethat.ai/roadmap`
+- align with the public roadmap at [donethat.ai/roadmap](https://donethat.ai/roadmap)
 - match the existing coding style and keep changes focused
 - include tests or verification steps when behavior changes
 - align with current maintainer priorities

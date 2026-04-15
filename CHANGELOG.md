@@ -3,10 +3,11 @@
 ## Unreleased
 
 - Switch license SPDX to `GPL-3.0-or-later`.
-- Add contribution policy with copyright assignment.
-- Scope SECURITY.md to desktop client.
-- Remove "Dear vibecoders" section from README.
-- Simplify open/closed boundary language in README and BACKEND_COMPATIBILITY.
+- Docs updates.
+- Fixed windows iframe embedding bug.
+- Updated Don animation.
+- Aligned design with webapp and website.
+- Allow task reassignment in finish day dialog.
 
 ## 2.0.2
 

@@ -1,7 +1,7 @@
 # Support
 
 For desktop client bugs, open an issue:
-`https://github.com/donethatai/donethat-electron/issues`
+[github.com/donethatai/donethat-electron/issues](https://github.com/donethatai/donethat-electron/issues)
 
 In scope:
 - desktop client behavior in this repository
