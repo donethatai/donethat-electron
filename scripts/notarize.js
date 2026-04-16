@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { notarize } from 'electron-notarize';
+import path from 'path';
 
 dotenv.config();
 
@@ -17,7 +18,7 @@ export default async function notarizing(context) {
     const apiKey = process.env.APP_STORE_CONNECT_KEY_ID;
     const apiIssuer = process.env.APP_STORE_CONNECT_ISSUER_ID;
     // Consider storing the key content directly in an env var or reading from a secure location
-    const apiKeyPath = process.env.APP_STORE_CONNECT_PRIVATE_KEY_PATH; // Or load the key content directly
+    const apiKeyPathRaw = process.env.APP_STORE_CONNECT_PRIVATE_KEY_PATH; // Or load the key content directly
 
     // --- Legacy Apple ID Credentials (Fallback) ---
     const appleId = process.env.APPLEID || process.env.APPLE_ID;
@@ -26,7 +27,11 @@ export default async function notarizing(context) {
 
     let notarizeOptions;
 
-    if (apiKey && apiIssuer && apiKeyPath) {
+    if (apiKey && apiIssuer && apiKeyPathRaw) {
+        const apiKeyPath = path.isAbsolute(apiKeyPathRaw)
+            ? apiKeyPathRaw
+            : path.resolve(process.cwd(), apiKeyPathRaw);
+
         console.log('Using App Store Connect API Key for notarization.');
         notarizeOptions = {
             tool: 'notarytool',
@@ -37,9 +42,11 @@ export default async function notarizing(context) {
             appleApiKey: apiKeyPath, // Assuming env var holds the PATH to the .p8 file
             appleApiKeyId: apiKey,
             appleApiIssuer: apiIssuer,
-            ascProvider: teamId, // Include Team ID as ascProvider for clarity if needed with API Key
             verbose: true,
         };
+        if (teamId) {
+            notarizeOptions.ascProvider = teamId;
+        }
         // If APP_STORE_CONNECT_PRIVATE_KEY_P8 contains the key *content*:
         // const apiKeyContent = process.env.APP_STORE_CONNECT_PRIVATE_KEY_P8;
         // if (apiKeyContent) {

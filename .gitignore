@@ -17,6 +17,9 @@ coverage
 .env.local
 .env.*.local
 
+# Local private audit output
+.audit/
+
 # OS
 .DS_Store
 

@@ -34,6 +34,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Mask secrets
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.GH_PAT }}"
+          echo "::add-mask::${{ secrets.CONNECT_ID }}"
+          echo "::add-mask::${{ secrets.CONNECT_ISSUER_ID }}"
+          echo "::add-mask::${{ secrets.CONNECT_PRIVATE_KEY_BASE64 }}"
+          echo "::add-mask::${{ secrets.MAC_CERTIFICATE_PASSWORD }}"
+          echo "::add-mask::${{ secrets.SM_CLIENT_CERT_PASSWORD }}"
+          echo "::add-mask::${{ secrets.SM_KEYPAIR_ALIAS }}"
+          echo "::add-mask::${{ secrets.SM_API_KEY }}"
+          echo "::add-mask::${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}"
+          echo "::add-mask::${{ secrets.SM_HOST }}"
+
       - name: Ensure release runs from main
         shell: bash
         run: |
@@ -71,18 +85,20 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=optional
 
-      - name: Set Apple environment variables
+      - name: Set mac signing + notarization environment
         if: matrix.platform == 'mac'
         run: |
-          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> $GITHUB_ENV
-          echo "APPLE_ID_PASSWORD=${{ secrets.APPLE_ID_PASSWORD }}" >> $GITHUB_ENV
-          echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> $GITHUB_ENV
-          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
+          echo "::add-mask::${{ secrets.MAC_CERTIFICATE }}"
+          echo "::add-mask::${{ secrets.CONNECT_PRIVATE_KEY_BASE64 }}"
+
+          mkdir -p "$RUNNER_TEMP/donethat"
+          echo "${{ secrets.CONNECT_PRIVATE_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/donethat/asc-notary.p8"
+          echo "APP_STORE_CONNECT_KEY_ID=${{ secrets.CONNECT_ID }}" >> $GITHUB_ENV
+          echo "APP_STORE_CONNECT_ISSUER_ID=${{ secrets.CONNECT_ISSUER_ID }}" >> $GITHUB_ENV
+          echo "APP_STORE_CONNECT_PRIVATE_KEY_PATH=$RUNNER_TEMP/donethat/asc-notary.p8" >> $GITHUB_ENV
+
           echo "CSC_LINK=${{ secrets.MAC_CERTIFICATE }}" >> $GITHUB_ENV
           echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CERTIFICATE_PASSWORD }}" >> $GITHUB_ENV
-          
-          # Log for debugging
-          echo "Apple environment variables set"
         shell: bash
           
       - name: Setup DigiCert code signing for Windows
@@ -92,6 +108,9 @@ jobs:
       - name: Setup DigiCert certificate and environment variables
         if: matrix.platform == 'win'
         run: |
+          # Large values: mask close to use to avoid any runner quirks.
+          echo "::add-mask::${{ secrets.SM_CLIENT_CERT_FILE_B64 }}"
+
           echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
           echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> $GITHUB_ENV
           echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> $GITHUB_ENV
