@@ -687,6 +687,14 @@ ipcMain.handle('get-debug-flag', () => {
   return DEBUG === true;
 });
 
+ipcMain.handle('get-main-window-visibility', () => {
+  try {
+    return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible());
+  } catch (_) {
+    return false;
+  }
+});
+
 // Recording control handlers for renderer topbar
 ipcMain.on('pauseForMs', (event, ms) => {
   if (stateManager?.isManualPauseAllowed && !stateManager.isManualPauseAllowed()) {

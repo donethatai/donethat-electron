@@ -428,19 +428,12 @@
         </div>
         <!-- Embedded web portal area -->
         <div class="dashboard-embed">
-          <webview
-            id="portalView"
-            src="https://app.donethat.ai"
-            class="portal-frame"
-            partition="persist:donethat"
-            preload="./portal-preload.js"
-            webpreferences="contextIsolation=true, nodeIntegration=false"
-          ></webview>
+          <div id="portalMount" class="portal-frame"></div>
           <div id="portalSuspendedPlaceholder" class="webview-error hidden">
             <div class="flex flex-col items-center justify-center h-full p-8 text-center">
               <div class="text-gray-500 mb-4">
-                <p class="text-lg font-normal mb-2">Dashboard paused while app is hidden</p>
-                <p class="text-sm text-gray-400 mb-4">Resume the dashboard if it does not reload automatically.</p>
+                <p class="text-lg font-normal mb-2">Dashboard is not loaded right now</p>
+                <p class="text-sm text-gray-400 mb-4">Reload the dashboard if it does not start automatically.</p>
                 <button id="reloadSuspendedPortalBtn" class="dt-button dt-button--primary dt-button--small">
                   Reload Dashboard
                 </button>

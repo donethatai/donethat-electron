@@ -109,6 +109,7 @@ const validInvokeChannels = [
   // UI helpers
   'open-external',
   'get-debug-flag',
+  'get-main-window-visibility',
   'hotkey:get',
   'hotkey:set',
   'getInitialPauseState',

@@ -14,6 +14,10 @@ const { initializeAnalytics, trackPageView } = require('./analytics.js');
 const { initializeFeedback } = require('./feedback.js');
 const { routeLink } = require('./link-router.js');
 const { showBanner } = require('./notify.js');
+const {
+  drainPendingPortalBridge,
+  shouldSendGenericPortalToken
+} = require('./portal-pending-bridge.js');
 const { 
   hasScreenCapturePermission,
   hasWindowsPermission,
@@ -36,6 +40,7 @@ require('./linux-screenshot');
 
 // Reference to embedded portal webview
 let portalView = null;
+let portalMount = null;
 let portalDomReady = false;
 let lastPortalTokenSent = null;
 let lastPortalTokenTs = 0;
@@ -46,10 +51,14 @@ const PORTAL_LOAD_TIMEOUT_MS = 12000; // 12s timeout for slow networks
 const PORTAL_MAX_RETRIES = 3;
 let portalSpinnerTimer = null; // delay before showing dashboard spinner
 const PORTAL_RELOAD_COOLDOWN_MS = 10000; // avoid reloads shortly after token delivery
-const PORTAL_BLANK_URL = 'about:blank';
 const PORTAL_DEFAULT_URL = 'https://app.donethat.ai';
-let portalSuspendedForTray = false;
-let portalSuspendInFlight = false;
+let isAppWindowVisible = false;
+const pendingPortalBridge = {
+  customToken: null,
+  reauthResult: null,
+  logout: false,
+  reloadAfterLoad: false
+};
 
 // Inform main that renderer is ready to receive auth tokens as early as possible
 try { ipcRenderer.send('renderer:ready-for-auth'); } catch (_) {}
@@ -85,11 +94,16 @@ function clearPortalLoadWatchdog() {
 function startPortalLoadWatchdog(reason) {
   try { clearPortalLoadWatchdog(); } catch (_) {}
   try {
+    const activePortalView = portalView;
     // Reuse summary spinner as a generic dashboard overlay while webview loads (only when online)
     if (navigator.onLine) {
       showPortalSpinnerDelayed();
     }
     portalLoadTimer = setTimeout(() => {
+      if (!activePortalView || activePortalView !== portalView) {
+        clearPortalLoadWatchdog();
+        return;
+      }
       // If we timed out waiting for load, show error and optionally retry
       try { console.warn('[Webview] load timeout (' + (reason || 'unknown') + '), retries:', portalLoadRetries); } catch (_) {}
       showWebviewError();
@@ -98,8 +112,7 @@ function startPortalLoadWatchdog(reason) {
         portalLoadRetries += 1;
         try {
           if (navigator.onLine) hideWebviewError();
-          portalView.reload();
-          startPortalLoadWatchdog('timeout-retry-' + portalLoadRetries);
+          recoverPortalView('timeout-retry-' + portalLoadRetries);
         } catch (e) {
           console.error('[Webview] Error reloading after timeout:', e);
           clearPortalLoadWatchdog();
@@ -147,6 +160,8 @@ function updateTopbarReloadVisibility(viewName) {
 async function sendPortalLoginIfPossible() {
   try {
     if (!portalView) return;
+    if (!portalDomReady) return;
+    if (!shouldSendGenericPortalToken(pendingPortalBridge)) return;
     if (!isAuthenticated() || !auth?.currentUser?.getIdToken) return;
     const token = await auth.currentUser.getIdToken();
     // Debounce: avoid spamming the portal with the same token too frequently
@@ -159,8 +174,6 @@ async function sendPortalLoginIfPossible() {
     try { portalView.send('auth:setToken', token); } catch (e) { console.error('[PortalSync] Error sending token', e); }
     lastPortalTokenSent = token;
     lastPortalTokenTs = now;
-    lastPortalAuthResponseType = 'token';
-    lastPortalAuthResponseTs = now;
   } catch (e) {}
 }
 
@@ -177,9 +190,6 @@ function canReloadPortalNow() {
 function safePortalReload(reason) {
   try {
     if (!portalView) return;
-    if (portalSuspendedForTray) return;
-    const currentSrc = portalView.getAttribute('src') || '';
-    if (currentSrc === PORTAL_BLANK_URL) return;
     // Only reload once the webview has emitted dom-ready; calling reload too early
     // can throw “WebView must be attached to the DOM and dom-ready emitted”.
     if (!portalDomReady) return;
@@ -193,7 +203,7 @@ function safePortalReload(reason) {
   }
 }
 
-function setPortalSuspendedPlaceholderVisible(visible) {
+function setPortalPlaceholderVisible(visible) {
   const placeholder = document.getElementById('portalSuspendedPlaceholder');
   if (!placeholder) return;
   if (visible) {
@@ -203,38 +213,263 @@ function setPortalSuspendedPlaceholderVisible(visible) {
   }
 }
 
-function suspendPortalForTray() {
-  if (!portalView) return;
-  if (portalSuspendedForTray) return;
-  try { clearPortalLoadWatchdog(); } catch (_) {}
-  try { hidePortalSpinner(); } catch (_) {}
-  portalDomReady = false;
-  portalSuspendInFlight = true;
-  const currentSrc = portalView.getAttribute('src') || '';
-  if (currentSrc && currentSrc !== PORTAL_BLANK_URL) {
-    portalView.setAttribute('data-last-src', currentSrc);
-  }
-  if (currentSrc !== PORTAL_BLANK_URL) {
-    try { portalView.setAttribute('src', PORTAL_BLANK_URL); } catch (_) {}
-  }
-  try { portalView.classList.add('hidden'); } catch (_) {}
-  setPortalSuspendedPlaceholderVisible(true);
-  portalSuspendedForTray = true;
+function resetPortalAuthSyncState() {
+  lastPortalTokenSent = null;
+  lastPortalTokenTs = 0;
 }
 
-function resumePortalFromTrayIfNeeded() {
-  if (!portalView || !portalSuspendedForTray) return;
-  if (!(getCurrentView && getCurrentView() === 'dashboard')) {
+function updatePortalPlaceholderVisibility() {
+  const shouldPortalBeActive = getCurrentView() === 'dashboard' && isAppWindowVisible === true;
+  setPortalPlaceholderVisible(shouldPortalBeActive && !portalView);
+}
+
+function flushPendingPortalBridgeActions(view) {
+  if (!view || view !== portalView || !portalDomReady) {
+    return { suppressGenericTokenSync: false };
+  }
+
+  const { actions, suppressGenericTokenSync } = drainPendingPortalBridge(pendingPortalBridge);
+  actions.forEach((action) => {
+    try {
+      if (action.type === 'logout') {
+        view.send('auth:logout');
+      } else if (action.type === 'customToken') {
+        view.send('auth:setCustomToken', action.payload);
+      } else if (action.type === 'reauthResult') {
+        view.send('auth:reauth-result', action.payload);
+      }
+    } catch (e) {
+      console.error('[PortalSync] Error sending pending bridge action', action.type, e);
+    }
+  });
+
+  return { suppressGenericTokenSync };
+}
+
+function attachPortalViewListeners(view) {
+  const isActivePortalView = () => view === portalView;
+
+  view.addEventListener('did-fail-load', (event) => {
+    if (!isActivePortalView()) return;
+    console.error('[Webview] Failed to load:', event);
+    showWebviewError();
+    clearPortalLoadWatchdog();
+    hidePortalSpinner();
+  });
+
+  try {
+    view.addEventListener('did-fail-provisional-load', (event) => {
+      if (!isActivePortalView()) return;
+      console.error('[Webview] Provisional load failed:', event);
+      showWebviewError();
+      clearPortalLoadWatchdog();
+      hidePortalSpinner();
+    });
+  } catch (_) {}
+
+  try {
+    view.addEventListener('did-start-loading', () => {
+      if (!isActivePortalView()) return;
+      if (navigator.onLine) {
+        hideWebviewError();
+        startPortalLoadWatchdog('did-start-loading');
+      } else {
+        showWebviewError();
+      }
+    });
+  } catch (_) {}
+
+  try {
+    view.addEventListener('did-stop-loading', () => {
+      if (!isActivePortalView()) return;
+      clearPortalLoadWatchdog();
+      hidePortalSpinner();
+    });
+  } catch (_) {}
+
+  view.addEventListener('dom-ready', () => {
+    if (!isActivePortalView()) return;
+    portalDomReady = true;
+    if (navigator.onLine) {
+      hideWebviewError();
+    }
+    portalLoadRetries = 0;
+    clearPortalLoadWatchdog();
+    hidePortalSpinner();
+    const { suppressGenericTokenSync } = flushPendingPortalBridgeActions(view);
+    if (!suppressGenericTokenSync) {
+      sendPortalLoginIfPossible();
+    }
+
+    (async () => {
+      try {
+        const isDebug = await ipcRenderer.invoke('get-debug-flag');
+        if (isDebug && isActivePortalView()) {
+          try { view.openDevTools(); } catch (e) {}
+        }
+      } catch (e) {}
+    })();
+  });
+
+  try {
+    view.addEventListener('did-finish-load', () => {
+      if (!isActivePortalView()) return;
+      portalLoadRetries = 0;
+      clearPortalLoadWatchdog();
+      hidePortalSpinner();
+      if (pendingPortalBridge.reloadAfterLoad) {
+        pendingPortalBridge.reloadAfterLoad = false;
+        safePortalReload('calendar-linked-deferred');
+      }
+    });
+  } catch (_) {}
+
+  try { view.addEventListener('did-navigate', () => { if (isActivePortalView()) sendPortalLoginIfPossible(); }); } catch (e) {}
+  try { view.addEventListener('did-frame-finish-load', () => { if (isActivePortalView()) sendPortalLoginIfPossible(); }); } catch (e) {}
+
+  (async () => {
+    try {
+      const isDebug = await ipcRenderer.invoke('get-debug-flag');
+      if (isDebug && isActivePortalView()) {
+        try {
+          view.addEventListener('console-message', (e) => {
+            if (!isActivePortalView()) return;
+            console.log('[Webview]', e.level, e.message);
+          });
+        } catch (e) {}
+      }
+    } catch (e) {}
+  })();
+
+  view.addEventListener('ipc-message', async (event) => {
+    if (!isActivePortalView()) return;
+    if (event.channel === 'portal:logout' || event.channel === 'auth:logout') {
+      try {
+        const { performFullLogout } = require('./auth.js');
+        await performFullLogout();
+      } catch (e) {
+        console.error('Error during portal-initiated logout:', e);
+      }
+    } else if (event.channel === 'portal:open-link') {
+      const url = event.args[0];
+      if (url) routeLink(url, { source: 'webview' });
+    } else if (event.channel === 'auth:google-signin') {
+      const payload = event.args && event.args[0] || {};
+      const requestCalendar = payload.requestCalendar === true;
+      console.log('[ipc-message] auth:google-signin from portal, requestCalendar:', requestCalendar);
+      const openUrl = (url) => {
+        if (url) window.electronAPI.invoke('open-external', url).catch(() => {});
+      };
+      window.electronAPI.invoke('auth:google-signin', { requestCalendar, fromPortal: true })
+        .then((res) => {
+          console.log('[ipc-message] auth:google-signin result:', JSON.stringify(res));
+          if (res && res.success && res.url) openUrl(res.url);
+        })
+        .catch((err) => { console.error('[ipc-message] auth:google-signin error:', err); });
+    } else if (event.channel === 'auth:google-reauth') {
+      const payload = event.args && event.args[0] || {};
+      window.electronAPI.invoke('auth:google-reauth', {
+        idToken: payload.idToken,
+        requestCalendar: payload.requestCalendar === true,
+      })
+        .then((res) => {
+          if (res && res.success && res.url) {
+            window.electronAPI.invoke('open-external', res.url).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+  });
+}
+
+function createPortalView(reason) {
+  if (portalView || !portalMount) return portalView;
+
+  console.info('[PortalLifecycle] create', reason || 'unknown');
+  const view = document.createElement('webview');
+  view.id = 'portalView';
+  view.className = 'portal-frame';
+  view.setAttribute('src', PORTAL_DEFAULT_URL);
+  view.setAttribute('partition', 'persist:donethat');
+  view.setAttribute('preload', './portal-preload.js');
+  view.setAttribute('webpreferences', 'contextIsolation=true, nodeIntegration=false');
+
+  portalView = view;
+  portalDomReady = false;
+  portalLoadRetries = 0;
+  resetPortalAuthSyncState();
+  attachPortalViewListeners(view);
+  portalMount.appendChild(view);
+  updatePortalPlaceholderVisibility();
+
+  if (navigator.onLine) {
+    hideWebviewError();
+    startPortalLoadWatchdog(reason || 'create-portal');
+  } else {
+    showWebviewError();
+  }
+
+  return view;
+}
+
+function destroyPortalView(reason) {
+  if (!portalView) {
+    updatePortalPlaceholderVisibility();
     return;
   }
-  // Force-clear the in-flight flag — on Windows, hidden renderers may never
-  // fire did-stop-loading for the about:blank navigation, leaving this stuck.
-  portalSuspendInFlight = false;
-  const targetSrc = portalView.getAttribute('data-last-src') || PORTAL_DEFAULT_URL;
-  try { portalView.setAttribute('src', targetSrc); } catch (_) {}
-  try { portalView.classList.remove('hidden'); } catch (_) {}
-  setPortalSuspendedPlaceholderVisible(false);
-  portalSuspendedForTray = false;
+
+  console.info('[PortalLifecycle] destroy', reason || 'unknown');
+  const view = portalView;
+  portalView = null;
+  portalDomReady = false;
+  portalLoadRetries = 0;
+  resetPortalAuthSyncState();
+  clearPortalLoadWatchdog();
+  hidePortalSpinner();
+  hideWebviewError();
+
+  try { view.remove(); } catch (_) {}
+  updatePortalPlaceholderVisibility();
+}
+
+function ensurePortalActive(reason) {
+  if (!(getCurrentView() === 'dashboard' && isAppWindowVisible === true)) {
+    destroyPortalView(reason || 'portal-inactive');
+    return null;
+  }
+
+  return portalView || createPortalView(reason || 'ensure-portal-active');
+}
+
+function recoverPortalView(reason, options = {}) {
+  const { ignoreCache = false } = options;
+
+  if (!navigator.onLine) {
+    showWebviewError();
+    return null;
+  }
+
+  let view = ensurePortalActive(reason || 'recover-portal');
+  if (!view) return null;
+
+  hideWebviewError();
+
+  // If the guest failed before dom-ready, a plain reload can be a no-op.
+  // Recreate the webview so user-triggered recovery always has an effect.
+  if (!portalDomReady) {
+    destroyPortalView((reason || 'recover-portal') + '-recreate');
+    view = ensurePortalActive((reason || 'recover-portal') + '-recreate');
+    return view;
+  }
+
+  if (ignoreCache && typeof view.reloadIgnoringCache === 'function') {
+    view.reloadIgnoringCache();
+  } else {
+    view.reload();
+  }
+  startPortalLoadWatchdog(reason || 'recover-portal');
+  sendPortalLoginIfPossible();
+  return view;
 }
 
 
@@ -306,78 +541,71 @@ function navigateToView(viewName) {
       viewToShow = resetView;
       break;
     default:
-      viewToShow = isAuthenticated() ? dashboardView : signInView;
+      viewName = isAuthenticated() ? 'dashboard' : 'signin';
+      viewToShow = viewName === 'dashboard' ? dashboardView : signInView;
   }
 
-  // Check there is an actual change in view
-  if (viewToShow && viewToShow != currentView) {
-    // Hide all views first
-    const allViews = document.querySelectorAll('.view-container');
-    allViews.forEach(view => view.classList.add('hidden'));
-    // Show the requested view
-    viewToShow.classList.remove('hidden');
-    // Ensure settings tiles are contained
-    if (viewName === 'settings' || viewName === 'permissions') {
-      try {
-        const container = document.querySelector('#settingsView .auth-container');
-        if (container) {
-          const cards = Array.from(document.querySelectorAll('#settingsView [data-settings-card]'));
-          cards.forEach((el) => { if (!container.contains(el)) container.appendChild(el); });
-        }
-      } catch (_) {}
-    }
-    
-    // Show custom screenshot section on Linux when settings view is displayed
-    if ((viewName === 'settings' || viewName === 'permissions') && window.electronAPI && window.electronAPI.platform === 'linux') {
-      const linuxInstallGuideNote = document.getElementById('linuxInstallGuideNote');
-      if (linuxInstallGuideNote) {
-        linuxInstallGuideNote.classList.remove('hidden');
-      }
-      const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
-      if (linuxScreenshotSection) {
-        linuxScreenshotSection.classList.remove('hidden');
-      }
-    }
-    
-    // Single shared topbar visibility
-    const appTopbar = document.getElementById('appTopbar');
-    const isAuthScreen = (viewName === 'signin' || viewName === 'signup' || viewName === 'reset' || viewName === 'mfa');
-    if (appTopbar) {
-      const shouldHideTopbar = isAuthScreen;
-      if (shouldHideTopbar) appTopbar.classList.add('hidden');
-      else appTopbar.classList.remove('hidden');
-    }
-    if (document.activeElement) document.activeElement.blur();
-    // If opening dashboard, proactively attempt login message to portal
-    if (viewName === 'dashboard') {
-      resumePortalFromTrayIfNeeded();
-      sendPortalLoginIfPossible();
-      // Refresh webview only when transitioning from a different view to dashboard
-      try {
-        if (currentView !== 'dashboard' && portalView) {
-          safePortalReload('navigate-to-dashboard');
-        }
-      } catch (e) { console.error('[Webview] Error reloading on navigateToView(dashboard):', e); }
-    }
-    // Update the current view state
-    updateCurrentView(viewName);
+  if (!viewToShow) {
+    console.error('View not found:', viewName);
+    return;
+  }
 
-      // Update labels for settings button (global updater)
+  if (currentView === 'dashboard' && viewName === 'dashboard') {
+    ensurePortalActive('repeat-navigate-to-dashboard');
+    return;
+  }
+
+  const allViews = document.querySelectorAll('.view-container');
+  allViews.forEach(view => view.classList.add('hidden'));
+  viewToShow.classList.remove('hidden');
+
+  if (viewName === 'settings' || viewName === 'permissions') {
+    try {
+      const container = document.querySelector('#settingsView .auth-container');
+      if (container) {
+        const cards = Array.from(document.querySelectorAll('#settingsView [data-settings-card]'));
+        cards.forEach((el) => { if (!container.contains(el)) container.appendChild(el); });
+      }
+    } catch (_) {}
+  }
+
+  if ((viewName === 'settings' || viewName === 'permissions') && window.electronAPI && window.electronAPI.platform === 'linux') {
+    const linuxInstallGuideNote = document.getElementById('linuxInstallGuideNote');
+    if (linuxInstallGuideNote) {
+      linuxInstallGuideNote.classList.remove('hidden');
+    }
+    const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
+    if (linuxScreenshotSection) {
+      linuxScreenshotSection.classList.remove('hidden');
+    }
+  }
+
+  const appTopbar = document.getElementById('appTopbar');
+  const isAuthScreen = (viewName === 'signin' || viewName === 'signup' || viewName === 'reset' || viewName === 'mfa');
+  if (appTopbar) {
+    const shouldHideTopbar = isAuthScreen;
+    if (shouldHideTopbar) appTopbar.classList.add('hidden');
+    else appTopbar.classList.remove('hidden');
+  }
+  if (document.activeElement) document.activeElement.blur();
+
+  updateCurrentView(viewName);
+
+  if (viewName === 'dashboard') {
+    ensurePortalActive('navigate-to-dashboard');
+  } else {
+    destroyPortalView('navigate-away-from-dashboard');
+  }
+
   updateSettingsToggleLabelGlobal();
-  
-  // Ensure topbar actions are visible by default (unless on settings without permission)
+
   const topbarActionsElement = document.querySelector('.topbar-actions');
   if (topbarActionsElement && viewName !== 'settings') {
     topbarActionsElement.classList.remove('hidden');
   }
   updateTopbarReloadVisibility(viewName);
-  
-  // Track page view in analytics with all necessary details
   trackPageView(viewName);
   updateDashboardCaptureWarning();
-  } else {
-    console.error('View not found:', viewName);
-  }
 }
 
 async function loadUserSettingsCallback() {
@@ -464,13 +692,10 @@ function showWebviewError() {
         retryBtn.addEventListener('click', () => {
           // Only attempt reload if back online
           if (!navigator.onLine) return;
-          if (portalView) {
-            try {
-              hideWebviewError();
-              portalView.reload();
-            } catch (e) {
-              console.error('[Webview] Error reloading:', e);
-            }
+          try {
+            recoverPortalView('webview-error-retry');
+          } catch (e) {
+            console.error('[Webview] Error reloading:', e);
           }
         });
       }
@@ -487,7 +712,7 @@ function hideWebviewError() {
   }
   // Show the webview again
   try {
-    if (portalView && !portalSuspendedForTray) portalView.classList.remove('hidden');
+    if (portalView) portalView.classList.remove('hidden');
   } catch (_) {}
 }
 
@@ -541,7 +766,7 @@ function updateDashboardCaptureWarning() {
 }
 
 // Update the document ready handler
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Initialize all modules
   initializeAuth(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeDashboard(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
@@ -551,8 +776,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAnalytics();
   document.addEventListener('capture-state-updated', updateDashboardCaptureWarning);
 
-  // Grab the portal webview if present
-  portalView = document.getElementById('portalView');
+  // Grab the portal mount if present
+  portalMount = document.getElementById('portalMount');
   const reloadSuspendedPortalBtn = document.getElementById('reloadSuspendedPortalBtn');
 
   // Respond to main process request to reload webview (throttled in main)
@@ -567,56 +792,34 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) { console.error('[Webview] Error reloading on IPC webview:reload:', e); }
     });
   } catch (e) {}
-  
-  // Track when the webview is ready; avoid reload loops triggered before dom-ready
-  if (portalView) {
-    try {
-      portalView.addEventListener('dom-ready', () => {
-        portalDomReady = true;
-      });
-    } catch (e) {
-      console.error('[Webview] Error attaching dom-ready listener:', e);
-    }
-    // Reload webview when window opens (only once)
-    if (navigator.onLine) {
-      safePortalReload('window-open');
-    }
-  }
-  
+
   // Initial offline/online UI state
   if (!navigator.onLine) {
     showWebviewError();
   } else {
     hideWebviewError();
   }
-  setPortalSuspendedPlaceholderVisible(false);
+
+  try {
+    isAppWindowVisible = await ipcRenderer.invoke('get-main-window-visibility');
+  } catch (_) {
+    isAppWindowVisible = false;
+  }
+  updatePortalPlaceholderVisibility();
 
   if (reloadSuspendedPortalBtn) {
     reloadSuspendedPortalBtn.addEventListener('click', () => {
-      if (!portalView || !navigator.onLine) {
+      if (getCurrentView && getCurrentView() !== 'dashboard') {
+        return;
+      }
+      if (!navigator.onLine) {
         showWebviewError();
         return;
       }
       try {
-        // Force-clear all suspend state
-        portalSuspendInFlight = false;
-        portalSuspendedForTray = false;
-        setPortalSuspendedPlaceholderVisible(false);
-        hideWebviewError();
-        const currentSrc = portalView.getAttribute('src') || '';
-        if (currentSrc === PORTAL_BLANK_URL) {
-          const targetSrc = portalView.getAttribute('data-last-src') || PORTAL_DEFAULT_URL;
-          portalView.setAttribute('src', targetSrc);
-        } else if (typeof portalView.reloadIgnoringCache === 'function') {
-          portalView.reloadIgnoringCache();
-        } else {
-          portalView.reload();
-        }
-        try { portalView.classList.remove('hidden'); } catch (_) {}
-        startPortalLoadWatchdog('manual-suspended-reload');
-        sendPortalLoginIfPossible();
+        recoverPortalView('manual-placeholder-reload', { ignoreCache: true });
       } catch (e) {
-        console.error('[Webview] Error reloading from suspended placeholder:', e);
+        console.error('[Webview] Error reloading dashboard placeholder:', e);
       }
     });
   }
@@ -635,7 +838,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   window.addEventListener('online', () => {
     hideWebviewError();
-    try { if (portalView) { safePortalReload('online'); } } catch (e) { console.error('[Webview] reload on online failed', e); }
+    try {
+      const view = ensurePortalActive('online');
+      if (view) {
+        safePortalReload('online');
+      }
+    } catch (e) { console.error('[Webview] reload on online failed', e); }
   });
 
   // Reloads on focus are coordinated via main process (webview:reload)
@@ -704,31 +912,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const reloadIframeBtn = document.getElementById('reloadIframeBtn');
   if (reloadIframeBtn) {
     reloadIframeBtn.addEventListener('click', () => {
-      if (getCurrentView && getCurrentView() === 'dashboard' && portalView) {
+      if (getCurrentView && getCurrentView() === 'dashboard') {
         try {
           if (!navigator.onLine) {
             showWebviewError();
             return;
           }
-          // Force-clear any stuck suspend state so the reload can proceed
-          if (portalSuspendedForTray) {
-            portalSuspendInFlight = false;
-            portalSuspendedForTray = false;
-          }
-          setPortalSuspendedPlaceholderVisible(false);
-          hideWebviewError();
-          const currentSrc = portalView.getAttribute('src') || '';
-          if (currentSrc === PORTAL_BLANK_URL) {
-            const targetSrc = portalView.getAttribute('data-last-src') || PORTAL_DEFAULT_URL;
-            portalView.setAttribute('src', targetSrc);
-          } else if (typeof portalView.reloadIgnoringCache === 'function') {
-            portalView.reloadIgnoringCache();
-          } else {
-            portalView.reload();
-          }
-          try { portalView.classList.remove('hidden'); } catch (_) {}
-          startPortalLoadWatchdog('manual-hard-reload');
-          sendPortalLoginIfPossible();
+          recoverPortalView('manual-hard-reload', { ignoreCache: true });
         } catch (e) {
           console.error('[Webview] Error in manual hard reload:', e);
         }
@@ -924,128 +1114,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Keep settings/back icon accurate on load
   updateSettingsIcon();
-
-  if (portalView) {
-    function clearSuspendInFlight() {
-      portalSuspendInFlight = false;
-    }
-
-    portalView.addEventListener('did-fail-load', (event) => {
-      console.error('[Webview] Failed to load:', event);
-      showWebviewError();
-      clearPortalLoadWatchdog();
-      hidePortalSpinner();
-      clearSuspendInFlight();
-    });
-    try { portalView.addEventListener('did-fail-provisional-load', (event) => {
-      console.error('[Webview] Provisional load failed:', event);
-      showWebviewError();
-      clearPortalLoadWatchdog();
-      hidePortalSpinner();
-      clearSuspendInFlight();
-    }); } catch (_) {}
-
-    try { portalView.addEventListener('did-start-loading', () => {
-      if (navigator.onLine) {
-        hideWebviewError();
-        startPortalLoadWatchdog('did-start-loading');
-      } else {
-        showWebviewError();
-      }
-    }); } catch (_) {}
-
-    try { portalView.addEventListener('did-stop-loading', () => {
-      clearPortalLoadWatchdog();
-      hidePortalSpinner();
-      clearSuspendInFlight();
-    }); } catch (_) {}
-
-    // When the webview is ready, send login token and optionally open devtools
-    portalView.addEventListener('dom-ready', () => {
-      // Only hide error when online; keep offline overlay visible when offline
-      if (navigator.onLine) {
-        hideWebviewError();
-      }
-      portalLoadRetries = 0;
-      clearPortalLoadWatchdog();
-      hidePortalSpinner();
-      // Proactively send login token whenever portal becomes ready
-      sendPortalLoginIfPossible();
-
-      // Open devtools only when DEBUG flag is true
-      (async () => {
-        try {
-          const isDebug = await ipcRenderer.invoke('get-debug-flag');
-          if (isDebug) {
-            try { portalView.openDevTools(); } catch (e) {}
-          }
-        } catch (e) {}
-      })();
-    });
-
-    try { portalView.addEventListener('did-finish-load', () => {
-      portalLoadRetries = 0;
-      clearPortalLoadWatchdog();
-      hidePortalSpinner();
-    }); } catch (_) {}
-
-    // Also send token on internal navigations
-    try { portalView.addEventListener('did-navigate', sendPortalLoginIfPossible); } catch (e) {}
-    try { portalView.addEventListener('did-frame-finish-load', sendPortalLoginIfPossible); } catch (e) {}
-
-    // Pipe webview console to renderer for visibility (only in debug mode)
-    (async () => {
-      try {
-        const isDebug = await ipcRenderer.invoke('get-debug-flag');
-        if (isDebug) {
-          try {
-            portalView.addEventListener('console-message', (e) => {
-              console.log('[Webview]', e.level, e.message);
-            });
-          } catch (e) {}
-        }
-      } catch (e) {}
-    })();
-
-    portalView.addEventListener('ipc-message', async (event) => {
-      if (event.channel === 'portal:logout' || event.channel === 'auth:logout') {
-        try {
-          const { performFullLogout } = require('./auth.js');
-          await performFullLogout();
-        } catch (e) {
-          console.error('Error during portal-initiated logout:', e);
-        }
-      } else if (event.channel === 'portal:open-link') {
-        const url = event.args[0];
-        if (url) routeLink(url, { source: 'webview' });
-      } else if (event.channel === 'auth:google-signin') {
-        const payload = event.args && event.args[0] || {};
-        const requestCalendar = payload.requestCalendar === true;
-        console.log('[ipc-message] auth:google-signin from portal, requestCalendar:', requestCalendar);
-        const openUrl = (url) => {
-          if (url) window.electronAPI.invoke('open-external', url).catch(() => {});
-        };
-        window.electronAPI.invoke('auth:google-signin', { requestCalendar, fromPortal: true })
-          .then((res) => {
-            console.log('[ipc-message] auth:google-signin result:', JSON.stringify(res));
-            if (res && res.success && res.url) openUrl(res.url);
-          })
-          .catch((err) => { console.error('[ipc-message] auth:google-signin error:', err); });
-      } else if (event.channel === 'auth:google-reauth') {
-        const payload = event.args && event.args[0] || {};
-        window.electronAPI.invoke('auth:google-reauth', {
-          idToken: payload.idToken,
-          requestCalendar: payload.requestCalendar === true,
-        })
-          .then((res) => {
-            if (res && res.success && res.url) {
-              window.electronAPI.invoke('open-external', res.url).catch(() => {});
-            }
-          })
-          .catch(() => {});
-      }
-    });
-  }
+  ensurePortalActive('dom-content-loaded');
 
   document.addEventListener('click', (e) => {
     const link = e.target.closest('a[href]');
@@ -1083,7 +1152,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Keep portal session in sync with desktop auth
 onAuthStateChanged(auth, async (user) => {
-  if (!portalView) return;
+  if (!user) {
+    pendingPortalBridge.logout = true;
+    pendingPortalBridge.customToken = null;
+    pendingPortalBridge.reauthResult = null;
+    if (portalView && portalDomReady) {
+      try { portalView.send('auth:logout'); } catch (e) { console.error('[PortalSync] Error sending logout', e); }
+      pendingPortalBridge.logout = false;
+    }
+    resetPortalAuthSyncState();
+    return;
+  }
+
+  if (!portalView || !portalDomReady) return;
   if (user) {
     try {
       const token = await user.getIdToken();
@@ -1091,29 +1172,18 @@ onAuthStateChanged(auth, async (user) => {
       try { portalView.send('auth:setToken', token); } catch (e) { console.error('[PortalSync] Error sending token', e); }
       lastPortalTokenSent = token;
       lastPortalTokenTs = Date.now();
-      lastPortalAuthResponseType = 'token';
-      lastPortalAuthResponseTs = Date.now();
     } catch (e) {}
-  } else {
-    // Notify webview to clear client-side session via message
-    try { portalView.send('auth:logout'); } catch (e) { console.error('[PortalSync] Error sending logout', e); }
-    lastPortalTokenSent = null;
-    lastPortalTokenTs = 0;
-    lastPortalAuthResponseType = 'logout';
-    lastPortalAuthResponseTs = Date.now();
   }
 });
 
 onIdTokenChanged(auth, async (user) => {
-  if (!portalView) return;
+  if (!portalView || !portalDomReady) return;
   if (user) {
     try {
       const token = await user.getIdToken();
       portalView.send('auth:setToken', token);
       lastPortalTokenSent = token;
       lastPortalTokenTs = Date.now();
-      lastPortalAuthResponseType = 'token';
-      lastPortalAuthResponseTs = Date.now();
     } catch (e) {}
   }
 });
@@ -1160,11 +1230,13 @@ ipcRenderer.on('navigate', (event, viewName) => {
 });
 
 ipcRenderer.on('app:window-hidden', () => {
-  suspendPortalForTray();
+  isAppWindowVisible = false;
+  destroyPortalView('app-window-hidden');
 });
 
 ipcRenderer.on('app:window-shown', () => {
-  resumePortalFromTrayIfNeeded();
+  isAppWindowVisible = true;
+  ensurePortalActive('app-window-shown');
 });
 
 // Add pause state handler
@@ -1184,22 +1256,32 @@ ipcRenderer.on('router:open-link', (event, url) => {
 // Calendar link success from desktop (donethat://auth?action=linked&success=true)
 ipcRenderer.on('auth:calendar-linked', () => {
   try {
-    if (portalView) {
+    if (portalView && portalDomReady) {
       safePortalReload('calendar-linked');
+    } else if (portalView) {
+      pendingPortalBridge.reloadAfterLoad = true;
     }
   } catch (_) {}
 });
 
 ipcRenderer.on('auth:custom-token-for-portal', (_event, payload) => {
   try {
-    const wv = document.getElementById('portalView');
-    if (wv && payload && payload.customToken) wv.send('auth:setCustomToken', payload);
+    if (!payload || !payload.customToken) return;
+    if (portalView && portalDomReady) {
+      portalView.send('auth:setCustomToken', payload);
+      return;
+    }
+    pendingPortalBridge.customToken = payload;
   } catch (e) {}
 });
 ipcRenderer.on('auth:reauth-result-for-portal', (_event, payload) => {
   try {
-    const wv = document.getElementById('portalView');
-    if (wv && payload) wv.send('auth:reauth-result', payload);
+    if (!payload) return;
+    if (portalView && portalDomReady) {
+      portalView.send('auth:reauth-result', payload);
+      return;
+    }
+    pendingPortalBridge.reauthResult = payload;
   } catch (e) {}
 });
 

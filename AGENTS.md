@@ -101,6 +101,15 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - Keep entries concise: one line per change, imperative mood (e.g. "Add …", "Fix …", "Update …").
 - Group by category if there are many entries: Features, Fixes, Docs, Internal.
 
+## Communication Style
+
+- Keep non-code responses terse by default.
+- Lead with the answer or conclusion.
+- Default to one short paragraph or 3-5 short bullets.
+- Do not give long explanations unless explicitly asked.
+- Keep review responses focused on findings, not recap.
+- Keep non-code responses under 8 lines unless the user asks for more detail.
+
 ## Dependency Docs
 
 - When changing production dependencies in `package.json` or `package-lock.json`, also refresh `docs/THIRD_PARTY_NOTICES.md`.

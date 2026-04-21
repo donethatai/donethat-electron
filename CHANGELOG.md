@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix dashboard portal lifecycle, recovery, and auth handoff around hide/reopen flows.
+
 ## 2.1.0
 
 - Switch license SPDX to `GPL-3.0-or-later`.
