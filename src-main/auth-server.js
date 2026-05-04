@@ -7,7 +7,7 @@ const log = require('electron-log');
  */
 class AuthServer {
   constructor() {
-    this.server = null;
+    this.servers = [];
     this.port = 2999;
     this.onTokenReceived = null;
   }
@@ -18,17 +18,17 @@ class AuthServer {
    * @returns {Promise<number>} - The port the server is listening on
    */
   async start(onTokenReceived) {
-    if (this.server) {
+    if (this.isRunning()) {
       return this.port;
     }
 
     this.onTokenReceived = onTokenReceived;
 
     return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
+      const handleRequest = (req, res) => {
         try {
           const url = new URL(req.url, `http://localhost:${this.port}`);
-          
+
           if (url.pathname === '/auth') {
             const token = url.searchParams.get('token');
             const idToken = url.searchParams.get('idToken');
@@ -57,7 +57,7 @@ class AuthServer {
               if (this.onTokenReceived) {
                 this.onTokenReceived(token, { idToken, accessToken });
               }
-              
+
               res.writeHead(200, { 'Content-Type': 'text/html' });
               res.end(`
                 <html>
@@ -80,26 +80,58 @@ class AuthServer {
           res.writeHead(500, { 'Content-Type': 'text/plain' });
           res.end('Internal server error');
         }
-      });
+      };
 
-      this.server.listen(this.port, '127.0.0.1', () => {
+      const server4 = http.createServer(handleRequest);
+      const server6 = http.createServer(handleRequest);
+
+      let settled = false;
+      const settleOk = () => {
+        if (settled) return;
+        settled = true;
         resolve(this.port);
-      });
+      };
 
-      this.server.on('error', (error) => {
+      const teardownAndRetryPort = () => {
+        try {
+          server4.close();
+        } catch (_) {}
+        try {
+          server6.close();
+        } catch (_) {}
+        this.servers = [];
+        this.port++;
+        this.start(onTokenReceived).then(resolve).catch(reject);
+      };
+
+      server4.once('error', (error) => {
         if (error.code === 'EADDRINUSE') {
-          // Port is in use, try next port
-          const failedServer = this.server;
-          this.server = null;
-          try {
-            failedServer?.close();
-          } catch (_) {}
-          this.port++;
-          this.start(onTokenReceived).then(resolve).catch(reject);
-        } else {
-          log.error('Auth server error:', error);
+          teardownAndRetryPort();
+          return;
+        }
+        this.servers = [];
+        log.error('Auth server error:', error);
+        if (!settled) {
+          settled = true;
           reject(error);
         }
+      });
+
+      server4.listen(this.port, '127.0.0.1', () => {
+        this.servers = [server4];
+
+        server6.once('error', (err) => {
+          log.warn(
+            'Auth server: IPv6 loopback (::1) not available, using IPv4 only:',
+            err.code || err.message,
+          );
+          settleOk();
+        });
+
+        server6.listen(this.port, '::1', () => {
+          this.servers.push(server6);
+          settleOk();
+        });
       });
     });
   }
@@ -108,11 +140,13 @@ class AuthServer {
    * Stop the auth server
    */
   stop() {
-    if (this.server) {
-      this.server.close();
-      this.server = null;
-      this.onTokenReceived = null;
+    for (const s of this.servers) {
+      try {
+        s.close();
+      } catch (_) {}
     }
+    this.servers = [];
+    this.onTokenReceived = null;
   }
 
   /**
@@ -120,7 +154,7 @@ class AuthServer {
    * @returns {number|null} - The port or null if not running
    */
   getPort() {
-    return this.server ? this.port : null;
+    return this.isRunning() ? this.port : null;
   }
 
   /**
@@ -128,7 +162,7 @@ class AuthServer {
    * @returns {boolean}
    */
   isRunning() {
-    return this.server !== null;
+    return this.servers.length > 0;
   }
 }
 

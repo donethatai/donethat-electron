@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fix dashboard portal lifecycle, recovery, and auth handoff around hide/reopen flows.
+- Listen for Google OAuth callback on IPv4 and IPv6 loopback so browsers that resolve `localhost` to `[::1]` (common on Windows) still reach the app.
 - Switch Windows code signing from DigiCert KeyLocker to Azure Trusted Signing (OIDC). Windows arm64 builds are temporarily unsigned because Azure Trusted Signing does not yet ship an ARM64 dlib.
 - Fix silent Linux auto-update failure when the AppImage lives in a non-writable location: detect missing write permissions up front and surface a manual-download notification instead of swallowing the `EACCES` from `electron-updater`.
 
