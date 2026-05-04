@@ -538,6 +538,37 @@ function installUpdate(payload) {
   }
 }
 
+// electron-updater's AppImageUpdater.doInstall() unlinks the running AppImage and
+// moves the new file into its parent directory. When the AppImage lives in a
+// root-owned location (e.g. /opt, /usr/local/bin) this fails with EACCES unless
+// the app was launched with sudo. The error is only logged, so the user sees
+// nothing happen. Probe writability up front so we can surface a useful message
+// instead of silently failing.
+function isAppImageWritable() {
+  if (process.platform !== 'linux') return { writable: true, path: null };
+  const appImagePath = process.env.APPIMAGE;
+  if (!appImagePath) {
+    return { writable: false, reason: 'APPIMAGE env not set', path: null };
+  }
+  try {
+    const fs = require('fs');
+    fs.accessSync(appImagePath, fs.constants.W_OK);
+    fs.accessSync(path.dirname(appImagePath), fs.constants.W_OK);
+    return { writable: true, path: appImagePath };
+  } catch (e) {
+    return { writable: false, reason: e.code || e.message, path: appImagePath };
+  }
+}
+
+function openDownloadPage() {
+  try {
+    const { shell } = require('electron');
+    shell.openExternal('https://donethat.ai/download');
+  } catch (e) {
+    log.error('Failed to open download page:', e);
+  }
+}
+
 function dispatchNotificationAction(action) {
   const channel = action && action.channel;
   const payload = action && action.payload;
@@ -553,6 +584,11 @@ function dispatchNotificationAction(action) {
 
   if (channel === 'update:install') {
     installUpdate(payload);
+    return;
+  }
+
+  if (channel === 'update:open-download-page') {
+    openDownloadPage();
     return;
   }
 
@@ -621,7 +657,31 @@ function setupAutoUpdater() {
       } else if (process.platform === 'linux') {
         // Linux - show dialog, never silent install
         log.info('Linux platform: using dialog-based update');
-        
+
+        const writeCheck = isAppImageWritable();
+        if (!writeCheck.writable) {
+          log.warn(`AppImage at ${writeCheck.path || '<unknown>'} is not writable (${writeCheck.reason}); in-place update would fail. Offering manual download instead.`);
+          // Prevent electron-updater from retrying the same doomed install on app quit.
+          try { autoUpdater.autoInstallOnAppQuit = false; } catch (_) {}
+
+          const locationHint = writeCheck.path
+            ? `The current AppImage at ${writeCheck.path} can't be replaced without elevated permissions.`
+            : `The current AppImage location can't be replaced without elevated permissions.`;
+          try {
+            if (mainWindow) {
+              mainWindow.webContents.send('update:available');
+              mainWindow.webContents.send('request-notification', {
+                id: 'update-manual-download',
+                title: 'DoneThat Update Available',
+                message: `A new version (${info.version}) is ready. ${locationHint} Download the latest AppImage and replace the existing one, or move the AppImage to a user-writable folder (e.g. ~/Applications) to enable auto-updates.`,
+                sticky: true,
+                action: { label: 'Download', channel: 'update:open-download-page', payload: null }
+              });
+            }
+          } catch (e) { log.warn('Failed to send manual-update notify (linux):', e); }
+          return;
+        }
+
         try {
           if (mainWindow) {
             mainWindow.webContents.send('update:available');
@@ -1093,6 +1153,12 @@ app.whenReady().then(async () => {
     try {
       installUpdate(payload);
     } catch (e) { log.error('Failed to install update from banner:', e); }
+  });
+
+  // IPC to open the public download page (used on Linux when the running AppImage
+  // is in a location the current user can't overwrite).
+  ipcMain.on('update:open-download-page', () => {
+    openDownloadPage();
   });
 
   // IPC to check update availability status

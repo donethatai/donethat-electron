@@ -57,6 +57,7 @@ const validSendChannels = [
 
   // Updates
   'update:install',
+  'update:open-download-page',
 
   // Dashboard / summary
   'summarySubmitted',
