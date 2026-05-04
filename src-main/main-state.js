@@ -949,7 +949,9 @@ function _checkWorkdayEndNotification() {
 }
 
 function _clearPauseStateAndCheckRecording() {
-  // Clear pause state to avoid issues
+  if (pauseState.timeoutId) {
+    clearTimeout(pauseState.timeoutId);
+  }
   pauseState = { endTime: null, timeoutId: null, reason: null };
 
   if (checkAndAdjustRecording) {
@@ -1188,7 +1190,11 @@ function loadPauseState() {
     // If pause end time is in the future, restore the pause
     if (endTime > now) {
       const remainingDuration = endTime.getTime() - now.getTime();
-      
+
+      if (pauseState.timeoutId) {
+        clearTimeout(pauseState.timeoutId);
+      }
+
       pauseState = {
         endTime: endTime,
         timeoutId: setTimeout(() => _handlePauseTimeout(savedState.reason), remainingDuration),
