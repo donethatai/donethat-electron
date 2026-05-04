@@ -92,6 +92,37 @@ function schedulePortalAuthHandshakeRetries(view) {
   });
 }
 
+/** Token + bounded retries when portal is ready (Firebase user is source of truth; avoids lag vs app-state `isAuthenticated`). */
+function kickPortalAuthHandshake() {
+  try {
+    if (!portalView || !portalDomReady) return;
+    if (!shouldSendGenericPortalToken(pendingPortalBridge)) return;
+    if (!auth?.currentUser?.getIdToken) return;
+    sendPortalLoginIfPossible({ bypassDebounce: true });
+    schedulePortalAuthHandshakeRetries(portalView);
+  } catch (_) {}
+}
+
+/** SPA navigations fire often — bypass debounce without resetting the full retry timer suite. */
+function nudgePortalAuthToken() {
+  try {
+    sendPortalLoginIfPossible({ bypassDebounce: true });
+  } catch (_) {}
+}
+
+/** After login, auth listener often ran before `<webview>` existed; dom-ready may race settings/nav — kick several times. */
+function schedulePortalKickAfterDashboardNavigation() {
+  const kickDelaysMs = [0, 120, 350, 900, 2200];
+  kickDelaysMs.forEach((delay) => {
+    setTimeout(() => {
+      try {
+        if (getCurrentView() !== 'dashboard') return;
+        kickPortalAuthHandshake();
+      } catch (_) {}
+    }, delay);
+  });
+}
+
 function hidePortalSpinner() {
   try {
     if (portalSpinnerTimer) { clearTimeout(portalSpinnerTimer); portalSpinnerTimer = null; }
@@ -191,7 +222,7 @@ async function sendPortalLoginIfPossible(options = {}) {
     if (!portalView) return;
     if (!portalDomReady) return;
     if (!shouldSendGenericPortalToken(pendingPortalBridge)) return;
-    if (!isAuthenticated() || !auth?.currentUser?.getIdToken) return;
+    if (!auth?.currentUser?.getIdToken) return;
     const token = await auth.currentUser.getIdToken();
     const now = Date.now();
     if (!bypassDebounce) {
@@ -328,8 +359,7 @@ function attachPortalViewListeners(view) {
     hidePortalSpinner();
     const { suppressGenericTokenSync } = flushPendingPortalBridgeActions(view);
     if (!suppressGenericTokenSync) {
-      sendPortalLoginIfPossible();
-      schedulePortalAuthHandshakeRetries(view);
+      kickPortalAuthHandshake();
     }
 
     (async () => {
@@ -349,7 +379,7 @@ function attachPortalViewListeners(view) {
       clearPortalLoadWatchdog();
       hidePortalSpinner();
       if (shouldSendGenericPortalToken(pendingPortalBridge)) {
-        sendPortalLoginIfPossible({ bypassDebounce: true });
+        kickPortalAuthHandshake();
       }
       if (pendingPortalBridge.reloadAfterLoad) {
         pendingPortalBridge.reloadAfterLoad = false;
@@ -358,8 +388,8 @@ function attachPortalViewListeners(view) {
     });
   } catch (_) {}
 
-  try { view.addEventListener('did-navigate', () => { if (isActivePortalView()) sendPortalLoginIfPossible(); }); } catch (e) {}
-  try { view.addEventListener('did-frame-finish-load', () => { if (isActivePortalView()) sendPortalLoginIfPossible(); }); } catch (e) {}
+  try { view.addEventListener('did-navigate', () => { if (isActivePortalView()) nudgePortalAuthToken(); }); } catch (e) {}
+  try { view.addEventListener('did-frame-finish-load', () => { if (isActivePortalView()) nudgePortalAuthToken(); }); } catch (e) {}
 
   (async () => {
     try {
@@ -503,7 +533,8 @@ function recoverPortalView(reason, options = {}) {
     view.reload();
   }
   startPortalLoadWatchdog(reason || 'recover-portal');
-  sendPortalLoginIfPossible();
+  kickPortalAuthHandshake();
+  schedulePortalKickAfterDashboardNavigation();
   return view;
 }
 
@@ -604,6 +635,7 @@ function navigateToView(viewName) {
 
   if (currentView === 'dashboard' && viewName === 'dashboard') {
     ensurePortalActive('repeat-navigate-to-dashboard');
+    schedulePortalKickAfterDashboardNavigation();
     return;
   }
 
@@ -645,6 +677,7 @@ function navigateToView(viewName) {
 
   if (viewName === 'dashboard') {
     ensurePortalActive('navigate-to-dashboard');
+    schedulePortalKickAfterDashboardNavigation();
   } else {
     destroyPortalView('navigate-away-from-dashboard');
   }
@@ -838,8 +871,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         if (getCurrentView && getCurrentView() === 'dashboard' && portalView) {
           safePortalReload('ipc-reload');
-          // Re-send token after reload (allowed to be no-op)
-          sendPortalLoginIfPossible();
+          schedulePortalKickAfterDashboardNavigation();
         }
       } catch (e) { console.error('[Webview] Error reloading on IPC webview:reload:', e); }
     });
@@ -1226,25 +1258,14 @@ onAuthStateChanged(auth, async (user) => {
 
   if (!portalView || !portalDomReady) return;
   if (user) {
-    try {
-      const token = await user.getIdToken();
-      // Send token via IPC to the webview; web app will handle login via message
-      try { portalView.send('auth:setToken', token); } catch (e) { console.error('[PortalSync] Error sending token', e); }
-      lastPortalTokenSent = token;
-      lastPortalTokenTs = Date.now();
-    } catch (e) {}
+    kickPortalAuthHandshake();
   }
 });
 
 onIdTokenChanged(auth, async (user) => {
   if (!portalView || !portalDomReady) return;
   if (user) {
-    try {
-      const token = await user.getIdToken();
-      portalView.send('auth:setToken', token);
-      lastPortalTokenSent = token;
-      lastPortalTokenTs = Date.now();
-    } catch (e) {}
+    kickPortalAuthHandshake();
   }
 });
 
@@ -1297,6 +1318,9 @@ ipcRenderer.on('app:window-hidden', () => {
 ipcRenderer.on('app:window-shown', () => {
   isAppWindowVisible = true;
   ensurePortalActive('app-window-shown');
+  if (getCurrentView() === 'dashboard') {
+    schedulePortalKickAfterDashboardNavigation();
+  }
   scheduleBlurTopbarChromeFocus();
 });
 
@@ -1319,6 +1343,7 @@ ipcRenderer.on('auth:calendar-linked', () => {
   try {
     if (portalView && portalDomReady) {
       safePortalReload('calendar-linked');
+      schedulePortalKickAfterDashboardNavigation();
     } else if (portalView) {
       pendingPortalBridge.reloadAfterLoad = true;
     }

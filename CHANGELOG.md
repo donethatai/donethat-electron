@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.2.2
+
+- **Embedded dashboard auth bridge:** strengthen Firebase id token handoff into `<webview>` — gate sends on `auth.currentUser` (not app-state `isAuthenticated`), staggered kicks after dashboard navigation (incl. post-login), main-window show, recover, main-process `webview:reload`, and calendar-linked reload; bounded retries from `dom-ready` / `did-finish-load`; debounce-bypass nudges on SPA `did-navigate` / `did-frame-finish-load`.
+
 ## 2.2.1
 
 - Harden desktopCapturer-based screen permission probes (non-Linux) with backoff retries and longer timeouts so cold-start timeouts are less likely to block recording or macOS system-audio checks; user-triggered permission checks use a shorter interactive probe so UI actions do not wait as long as background probes.
