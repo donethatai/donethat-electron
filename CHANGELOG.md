@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+## 2.2.1
+
 - Harden desktopCapturer-based screen permission probes (non-Linux) with backoff retries and longer timeouts so cold-start timeouts are less likely to block recording or macOS system-audio checks; user-triggered permission checks use a shorter interactive probe so UI actions do not wait as long as background probes.
 - Fix dashboard portal lifecycle, recovery, and auth handoff around hide/reopen flows.
+- Re-send Firebase id token to the embedded portal on a short bounded schedule after `dom-ready` and on `did-finish-load` (debounce bypass) so slow session restore or missed `postMessage` on Windows is less likely to strand the web dashboard bootstrap.
 - Listen for Google OAuth callback on IPv4 and IPv6 loopback so browsers that resolve `localhost` to `[::1]` (common on Windows) still reach the app.
 - Switch Windows code signing from DigiCert KeyLocker to Azure Trusted Signing (OIDC). Windows arm64 builds are temporarily unsigned because Azure Trusted Signing does not yet ship an ARM64 dlib.
 - Fix silent Linux auto-update failure when the AppImage lives in a non-writable location: detect missing write permissions up front and surface a manual-download notification instead of swallowing the `EACCES` from `electron-updater`.

@@ -49,6 +49,9 @@ let portalLoadTimer = null;
 let portalLoadRetries = 0;
 const PORTAL_LOAD_TIMEOUT_MS = 12000; // 12s timeout for slow networks
 const PORTAL_MAX_RETRIES = 3;
+/** Re-send id token to embedded portal if SPA/bootstrap missed the first postMessage (Windows timing). */
+const PORTAL_AUTH_HANDSHAKE_RETRY_DELAYS_MS = [350, 900, 2200, 5000];
+let portalHandshakeRetryTimers = [];
 let portalSpinnerTimer = null; // delay before showing dashboard spinner
 const PORTAL_RELOAD_COOLDOWN_MS = 10000; // avoid reloads shortly after token delivery
 const PORTAL_DEFAULT_URL = 'https://app.donethat.ai';
@@ -67,6 +70,27 @@ const pendingPortalBridge = {
 // Inform main that renderer is ready to receive auth tokens as early as possible
 try { ipcRenderer.send('renderer:ready-for-auth'); } catch (_) {}
 
+function clearPortalHandshakeRetries() {
+  try {
+    portalHandshakeRetryTimers.forEach((id) => clearTimeout(id));
+    portalHandshakeRetryTimers = [];
+  } catch (_) {}
+}
+
+function schedulePortalAuthHandshakeRetries(view) {
+  clearPortalHandshakeRetries();
+  if (!view || view !== portalView || !portalDomReady) return;
+  PORTAL_AUTH_HANDSHAKE_RETRY_DELAYS_MS.forEach((delay) => {
+    const id = setTimeout(() => {
+      try {
+        if (!portalView || portalView !== view || !portalDomReady) return;
+        if (!shouldSendGenericPortalToken(pendingPortalBridge)) return;
+        sendPortalLoginIfPossible({ bypassDebounce: true });
+      } catch (_) {}
+    }, delay);
+    portalHandshakeRetryTimers.push(id);
+  });
+}
 
 function hidePortalSpinner() {
   try {
@@ -161,19 +185,21 @@ function updateTopbarReloadVisibility(viewName) {
 }
 
 // Proactively send token to the embedded portal when available
-async function sendPortalLoginIfPossible() {
+async function sendPortalLoginIfPossible(options = {}) {
+  const bypassDebounce = options.bypassDebounce === true;
   try {
     if (!portalView) return;
     if (!portalDomReady) return;
     if (!shouldSendGenericPortalToken(pendingPortalBridge)) return;
     if (!isAuthenticated() || !auth?.currentUser?.getIdToken) return;
     const token = await auth.currentUser.getIdToken();
-    // Debounce: avoid spamming the portal with the same token too frequently
     const now = Date.now();
-    const sameToken = lastPortalTokenSent && lastPortalTokenSent === token;
-    const withinCooldown = now - lastPortalTokenTs < 10000; // 10s
-    if (sameToken && withinCooldown) {
-      return;
+    if (!bypassDebounce) {
+      const sameToken = lastPortalTokenSent && lastPortalTokenSent === token;
+      const withinCooldown = now - lastPortalTokenTs < 10000; // 10s
+      if (sameToken && withinCooldown) {
+        return;
+      }
     }
     try { portalView.send('auth:setToken', token); } catch (e) { console.error('[PortalSync] Error sending token', e); }
     lastPortalTokenSent = token;
@@ -303,6 +329,7 @@ function attachPortalViewListeners(view) {
     const { suppressGenericTokenSync } = flushPendingPortalBridgeActions(view);
     if (!suppressGenericTokenSync) {
       sendPortalLoginIfPossible();
+      schedulePortalAuthHandshakeRetries(view);
     }
 
     (async () => {
@@ -321,6 +348,9 @@ function attachPortalViewListeners(view) {
       portalLoadRetries = 0;
       clearPortalLoadWatchdog();
       hidePortalSpinner();
+      if (shouldSendGenericPortalToken(pendingPortalBridge)) {
+        sendPortalLoginIfPossible({ bypassDebounce: true });
+      }
       if (pendingPortalBridge.reloadAfterLoad) {
         pendingPortalBridge.reloadAfterLoad = false;
         safePortalReload('calendar-linked-deferred');
@@ -429,6 +459,7 @@ function destroyPortalView(reason) {
   portalLoadRetries = 0;
   resetPortalAuthSyncState();
   clearPortalLoadWatchdog();
+  clearPortalHandshakeRetries();
   hidePortalSpinner();
   hideWebviewError();
 
