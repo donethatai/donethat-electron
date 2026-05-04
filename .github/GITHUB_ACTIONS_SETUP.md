@@ -20,10 +20,15 @@ For the GitHub Actions workflow to work properly, you need to set up several sec
 - `MAC_CERTIFICATE`: Base64-encoded developer certificate (p12 file)
 - `MAC_CERTIFICATE_PASSWORD`: Password for the certificate
 
-### For Windows Builds (Optional - Only if you want to sign Windows builds)
+### For Windows Builds
 
-- `WINDOWS_CERTIFICATE`: Base64-encoded code signing certificate
-- `WINDOWS_CERTIFICATE_PASSWORD`: Password for the certificate
+Windows builds are signed via Azure Trusted Signing using OIDC federated identity (no client secret stored).
+
+- `AZURE_TENANT_ID`: Microsoft Entra ID tenant ID
+- `AZURE_CLIENT_ID`: Service principal / app registration client ID
+- `AZURE_SUBSCRIPTION_ID`: Subscription containing the Trusted Signing account
+
+The service principal must have a federated identity credential trusting `repo:donethatai/donethat-electron:ref:refs/heads/main` and the `Artifact Signing Certificate Profile Signer` role on the `DoneThat / Letss` profile. See [`docs/internal/azure-trusted-signing.md`](../docs/internal/azure-trusted-signing.md) for full setup steps.
 
 Note: Windows builds will work without code signing, but users may see security warnings.
 

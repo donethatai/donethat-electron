@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fix dashboard portal lifecycle, recovery, and auth handoff around hide/reopen flows.
+- Switch Windows code signing from DigiCert KeyLocker to Azure Trusted Signing (OIDC).
 
 ## 2.1.0
 

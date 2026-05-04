@@ -32,9 +32,9 @@ This means the release version and the source tag are locked together by the rel
 
 ### Windows
 
-- Windows release builds use DigiCert KeyLocker signing.
-- The workflow provisions the DigiCert client certificate and required environment variables.
-- `scripts/digicert-sign-windows.js` signs the produced artifact and immediately verifies it with `smctl sign verify`.
+- Windows release builds use Azure Trusted Signing (Artifact Signing).
+- The workflow authenticates to Azure via OIDC federated identity (`azure/login@v2`) and provisions the Trusted Signing dlib plus a `metadata.json` pointing at the `DoneThat / Letss` certificate profile in West Europe.
+- `scripts/azure-sign-windows.js` signs the produced artifact with `signtool sign /dlib /dmdf` against `http://timestamp.acs.microsoft.com` and immediately verifies it with `signtool verify /pa /v`.
 
 ### Linux
 
@@ -55,7 +55,7 @@ This means the release version and the source tag are locked together by the rel
 3. Review the corresponding release assets in `donethatai/donethat-releases`.
 4. Verify platform signatures where applicable:
    - macOS: use standard `codesign` and `spctl` checks
-   - Windows: use `smctl sign verify` or Windows Authenticode inspection tools
+   - Windows: use `signtool verify /pa /v` or Windows Authenticode inspection tools
 5. Compare updater metadata hashes against the published updater assets when validating auto-update artifacts.
 
 ## Reproducibility Notes

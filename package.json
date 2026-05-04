@@ -172,7 +172,7 @@
       ],
       "artifactName": "${productName}-${arch}.${ext}",
       "signtoolOptions": {
-        "sign": "./scripts/digicert-sign-windows.js"
+        "sign": "./scripts/azure-sign-windows.js"
       }
     },
     "nsis": {
