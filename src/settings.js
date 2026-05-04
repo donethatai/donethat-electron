@@ -860,22 +860,25 @@ async function updateSettingsUI(settings) {
   // Handle workdays
   const defaultWorkdays = [1, 2, 3, 4, 5]; // Mon-Fri
   let loadedWorkdays = defaultWorkdays;
+  let applyWorkdays = true;
   if (settings && Array.isArray(settings.workdays)) {
-    // Validate days are numbers 0-6
-    const validWorkdays = settings.workdays.filter(day =>
-      typeof day === 'number' && day >= 0 && day <= 6
+    const raw = settings.workdays;
+    const validWorkdays = raw.filter(
+      (day) => typeof day === 'number' && day >= 0 && day <= 6
     );
-    // Use Set to remove duplicates
-    loadedWorkdays = [...new Set(validWorkdays)];
-  } else {
-    workdays = defaultWorkdays;
+    if (raw.length === 0) {
+      loadedWorkdays = [];
+    } else if (validWorkdays.length === 0) {
+      applyWorkdays = false;
+    } else {
+      loadedWorkdays = [...new Set(validWorkdays)];
+    }
   }
 
-  // Assign to module state AFTER processing
-  workdays = loadedWorkdays;
-
-  // Send initial workdays to main process
-  ipcRenderer.send('updateWorkdays', workdays);
+  if (applyWorkdays) {
+    workdays = loadedWorkdays;
+    ipcRenderer.send('updateWorkdays', workdays);
+  }
 
   updateSettingsReady(true);
   refreshCaptureDependentVisibility();
