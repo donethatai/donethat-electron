@@ -96,9 +96,11 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 
 ## Changelog
 
-- Always update `CHANGELOG.md` when making user-facing or doc changes.
+- Only add `CHANGELOG.md` entries for significant changes the user or a maintainer would care about (notable features, fixes, behavior or workflow changes, security/release-infra changes, breaking changes).
+- Skip the changelog for internal-only refactors, comment/typo fixes, dependency bumps without behavior change, log tweaks, micro-optimizations, and similar noise.
 - Add entries under `## Unreleased`. When a version ships, the maintainer moves entries under a version heading.
 - Keep entries concise: one line per change, imperative mood (e.g. "Add …", "Fix …", "Update …").
+- Consolidate when multiple changes describe the same user-visible outcome — prefer one combined line over several near-duplicates, and update an existing `## Unreleased` line in place rather than appending a redundant follow-up.
 - Group by category if there are many entries: Features, Fixes, Docs, Internal.
 
 ## Communication Style

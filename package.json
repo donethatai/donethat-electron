@@ -172,7 +172,8 @@
       ],
       "artifactName": "${productName}-${arch}.${ext}",
       "signtoolOptions": {
-        "sign": "./scripts/azure-sign-windows.js"
+        "sign": "./scripts/azure-sign-windows.js",
+        "signingHashAlgorithms": ["sha256"]
       }
     },
     "nsis": {
