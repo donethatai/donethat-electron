@@ -19,14 +19,26 @@ jobs:
             platform: mac
             arch: x64
             command: upload:mac:x64
+          - os: macos-26
+            platform: mac
+            arch: arm64
+            command: upload:mac:arm64
           - os: windows-latest
             platform: win
             arch: x64
             command: upload:win:x64
+          - os: windows-11-arm
+            platform: win
+            arch: arm64
+            command: upload:win:arm64
           - os: ubuntu-latest
             platform: linux
             arch: x64
             command: upload:linux:x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            command: upload:linux:arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
