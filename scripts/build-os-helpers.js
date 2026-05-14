@@ -16,7 +16,9 @@ function buildSwiftHelper({ sourcePath, outputPath, frameworks }) {
   const moduleCacheDir = path.join(process.cwd(), '.build/module-cache');
   fs.mkdirSync(moduleCacheDir, { recursive: true });
   const frameworkArgs = frameworks.map((fw) => `-framework ${fw}`).join(' ');
-  run(`xcrun swiftc -O -module-cache-path "${moduleCacheDir}" ${frameworkArgs} "${sourcePath}" -o "${outputPath}"`);
+  const deploymentTarget = '11.0';
+  const targetArch = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+  run(`xcrun swiftc -O -module-cache-path "${moduleCacheDir}" -target ${targetArch}-apple-macos${deploymentTarget} ${frameworkArgs} "${sourcePath}" -o "${outputPath}"`);
   run(`chmod +x "${outputPath}"`);
 }
 
