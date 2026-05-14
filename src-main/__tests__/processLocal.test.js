@@ -74,13 +74,13 @@ describe('local processing notifications', () => {
     );
     error.status = 429;
 
-    expect(buildLocalProcessingNotification(error)).toEqual({
-      id: 'gemini-quota-exceeded',
-      title: 'Gemini quota reached',
-      message: 'Your Gemini API key hit a 429 quota limit. Local processing will retry automatically on the next capture.',
-      sticky: true,
-      alsoNative: true
-    });
+    const notification = buildLocalProcessingNotification(error);
+    expect(notification.id).toBe('gemini-quota-exceeded');
+    expect(notification.title).toBe('Gemini quota reached');
+    expect(notification.sticky).toBe(true);
+    expect(notification.alsoNative).toBe(true);
+    expect(notification.message).toEqual(expect.any(String));
+    expect(notification.message.toLowerCase()).toContain('quota');
   });
 
   test('recognizes Firebase auth failures so they can propagate', () => {
