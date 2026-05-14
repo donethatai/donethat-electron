@@ -5,9 +5,16 @@ const { logAnalyticsEvent } = require('./analytics.js');
 const { getIsPaused } = require('./app-state.js');
 const { showBanner } = require('./notify.js');
 
+// Callable SDK default timeout is 70s; Finish Day summarization often runs longer.
+const FINISH_DAY_CALLABLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 // Create callable function references
-const generateRawSummaryFunction = httpsCallable(functions, "generateRawSummary");
-const saveFinalSummaryFunction = httpsCallable(functions, "saveFinalSummary");
+const generateRawSummaryFunction = httpsCallable(functions, "generateRawSummary", {
+  timeout: FINISH_DAY_CALLABLE_TIMEOUT_MS,
+});
+const saveFinalSummaryFunction = httpsCallable(functions, "saveFinalSummary", {
+  timeout: FINISH_DAY_CALLABLE_TIMEOUT_MS,
+});
 
 // Reference to permission-related elements 
 const generateSummaryBtn = document.getElementById("generateSummaryBtn");
