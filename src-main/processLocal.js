@@ -18,6 +18,7 @@ let llmModels = null;
 let latestConfig = null;
 // Local provider: 'gemini' or 'openai'
 let localProvider = null;
+let skipGeminiOnceAfterQuota = false;
 
 // Constants from online version
 const CAPTION_TOKENS = 200; // Target tokens for description truncation
@@ -178,6 +179,12 @@ function buildLocalProcessingNotification(err) {
     sticky: true,
     alsoNative: true
   };
+}
+
+function createGeminiCooldownError() {
+  const error = new Error('Gemini local processing cooldown for one cycle after quota limit');
+  error.code = 'GEMINI_COOLDOWN';
+  return error;
 }
 
 function isLocalProcessingAuthError(err) {
@@ -736,6 +743,11 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
       throw new Error('Local processing not available - no API keys or configuration');
     }
 
+    if (skipGeminiOnceAfterQuota) {
+      skipGeminiOnceAfterQuota = false;
+      throw createGeminiCooldownError();
+    }
+
     // Format application activity
     let applicationActivity = 'No application activity data available';
     if (inputData.activity && inputData.activity.length > 0) {
@@ -769,16 +781,23 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
         throw err;
       }
 
+      if (isGeminiQuotaError(err)) {
+        // Cool down local Gemini for next cycle only; do not switch provider paths.
+        skipGeminiOnceAfterQuota = true;
+      }
+
       // Notify main window only — getAllWindows()[0] is not ordered; overlay (chat) has no listener.
-      try {
-        const win = getMainWindow();
-        if (win) {
-          win.webContents.send('request-notification', buildLocalProcessingNotification(err));
-        } else {
-          log.warn('Local processing error: main window unavailable for in-app notification');
+      if (err?.code !== 'GEMINI_COOLDOWN') {
+        try {
+          const win = getMainWindow();
+          if (win) {
+            win.webContents.send('request-notification', buildLocalProcessingNotification(err));
+          } else {
+            log.warn('Local processing error: main window unavailable for in-app notification');
+          }
+        } catch (e) {
+          log.warn('Local processing error: failed to send notification:', e?.message || e);
         }
-      } catch (e) {
-        log.warn('Local processing error: failed to send notification:', e?.message || e);
       }
       // Throw canonical local-processing error marker for upstream
       throw new Error('Local Processing');
