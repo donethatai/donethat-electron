@@ -19,7 +19,9 @@ function createAggregate() {
     screenLock: Object.create(null),
     audioRestart: Object.create(null),
     activeWindowProbeTimeoutCount: 0,
-    captureCycleSkippedOverlapCount: 0
+    captureCycleSkippedOverlapCount: 0,
+    localQuotaCooldownSkipCount: 0,
+    localBudgetExceededCount: 0
   }
 }
 
@@ -29,7 +31,9 @@ function cloneAggregate(source) {
     screenLock: { ...source.screenLock },
     audioRestart: { ...source.audioRestart },
     activeWindowProbeTimeoutCount: source.activeWindowProbeTimeoutCount || 0,
-    captureCycleSkippedOverlapCount: source.captureCycleSkippedOverlapCount || 0
+    captureCycleSkippedOverlapCount: source.captureCycleSkippedOverlapCount || 0,
+    localQuotaCooldownSkipCount: source.localQuotaCooldownSkipCount || 0,
+    localBudgetExceededCount: source.localBudgetExceededCount || 0
   }
 }
 
@@ -39,6 +43,8 @@ function resetAggregate(target) {
   target.audioRestart = Object.create(null)
   target.activeWindowProbeTimeoutCount = 0
   target.captureCycleSkippedOverlapCount = 0
+  target.localQuotaCooldownSkipCount = 0
+  target.localBudgetExceededCount = 0
 }
 
 function getTargetAggregate() {
@@ -227,6 +233,16 @@ function recordCaptureCycleSkippedOverlap() {
   target.captureCycleSkippedOverlapCount += 1
 }
 
+function recordLocalQuotaCooldownSkip() {
+  const target = getTargetAggregate()
+  target.localQuotaCooldownSkipCount += 1
+}
+
+function recordLocalBudgetExceeded() {
+  const target = getTargetAggregate()
+  target.localBudgetExceededCount += 1
+}
+
 function endCycle(metadata = {}) {
   if (!activeCycle) {
     return null
@@ -277,7 +293,9 @@ function endCycle(metadata = {}) {
         }
       }),
       activeWindowProbeTimeoutCount: aggregate.activeWindowProbeTimeoutCount,
-      captureCycleSkippedOverlapCount: aggregate.captureCycleSkippedOverlapCount
+      captureCycleSkippedOverlapCount: aggregate.captureCycleSkippedOverlapCount,
+      localQuotaCooldownSkipCount: aggregate.localQuotaCooldownSkipCount,
+      localBudgetExceededCount: aggregate.localBudgetExceededCount
     },
     memoryMb: {
       rss: memoryUsage ? Math.round((memoryUsage.rss / (1024 * 1024)) * 100) / 100 : null,
@@ -327,5 +345,7 @@ module.exports = {
   recordScreenLock,
   recordAudioRestart,
   recordActiveWindowProbeTimeout,
-  recordCaptureCycleSkippedOverlap
+  recordCaptureCycleSkippedOverlap,
+  recordLocalQuotaCooldownSkip,
+  recordLocalBudgetExceeded
 }

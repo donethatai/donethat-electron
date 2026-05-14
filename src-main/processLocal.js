@@ -1,5 +1,6 @@
 const log = require('electron-log');
 const { getGeminiApiKey, getLocalProcessingState, getOpenAICompatibleConfig, getMainWindow } = require('./main-state');
+const { recordLocalQuotaCooldownSkip, recordLocalBudgetExceeded } = require('./telemetry');
 
 // Firebase URLs for config and processing
 const FIREBASE_CONFIG_URL = 'https://europe-west1-donethat.cloudfunctions.net/inputConfig';
@@ -24,6 +25,9 @@ let skipGeminiOnceAfterQuota = false;
 const CAPTION_TOKENS = 200; // Target tokens for description truncation
 const MAX_OUTPUT_TOKENS = 1000; // Max tokens allowed for model output
 const MAX_SCREENSHOT_SIZE = 2000000; // 2MB per screenshot
+const LOCAL_LLM_CYCLE_BUDGET_MS = 60_000;
+const LOCAL_LLM_BASE_ATTEMPT_TIMEOUT_MS = 120_000;
+const LOCAL_LLM_MIN_ATTEMPT_TIMEOUT_MS = 3_000;
 const TRANSIENT_LOCAL_PROCESSING_CODES = new Set([
   'EAI_AGAIN',
   'ENETDOWN',
@@ -184,6 +188,12 @@ function buildLocalProcessingNotification(err) {
 function createGeminiCooldownError() {
   const error = new Error('Gemini local processing cooldown for one cycle after quota limit');
   error.code = 'GEMINI_COOLDOWN';
+  return error;
+}
+
+function createLocalBudgetExceededError() {
+  const error = new Error('Local processing time budget exceeded for this cycle');
+  error.code = 'LOCAL_BUDGET_EXCEEDED';
   return error;
 }
 
@@ -358,20 +368,38 @@ async function initializeLLM(idToken) {
 /**
  * Invoke LLM with fallback through multiple models
  */
-async function invokeWithFallback(messages, testMode = false) {
+async function invokeWithFallback(messages, testMode = false, options = {}) {
   if (!llmModels || llmModels.length === 0) {
     throw new Error('No LLM models available');
   }
 
   let lastError = null;
+  const deadlineMs = Number(options.deadlineMs) || 0;
+  const hasDeadline = Number.isFinite(deadlineMs) && deadlineMs > 0;
 
   for (const llm of llmModels) {
     let attempt = 0;
     while (attempt <= 2) {
       try {
-        return await llm.invoke(messages, { signal: AbortSignal.timeout(120_000) });
+        let attemptTimeoutMs = LOCAL_LLM_BASE_ATTEMPT_TIMEOUT_MS;
+        if (hasDeadline) {
+          const remainingMs = deadlineMs - Date.now();
+          if (remainingMs <= 0) {
+            throw createLocalBudgetExceededError();
+          }
+          attemptTimeoutMs = Math.max(
+            LOCAL_LLM_MIN_ATTEMPT_TIMEOUT_MS,
+            Math.min(LOCAL_LLM_BASE_ATTEMPT_TIMEOUT_MS, remainingMs)
+          );
+        }
+
+        return await llm.invoke(messages, { signal: AbortSignal.timeout(attemptTimeoutMs) });
       } catch (error) {
         if (testMode) throw error;
+        if (error?.code === 'LOCAL_BUDGET_EXCEEDED') throw error;
+        if (hasDeadline && (deadlineMs - Date.now()) <= 0) {
+          throw createLocalBudgetExceededError();
+        }
         // Let caller handle these — no point retrying with the same payload
         if (error.name === 'TimeoutError') throw error;
         if (error.message && error.message.includes('Unable to process input image')) throw error;
@@ -619,14 +647,22 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
 
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
+    const localCycleDeadlineMs = Date.now() + LOCAL_LLM_CYCLE_BUDGET_MS;
 
     // Call LLM with retry logic:
     //   - any error with audio present → log payload diagnostics, retry once without audio
     //   - image error (no audio) → retry once with fewer images
     let response;
     try {
-      response = await invokeWithFallback([new HumanMessage({ content: blocks })], testMode);
+      response = await invokeWithFallback(
+        [new HumanMessage({ content: blocks })],
+        testMode,
+        { deadlineMs: localCycleDeadlineMs }
+      );
     } catch (error) {
+      if (error?.code === 'LOCAL_BUDGET_EXCEEDED') {
+        throw error;
+      }
       const isImageError = error.message && error.message.includes('Unable to process input image');
 
       if (audioCycle) {
@@ -642,14 +678,26 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
         log.warn(`LLM failed (${error.name || 'Error'}); payload: ${imgCount} image(s) ~${(imgBytes / 1024).toFixed(0)}KB; audio ~${(audioBytes / 1024).toFixed(0)}KB ${audioDurationSec}s; total ~${((imgBytes + audioBytes) / 1024).toFixed(0)}KB`);
         log.warn('Retrying without audio payload...');
         const blocksNoAudio = buildBlocks(config, validScreenshots, previousScreenshots, activity, null, idleTime, provider);
-        response = await invokeWithFallback([new HumanMessage({ content: blocksNoAudio })], testMode);
+        response = await invokeWithFallback(
+          [new HumanMessage({ content: blocksNoAudio })],
+          testMode,
+          { deadlineMs: localCycleDeadlineMs }
+        );
       } else if (isImageError) {
         log.warn('LLM image error; retrying with fewer images...');
         const simplifiedMessages = simplifyMessagesForRetry([new HumanMessage({ content: blocks })]);
-        response = await invokeWithFallback(simplifiedMessages, testMode);
+        response = await invokeWithFallback(
+          simplifiedMessages,
+          testMode,
+          { deadlineMs: localCycleDeadlineMs }
+        );
       } else {
         log.warn(`LLM failed (${error.name || 'Error'}); retrying...`);
-        response = await invokeWithFallback([new HumanMessage({ content: blocks })], testMode);
+        response = await invokeWithFallback(
+          [new HumanMessage({ content: blocks })],
+          testMode,
+          { deadlineMs: localCycleDeadlineMs }
+        );
       }
     }
 
@@ -745,6 +793,7 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
 
     if (skipGeminiOnceAfterQuota) {
       skipGeminiOnceAfterQuota = false;
+      recordLocalQuotaCooldownSkip();
       throw createGeminiCooldownError();
     }
 
@@ -786,8 +835,13 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
         skipGeminiOnceAfterQuota = true;
       }
 
+      if (err?.code === 'LOCAL_BUDGET_EXCEEDED') {
+        recordLocalBudgetExceeded();
+        log.warn('Local processing budget exceeded; skipping local processing for this cycle.');
+      }
+
       // Notify main window only — getAllWindows()[0] is not ordered; overlay (chat) has no listener.
-      if (err?.code !== 'GEMINI_COOLDOWN') {
+      if (err?.code !== 'GEMINI_COOLDOWN' && err?.code !== 'LOCAL_BUDGET_EXCEEDED') {
         try {
           const win = getMainWindow();
           if (win) {
