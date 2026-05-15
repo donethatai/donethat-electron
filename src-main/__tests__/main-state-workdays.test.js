@@ -302,6 +302,62 @@ describe('isActiveWorkPeriod', () => {
   });
 });
 
+describe('work settings updates', () => {
+  test('should clear a work-hours pause when updated workhours make now active', () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(createTestDate(1, 18, 0));
+      setWorkdaysInStore([1, 2, 3, 4, 5]);
+      setWorkhoursInStore('09:00', '17:00');
+      mainStateModule.loadWorkSettings();
+
+      const mockWindow = {
+        webContents: { send: jest.fn() },
+        show: jest.fn(),
+        focus: jest.fn(),
+        isDestroyed: () => false
+      };
+
+      state.pauseUntilNextWorkPeriod(mockWindow, true);
+      expect(state.isPaused()).toBe(true);
+
+      setWorkhoursViaIPC('09:00', '19:00');
+
+      expect(state.isActiveWorkPeriod(new Date())).toBe(true);
+      expect(state.isPaused()).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('should clear a work-hours pause when updated workdays make today active', () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(createTestDate(6, 12, 0));
+      setWorkdaysInStore([1, 2, 3, 4, 5]);
+      setWorkhoursInStore('09:00', '17:00');
+      mainStateModule.loadWorkSettings();
+
+      const mockWindow = {
+        webContents: { send: jest.fn() },
+        show: jest.fn(),
+        focus: jest.fn(),
+        isDestroyed: () => false
+      };
+
+      state.pauseUntilNextWorkPeriod(mockWindow, true);
+      expect(state.isPaused()).toBe(true);
+
+      setWorkdaysViaIPC([1, 2, 3, 4, 5, 6]);
+
+      expect(state.isActiveWorkPeriod(new Date())).toBe(true);
+      expect(state.isPaused()).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe('_validateState (heartbeat)', () => {
   test('should handle not paused state correctly', () => {
     setWorkdaysInStore([1, 2, 3, 4, 5]);

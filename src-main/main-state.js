@@ -959,6 +959,23 @@ function _clearPauseStateAndCheckRecording() {
   }
 }
 
+function _handleWorkSettingsChanged(ownerWindow) {
+  const isWorkHoursPause = isPaused() && pauseState.reason === 'workday-start';
+
+  if (isWorkHoursPause && isActiveWorkPeriod()) {
+    _scheduleNextWorkEndCheck();
+    _clearPauseStateAndCheckRecording();
+    setManualOverrideWorkHours(false);
+    _validateState();
+  } else if (isWorkHoursPause) {
+    pauseUntilNextWorkPeriod(ownerWindow, true);
+    _validateState();
+  } else {
+    _scheduleNextWorkEndCheck();
+    _validateState();
+  }
+}
+
 function _handlePauseTimeout(reason) {
   if (reason === PAUSE_REASON_PAUSE_TODAY) {
     _validateState();
@@ -1389,11 +1406,7 @@ function setupIPCHandlers() {
         }
       }, 'save updated workdays');
       
-      if (isPaused() && pauseState.reason === 'workday-start') {
-        pauseUntilNextWorkPeriod(event.sender.getOwnerBrowserWindow(), silent=true);
-      } else {
-        _scheduleNextWorkEndCheck();
-      }
+      _handleWorkSettingsChanged(event.sender.getOwnerBrowserWindow());
 
     } else {
       log.error('Received invalid workdays data:', days);
@@ -1418,11 +1431,7 @@ function setupIPCHandlers() {
       }, 'save updated workhours');
       
       // Check if we should adjust recording based on the new hours
-      if (isPaused() && pauseState.reason === 'workday-start') {
-        pauseUntilNextWorkPeriod(event.sender.getOwnerBrowserWindow(), silent=true);
-      } else {
-        _scheduleNextWorkEndCheck();
-      }
+      _handleWorkSettingsChanged(event.sender.getOwnerBrowserWindow());
 
     } else {
       log.error('Received invalid workhours data:', hours);
