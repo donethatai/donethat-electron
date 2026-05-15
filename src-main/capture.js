@@ -1240,6 +1240,31 @@ async function _runCaptureCycle() {
 
     // Start audio capture if needed
     if (inputDataSettings.audio && !audioCapture.getStatus().tracking) {
+      // Refresh cached permission state without prompting so each cycle can recover
+      // after permissions are granted again.
+      try {
+        await audioCapture.checkMicrophonePermissionPassive(true);
+      } catch (error) {
+        log.warn('Passive microphone permission refresh failed:', error?.message || error);
+      }
+
+      if (inputDataSettings.systemAudio) {
+        try {
+          const hasSystemAudioPermission = await audioCapture.checkSystemAudioPermission({
+            activeProbe: false,
+            interactiveScreenProbe: false
+          });
+          if (hasSystemAudioPermission === false && mainWindowRef) {
+            mainWindowRef.webContents.send('systemAudioPermission', {
+              hasPermission: false,
+              source: 'runtime-check'
+            });
+          }
+        } catch (error) {
+          log.warn('Passive system audio permission refresh failed:', error?.message || error);
+        }
+      }
+
       await _startAudioTracking();
     }
     

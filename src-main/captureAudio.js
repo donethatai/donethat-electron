@@ -643,9 +643,18 @@ async function checkMicrophonePermissionPassive(forceRefresh = false) {
       })`
     )
 
-    const granted = status === 'granted'
-    hasMicrophonePermission = granted
-    return granted
+    if (status === 'granted') {
+      hasMicrophonePermission = true
+      return true
+    }
+    if (status === 'denied') {
+      hasMicrophonePermission = false
+      return false
+    }
+
+    // 'unknown' (or any unrecognized state) should not overwrite cached state.
+    // Let active startup checks decide via getUserMedia when needed.
+    return false
   } catch (_) {
     return false
   }
