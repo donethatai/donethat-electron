@@ -2,9 +2,18 @@
 
 ## Unreleased
 
+## 2.2.3
+
 - Fix chat overlay reopening collapsed after using the dashboard home button.
-- Fix occasional audio capture cycles being rejected by the cloud transcription with a 400 error by preserving the WebM container header across buffer trims and recorder restarts.
-- Increase Finish Day Firebase callable client timeout (default 70s) to 15 minutes so long-running `generateRawSummary` / `saveFinalSummary` calls are less likely to fail with deadline exceeded.
+- Fix audio capture 400 errors by preserving WebM headers across buffer trims and recorder restarts.
+- Fix microphone permission recovery so capture can restart after permission changes without manual reset.
+- Add chat screenshot prompt flow improvements.
+- Improve workday and work-hour state sync reliability.
+- Improve local processing reliability around Gemini quota handling and fallback behavior.
+- Reduce audio capture bitrate to lower upload and processing overhead.
+- Increase Finish Day callable timeout to 15 minutes to reduce deadline-exceeded failures.
+- Add client telemetry for capture-cycle, permission-check, and runtime state diagnostics.
+- Fix a dependency vulnerability.
 
 ## 2.2.2
 
