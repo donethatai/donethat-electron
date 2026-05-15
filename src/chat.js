@@ -57,7 +57,7 @@ let messages = []
 let chatVisible = false
 let lastSentHeight = null
 let lastOverlayRenderTelemetryAt = 0
-let includeScreenOnNextMessage = true
+let includeScreenOnNextMessage = false
 const MIN_INPUT_HEIGHT = 28
 let typingTimer = null
 const TYPING_DELAY_MS = 300
@@ -1098,7 +1098,7 @@ function resetChatForNewConversation() {
   resetAssistantAnimationState()
   messages = []
   pendingMessages = []
-  includeScreenOnNextMessage = true
+  includeScreenOnNextMessage = false
   updateIncludeScreenBtn()
   renderChat()
   ipcRenderer.invoke('chat:reset').catch(() => {})
@@ -1236,7 +1236,7 @@ function updateIncludeScreenBtn() {
   if (svg) {
     includeScreenBtn.style.color = includeScreenOnNextMessage
       ? 'var(--dt-color-brand-primary)'
-      : 'var(--dt-color-text-default)'
+      : 'var(--dt-color-text-subtle)'
     // Force reflow of color for some platforms
     svg.style.color = 'currentColor'
     svg.style.stroke = 'currentColor'
