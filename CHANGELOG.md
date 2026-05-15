@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix chat overlay reopening collapsed after using the dashboard home button.
 - Fix occasional audio capture cycles being rejected by the cloud transcription with a 400 error by preserving the WebM container header across buffer trims and recorder restarts.
 - Increase Finish Day Firebase callable client timeout (default 70s) to 15 minutes so long-running `generateRawSummary` / `saveFinalSummary` calls are less likely to fail with deadline exceeded.
 

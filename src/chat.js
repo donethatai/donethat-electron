@@ -546,11 +546,21 @@ function applyScrollAndClamp(desired) {
   chatContainer.scrollTop = chatContainer.scrollHeight
 }
 
-function sendOverlayHeight(height) {
+function sendOverlayHeight(height, opts = {}) {
   const clamped = clampOverlayHeight(height)
-  if (clamped === lastSentHeight) return
+  if (!opts.force && clamped === lastSentHeight) return
   lastSentHeight = clamped
   ipcRenderer.send('overlay:resize', clamped)
+}
+
+function restoreChatHeightIfNeeded() {
+  if (messages.length === 0 && pendingMessages.length === 0) return
+  chatVisible = true
+  requestAnimationFrame(() => {
+    const desired = clampOverlayHeight(computeDesiredHeight())
+    applyScrollAndClamp(desired)
+    sendOverlayHeight(desired, { force: true })
+  })
 }
 
 function escapeHtmlAttribute(text) {
@@ -1405,6 +1415,7 @@ if (closeOverlayBtn) {
 if (openAppBtn) {
   openAppBtn.addEventListener('click', () => {
     ipcRenderer.send('overlay:open-main', 'dashboard')
+    ipcRenderer.send('overlay:hide')
   })
 }
 
@@ -1424,11 +1435,10 @@ window.addEventListener('focus', () => {
     const len = (input0.value || '').length
     input0.setSelectionRange(len, len)
     
-    // When window gains focus, ensure chat is visible if there are messages
-    if (messages.length > 0 && !chatVisible) {
-      chatVisible = true
-      animateResize(computeDesiredHeight(), { overshoot: true })
-    }
+    // When window gains focus, force the native overlay height back to the
+    // rendered chat height. The BrowserWindow can be hidden/re-shown outside
+    // this renderer, leaving lastSentHeight stale.
+    restoreChatHeightIfNeeded()
     
     // Request recent chats list when overlay opens
     if (messages.length === 0 && pendingMessages.length === 0) {
