@@ -32,6 +32,10 @@ The service principal must have a federated identity credential trusting `repo:d
 
 Note: Windows builds will work without code signing, but users may see security warnings.
 
+### For Sentry Source Maps
+
+- `SENTRY_AUTH_TOKEN`: Sentry auth token with permission to upload source maps for the `donethat` organization and `electron` project.
+
 ## How to Run the Workflow
 
 1. Go to your GitHub repository

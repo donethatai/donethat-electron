@@ -24,6 +24,7 @@ const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notificati
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
 const log = require('electron-log')
+const Sentry = require('@sentry/electron/main')
 const { AuthServer } = require('./src-main/auth-server')
 const {
   getGoogleSignInUrl,
@@ -67,6 +68,14 @@ const { initState } = require('./src-main/main-state')
 const { getScreenSources } = require('./src-main/screenCaptureSemaphore')
 const { recordLog, recordSignal } = require('./src-main/telemetry')
 const linuxAutostart = require('./src-main/linuxAutostart')
+
+Sentry.init({
+  dsn: 'https://c133ed0231c60f905e847ccf2ce2dfc9@o4511426462285824.ingest.de.sentry.io/4511426468642896',
+  release: `donethat@${app.getVersion()}`,
+  attachScreenshot: false,
+  sendDefaultPii: false,
+  getSessions: () => [session.defaultSession, session.fromPartition('persist:donethat')]
+})
 
 // Conditionally load liquid glass with fallback
 let liquidGlass = null;
@@ -1028,6 +1037,21 @@ app.whenReady().then(async () => {
     } catch (_) {}
   })
 
+  // Register update IPC before loading the renderer; the top bar checks status during startup.
+  ipcMain.on('update:install', (_event, payload) => {
+    try {
+      installUpdate(payload);
+    } catch (e) { log.error('Failed to install update from banner:', e); }
+  });
+
+  ipcMain.on('update:open-download-page', () => {
+    openDownloadPage();
+  });
+
+  ipcMain.handle('update:check-status', () => {
+    return { available: updateAvailable };
+  });
+
   ipcMain.handle('auth:google-signin', async (_event, payload) => {
     try {
       const port = await startAuthServer();
@@ -1220,26 +1244,6 @@ app.whenReady().then(async () => {
   })
 
   
-  // IPC to install update from in-app notification or update button
-  ipcMain.on('update:install', (_event, payload) => {
-    try {
-      installUpdate(payload);
-    } catch (e) { log.error('Failed to install update from banner:', e); }
-  });
-
-  // IPC to open the public download page (used on Linux when the running AppImage
-  // is in a location the current user can't overwrite).
-  ipcMain.on('update:open-download-page', () => {
-    openDownloadPage();
-  });
-
-  // IPC to check update availability status
-  ipcMain.handle('update:check-status', () => {
-    return { available: updateAvailable };
-  });
-
-  
-
   // Create overlay window (hidden initially)
   createOverlayWindow()
 

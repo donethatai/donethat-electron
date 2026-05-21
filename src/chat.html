@@ -7,7 +7,7 @@
       script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.google.com https://*.gstatic.com;
       style-src 'self' 'unsafe-inline';
       img-src 'self' data:;
-      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com;
+      connect-src 'self' sentry-ipc: https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com https://o4511426462285824.ingest.de.sentry.io;
     " />
     <!-- Compiled Tailwind + custom styles (output.css is built from styles.css; do not load styles.css in browser or it will 404 on @import "tailwindcss") -->
     <link href="../build/output.css" rel="stylesheet" />
@@ -151,6 +151,7 @@
 
     </div>
 
+    <script src="../build/sentry-renderer.js"></script>
     <script src="./link-router.js"></script>
     <script src="../node_modules/@rive-app/canvas-single/rive.js"></script>
     <script src="./chat.js"></script>

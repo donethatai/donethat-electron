@@ -1,5 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+try {
+  require('@sentry/electron/preload');
+} catch (error) {
+  console.warn('Failed to initialize Sentry preload bridge:', error?.message || error);
+}
+
 // Whitelisted channels for sending messages to main process
 // Keep this in sync with all ipcRenderer.send(...) usages in src/*
 const validSendChannels = [

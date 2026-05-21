@@ -10,7 +10,7 @@
       script-src 'self' 'unsafe-eval' blob:;
       style-src 'self' 'unsafe-inline';
       img-src 'self' data:;
-      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com;
+      connect-src 'self' sentry-ipc: https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com https://o4511426462285824.ingest.de.sentry.io;
       frame-src 'self' https://checkout.stripe.com https://app.donethat.ai;
       form-action 'self' https://checkout.stripe.com;
       object-src 'self';
@@ -20,7 +20,7 @@
       script-src 'self' 'unsafe-eval' blob:;
       style-src 'self' 'unsafe-inline';
       img-src 'self' data:;
-      connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com;
+      connect-src 'self' sentry-ipc: https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com https://o4511426462285824.ingest.de.sentry.io;
       frame-src 'self' https://checkout.stripe.com https://app.donethat.ai;
       form-action 'self' https://checkout.stripe.com;
       object-src 'self';
@@ -793,6 +793,7 @@
 
         
     <!-- Update the script tag to point to build instead of dist -->
+    <script src="../build/sentry-renderer.js"></script>
     <script src="../build/bundle.js"></script>
   </body>
 </html>

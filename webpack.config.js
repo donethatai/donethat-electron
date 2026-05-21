@@ -8,12 +8,15 @@ export default {
   // Set the mode to development or production
   mode: 'production',
   
-  // Entry point of your application
-  entry: './src/index.js',
+  // Entry points of your application
+  entry: {
+    bundle: './src/index.js',
+    'sentry-renderer': './src/sentry-renderer.js',
+  },
   
   // Output configuration
   output: {
-    filename: 'bundle.js',
+    filename: '[name].js',
     path: path.resolve(__dirname, 'build'),
   },
   

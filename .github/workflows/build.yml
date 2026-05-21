@@ -55,6 +55,7 @@ jobs:
           echo "::add-mask::${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
           echo "::add-mask::${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}"
           echo "::add-mask::${{ secrets.MAC_CERTIFICATE_PASSWORD }}"
+          echo "::add-mask::${{ secrets.SENTRY_AUTH_TOKEN }}"
 
       - name: Ensure release runs from main
         shell: bash
@@ -181,3 +182,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           CI: true
         run: npm run ${{ matrix.command }} 
+
+      - name: Upload Sentry source maps
+        if: matrix.platform == 'mac' && matrix.arch == 'arm64'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: npm run sentry:sourcemaps

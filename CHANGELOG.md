@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add Sentry Electron error reporting and source-map upload for the main app and chat overlay.
+
 ## 2.2.3
 
 - Fix chat overlay reopening collapsed after using the dashboard home button.
