@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+## 2.2.5
+
+- Fix macOS pausing with a false "no screen capture permission" message.
+
+## 2.2.4
+
 - Add Sentry Electron error reporting and source-map upload for the main app and chat overlay.
 - Pin Electron to 41.7.0 to avoid the Chromium 148 Windows startup crash.
-- Fix macOS pausing with a false "no screen capture permission" message: trust the TCC database via `systemPreferences.getMediaAccessStatus('screen')` as the authoritative source, make the cached permission state sticky against transient `desktopCapturer` flakes, auto-heal stale state from the recording-state heartbeat (incl. resume/unlock/focus), and sample a full permission recheck on ~1 in 10 heartbeats while still denied (skipped when TCC says denied/restricted).
 
 ## 2.2.3
 

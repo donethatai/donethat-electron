@@ -2,6 +2,8 @@
 
 This document explains the DoneThat Desktop app to autonomous coding agents. It covers architecture, runtime flows, IPC, build/run, constraints, pitfalls, and safe extension points.
 
+**Never run git commands** unless the user explicitly asks you to in that message.
+
 ## Tech Stack
 
 - Electron (main + renderer)
