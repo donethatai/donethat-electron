@@ -25,6 +25,11 @@ const path = require('path')
 const { autoUpdater } = require('electron-updater')
 const log = require('electron-log')
 const Sentry = require('@sentry/electron/main')
+const { default: Store } = require('electron-store')
+const {
+  applyStartupGpuMitigation,
+  createGpuCrashMitigator
+} = require('./src-main/gpuCrashMitigation')
 const { AuthServer } = require('./src-main/auth-server')
 const {
   getGoogleSignInUrl,
@@ -78,6 +83,95 @@ const TRANSIENT_SENTRY_NETWORK_ERRORS = [
   'ERR_CONNECTION_RESET',
   'ECONNRESET'
 ]
+const STARTUP_PHASE_BREADCRUMB_LIMIT = 24
+
+let sentryStartupBreadcrumbsEnabled = false
+const pendingStartupBreadcrumbs = []
+
+function sanitizeStartupPhaseField(value) {
+  if (value === undefined || value === null) return 'unknown'
+  return String(value).slice(0, 120)
+}
+
+function addStartupSentryBreadcrumb(phase, fields) {
+  try {
+    Sentry.addBreadcrumb({
+      category: 'startup',
+      level: 'info',
+      message: phase,
+      data: fields
+    })
+  } catch (_) {}
+}
+
+function recordStartupPhase(phase, fields = {}) {
+  const cleanFields = {}
+  for (const [key, value] of Object.entries(fields || {})) {
+    cleanFields[key] = sanitizeStartupPhaseField(value)
+  }
+
+  try { log.info(`startup:${phase}`, cleanFields) } catch (_) {}
+  try { recordSignal(`startup_${phase}`, cleanFields) } catch (_) {}
+
+  if (sentryStartupBreadcrumbsEnabled) {
+    addStartupSentryBreadcrumb(phase, cleanFields)
+    return
+  }
+
+  pendingStartupBreadcrumbs.push({ phase, fields: cleanFields })
+  while (pendingStartupBreadcrumbs.length > STARTUP_PHASE_BREADCRUMB_LIMIT) {
+    pendingStartupBreadcrumbs.shift()
+  }
+}
+
+function enableStartupSentryBreadcrumbs() {
+  sentryStartupBreadcrumbsEnabled = true
+  for (const item of pendingStartupBreadcrumbs.splice(0)) {
+    addStartupSentryBreadcrumb(item.phase, item.fields)
+  }
+}
+
+recordStartupPhase('main_loaded', {
+  platform: process.platform,
+  arch: process.arch,
+  argvCount: process.argv.length
+})
+
+function createConfigStore(phasePrefix = 'early_store') {
+  try {
+    recordStartupPhase(`${phasePrefix}_open_start`)
+    return new Store({
+      name: 'donethat-config',
+      cwd: app.getPath('userData'),
+      clearInvalidConfig: true
+    })
+  } catch (error) {
+    recordStartupPhase(`${phasePrefix}_open_failed`, { error: error.message })
+    log.warn('Unable to open config store:', error.message)
+    return null
+  }
+}
+
+const earlyConfigStore = createConfigStore()
+recordStartupPhase('early_store_open_done', { opened: !!earlyConfigStore })
+const gpuMitigationActive = applyStartupGpuMitigation({
+  app,
+  store: earlyConfigStore,
+  log,
+  platform: process.platform,
+  argv: process.argv
+})
+recordStartupPhase('gpu_mitigation_checked', { active: gpuMitigationActive })
+const gpuCrashMitigator = createGpuCrashMitigator({
+  app,
+  getStore: () => createConfigStore('gpu_mitigation_store'),
+  log,
+  recordSignal,
+  platform: process.platform,
+  argv: process.argv,
+  alreadyDisabled: gpuMitigationActive
+})
+recordStartupPhase('gpu_crash_mitigator_created')
 
 function isTransientSentryNetworkError(event, hint) {
   const exceptionValues = event?.exception?.values || []
@@ -112,6 +206,7 @@ function installChildProcessGoneReporting() {
 
     log.warn('Electron child process exited', fields)
     recordSignal('electron-child-process-gone', fields)
+    if (gpuCrashMitigator.handleChildProcessGone(details, fields)) return
 
     if (!SENTRY_CHILD_PROCESS_EVENT_REASONS.has(reason)) return
 
@@ -137,6 +232,7 @@ function installChildProcessGoneReporting() {
   })
 }
 
+recordStartupPhase('sentry_init_start')
 Sentry.init({
   dsn: 'https://c133ed0231c60f905e847ccf2ce2dfc9@o4511426462285824.ingest.de.sentry.io/4511426468642896',
   release: `donethat@${app.getVersion()}`,
@@ -147,7 +243,10 @@ Sentry.init({
       ? Sentry.childProcessIntegration({ events: false })
       : integration
   )),
-  getSessions: () => [session.defaultSession, session.fromPartition('persist:donethat')],
+  getSessions: () => {
+    if (!app.isReady()) return []
+    return [session.defaultSession, session.fromPartition('persist:donethat')]
+  },
   beforeSend(event, hint) {
     if (isTransientSentryNetworkError(event, hint)) {
       return null
@@ -156,24 +255,42 @@ Sentry.init({
     return event
   }
 })
+enableStartupSentryBreadcrumbs()
+recordStartupPhase('sentry_init_done')
 installChildProcessGoneReporting()
 
-// Conditionally load liquid glass with fallback
+recordStartupPhase('child_process_reporting_installed')
+
+// Conditionally load liquid glass with fallback. This is intentionally lazy so
+// the macOS native addon is not loaded during AppKit/Electron startup.
 let liquidGlass = null;
 let liquidGlassAvailable = false;
-try {
-  if (process.platform === 'darwin') {
+let liquidGlassLoadAttempted = false;
+
+function loadLiquidGlass() {
+  if (process.platform !== 'darwin') return false;
+  if (liquidGlassLoadAttempted) return liquidGlassAvailable;
+  liquidGlassLoadAttempted = true;
+
+  try {
+    recordStartupPhase('liquid_glass_load_start')
     // Support both ESM default and CJS export shapes
     const raw = require('electron-liquid-glass');
     liquidGlass = raw && raw.default ? raw.default : raw;
     liquidGlassAvailable = !!(liquidGlass && typeof liquidGlass.addView === 'function');
+    recordStartupPhase('liquid_glass_load_done', { available: liquidGlassAvailable })
+  } catch (e) {
+    liquidGlassAvailable = false;
+    recordStartupPhase('liquid_glass_load_failed', { error: e.message })
+    console.warn('Liquid glass not available, using standard windows:', e.message);
   }
-} catch (e) {
-  console.warn('Liquid glass not available, using standard windows:', e.message);
+
+  return liquidGlassAvailable;
 }
 
 function applyLiquidGlass(win, opts = {}) {
   if (process.platform !== 'darwin') return false;
+  if (!loadLiquidGlass()) return false;
   if (!liquidGlassAvailable || !liquidGlass || typeof liquidGlass.addView !== 'function') return false;
   if (!win || win.isDestroyed()) return false;
   try {
@@ -193,7 +310,9 @@ function applyLiquidGlass(win, opts = {}) {
 // Prevent multiple instances of the app so deep-link auth (donethat://?token=...)
 // is always delivered back into the existing instance. This is important for
 // Google SSO flows that return to a running app after the browser step.
+recordStartupPhase('single_instance_lock_start')
 const gotTheLock = app.requestSingleInstanceLock();
+recordStartupPhase('single_instance_lock_done', { gotLock: gotTheLock })
 if (!gotTheLock) {
   log.info('App already running - quitting this instance');
   app.quit();
@@ -1041,6 +1160,7 @@ function setupAutoStart() {
 ////// MAIN /////
 
 app.whenReady().then(async () => {
+  recordStartupPhase('when_ready_entered')
   session.fromPartition('persist:donethat').setDisplayMediaRequestHandler(async (request, callback) => {
     let responded = false
     const respond = (payload) => {
