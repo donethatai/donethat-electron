@@ -13,12 +13,16 @@ const {
 const ipcRenderer = window.electronAPI;
 
 // Import auth instance from firebase.js and analytics functions directly
-const { auth } = require('./firebase.js');
+const { auth, authPersistenceReady } = require('./firebase.js');
 const { logAnalyticsEvent, setAnalyticsUserProperties } = require('./analytics.js');
 const { updateAuthState } = require('./app-state.js');
 const { resetSummaryState } = require('./dashboard.js');
 // Centralized in-app banner
 const { showBanner, hideBanner } = require('./notify.js');
+const {
+  getLocalStorageUnavailableUserMessage,
+  isLocalStorageUnavailableError
+} = require('./storage-errors.js');
 function hideModal() { try { hideBanner(); } catch (_) {} }
 
 const signInForm = document.getElementById("signInForm");
@@ -57,6 +61,13 @@ const MAX_RETRIES = 7; // 7 retries: 5s, 10s, 20s, 40s, 80s, 160s, 320s
 // When we've hit max retries while offline, wait for online event to retry
 let waitingForOnline = false;
 let onlineListenerBound = null;
+let localStorageUnavailableBannerShown = false;
+
+function showLocalStorageUnavailableBanner() {
+  if (localStorageUnavailableBannerShown) return;
+  localStorageUnavailableBannerShown = true;
+  showBanner(getLocalStorageUnavailableUserMessage(), { title: 'Local Storage Unavailable', sticky: true });
+}
 
 // Helper to get next retry delay with exponential backoff
 // We use exponential backoff to avoid overwhelming the server during issues
@@ -80,6 +91,16 @@ function categorizeAuthError(error) {
 
 // Enhanced error handling function
 async function handleAuthError(error) {
+  if (isLocalStorageUnavailableError(error)) {
+    console.error('Auth storage error:', error?.message || error);
+    logAnalyticsEvent('auth_local_storage_unavailable', {
+      error_message: error?.message || String(error)
+    });
+    showLocalStorageUnavailableBanner();
+    if (typeof hideSpinner === 'function') hideSpinner();
+    return;
+  }
+
   const errorType = categorizeAuthError(error);
   
   console.error('Auth error:', error?.code, error?.message, errorType);
@@ -181,6 +202,21 @@ function initializeAuth(onSettingsUpdate, showBlockingSpinner, hideBlockingSpinn
     showSpinner = showBlockingSpinner;
     hideSpinner = hideBlockingSpinner;
     navigateToView = viewNavigator;
+
+    try {
+      window.addEventListener('donethat:local-storage-unavailable', showLocalStorageUnavailableBanner);
+      if (window.__donethatLocalStorageUnavailableDetected) {
+        showLocalStorageUnavailableBanner();
+      }
+    } catch (_) {}
+
+    authPersistenceReady.then((result) => {
+      if (result?.localStorageUnavailable) {
+        showLocalStorageUnavailableBanner();
+      }
+    }).catch((error) => {
+      console.warn('Unexpected auth persistence readiness error:', error?.message || error);
+    });
 }
 
 // Listen for logout event from tray menu at module level
@@ -344,6 +380,10 @@ onAuthStateChanged(auth, async (user) => {
 
 // Helper function to get user-friendly error messages
 function getErrorMessage(error) {
+  if (isLocalStorageUnavailableError(error)) {
+    return getLocalStorageUnavailableUserMessage();
+  }
+
   // Deadline exceeded (e.g. from backend) – show generic retry message
   const msg = (error.message || '').toLowerCase();
   if (msg.includes('deadline exceeded') || msg.includes('deadline-exceeded') || (error.code && String(error.code).toLowerCase().includes('deadline'))) {

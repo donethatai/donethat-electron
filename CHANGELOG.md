@@ -7,6 +7,7 @@
 - Fix system audio capture request handling when Electron cancels the media request.
 - Fix settings loading crash when auth state changes during managed settings sync.
 - Sync capture interval from user settings.
+- Handle local storage full errors without reporting them as renderer crashes.
 
 ## 2.2.5
 
