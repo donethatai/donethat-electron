@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Remove experimental context capture settings and disable the focused-screenshot capture path.
 - Improve Electron child-process exit reporting in Sentry diagnostics.
 - Relaunch on repeated GPU process crashes with hardware acceleration disabled.
 - Fix system audio capture request handling when Electron cancels the media request.

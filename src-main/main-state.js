@@ -56,7 +56,6 @@ let managedAppSettings = {
   },
   capture: {
     appExclusions: null,
-    contextCapture: null,
     saveCaptureData: null
   },
   localProcessing: {
@@ -105,24 +104,6 @@ function normalizeManagedAppExclusions(value) {
     .filter(Boolean);
 }
 
-function normalizeManagedContextApps(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const appName = typeof item.appName === 'string' ? item.appName.trim() : '';
-      if (!appName) return null;
-      const titlePatterns = Array.isArray(item.titlePatterns)
-        ? item.titlePatterns
-          .filter((entry) => typeof entry === 'string')
-          .map((entry) => entry.trim())
-          .filter((entry) => !!entry)
-        : [];
-      return { appName, titlePatterns };
-    })
-    .filter(Boolean);
-}
-
 function normalizeManagedListMode(value, fallback = 'fixed') {
   if (value === 'minimum') return 'minimum';
   if (value === 'fixed') return 'fixed';
@@ -148,23 +129,6 @@ function normalizeManagedAppExclusionsConfig(value) {
   return {
     mode: normalizeManagedListMode(value.mode, 'fixed'),
     entries: normalizeManagedAppExclusions(value.entries ?? value.list ?? value.apps ?? [])
-  };
-}
-
-function normalizeManagedContextCaptureConfig(value) {
-  if (!isManagedValue(value) || !value || typeof value !== 'object') return null;
-  const hasExplicitConfig =
-    isManagedValue(value.enabled) ||
-    isManagedValue(value.mode) ||
-    isManagedValue(value.apps) ||
-    isManagedValue(value.entries) ||
-    isManagedValue(value.list);
-  if (!hasExplicitConfig) return null;
-
-  return {
-    enabled: isManagedValue(value.enabled) ? !!value.enabled : null,
-    mode: normalizeManagedListMode(value.mode, 'fixed'),
-    apps: normalizeManagedContextApps(value.apps ?? value.entries ?? value.list ?? [])
   };
 }
 
@@ -239,41 +203,6 @@ function mergeMinimumAppExclusions(userEntries, requiredEntries) {
   return normalizeManagedAppExclusions(merged);
 }
 
-function buildManagedContextAppKey(item) {
-  const appName = String(item?.appName || '').trim().toLowerCase();
-  const patterns = Array.isArray(item?.titlePatterns)
-    ? [...item.titlePatterns].map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean).sort()
-    : [];
-  return `${appName}::${patterns.join('|')}`;
-}
-
-function mergeMinimumContextApps(userEntries, requiredEntries) {
-  const requiredMap = new Map();
-  for (const entry of requiredEntries) {
-    requiredMap.set(buildManagedContextAppKey(entry), entry);
-  }
-
-  const merged = [];
-  const consumed = new Set();
-  for (const entry of userEntries) {
-    const key = buildManagedContextAppKey(entry);
-    if (requiredMap.has(key)) {
-      merged.push(requiredMap.get(key));
-      consumed.add(key);
-    } else {
-      merged.push(entry);
-    }
-  }
-
-  for (const [key, entry] of requiredMap.entries()) {
-    if (!consumed.has(key)) {
-      merged.push(entry);
-    }
-  }
-
-  return normalizeManagedContextApps(merged);
-}
-
 function normalizeManagedAppSettings(raw) {
   const captureRaw = raw?.capture || {};
   const localRaw = raw?.localProcessing || {};
@@ -286,7 +215,6 @@ function normalizeManagedAppSettings(raw) {
     },
     capture: {
       appExclusions: normalizeManagedAppExclusionsConfig(captureRaw.appExclusions),
-      contextCapture: normalizeManagedContextCaptureConfig(captureRaw.contextCapture),
       saveCaptureData: normalizeManagedSaveCaptureDataConfig(captureRaw.saveCaptureData)
     },
     localProcessing: {
@@ -502,20 +430,6 @@ function applyManagedAppSettings(rawSettings = null) {
         : exclusionConfig.entries;
       store.set('appExclusions', nextExclusions);
     }, 'apply managed app exclusions');
-  }
-
-  if (isManagedValue(managedAppSettings.capture.contextCapture)) {
-    const contextCaptureConfig = managedAppSettings.capture.contextCapture;
-    safeStoreOperation(() => {
-      if (!store) return;
-      const existingApps = normalizeManagedContextApps(store.get('contextApps') || []);
-      const nextApps = contextCaptureConfig.enabled === false
-        ? []
-        : contextCaptureConfig.mode === 'minimum'
-          ? mergeMinimumContextApps(existingApps, contextCaptureConfig.apps)
-          : contextCaptureConfig.apps;
-      store.set('contextApps', nextApps);
-    }, 'apply managed context capture');
   }
 
   if (isManagedValue(managedAppSettings.capture.saveCaptureData)) {
@@ -2042,62 +1956,6 @@ function setupIPCHandlers() {
     } catch (error) {
       log.error('Error testing app exclusions:', error);
       return { success: false, message: error.message };
-    }
-  });
-
-  // Context capture (experimental) handlers
-  ipcMain.handle('get-context-capture-enabled', async () => {
-    try {
-      const apps = safeStoreOperation(() => normalizeManagedContextApps(store?.get('contextApps') || []), 'get contextApps for context capture enabled');
-      const enabled = Array.isArray(apps) && apps.length > 0;
-      return { success: true, enabled };
-    } catch (error) {
-      return { success: false, enabled: false };
-    }
-  });
-
-  ipcMain.on('update-context-capture-enabled', (event, enabled) => {
-    const managedContextConfig = managedAppSettings.capture.contextCapture;
-    if (isManagedValue(managedContextConfig?.enabled)) {
-      return;
-    }
-    if (enabled) {
-      return;
-    }
-    safeStoreOperation(() => {
-      if (store) store.set('contextApps', []);
-    }, 'clear contextApps when disabling context capture');
-  });
-
-  ipcMain.handle('get-context-apps', async () => {
-    try {
-      const apps = safeStoreOperation(() => store?.get('contextApps') || [], 'get contextApps');
-      return { success: true, apps: Array.isArray(apps) ? apps : [] };
-    } catch (error) {
-      return { success: false, apps: [] };
-    }
-  });
-
-  ipcMain.handle('save-context-apps', async (event, apps) => {
-    try {
-      const managedContextConfig = managedAppSettings.capture.contextCapture;
-      if (isManagedValue(managedContextConfig) && managedContextConfig.mode === 'fixed') {
-        throw new Error('Context capture settings are managed by your organization');
-      }
-      if (!Array.isArray(apps)) {
-        throw new Error('Context apps must be an array');
-      }
-      const normalizedApps = normalizeManagedContextApps(apps);
-      const mergedApps = (isManagedValue(managedContextConfig) && managedContextConfig.mode === 'minimum')
-        ? mergeMinimumContextApps(normalizedApps, managedContextConfig.apps)
-        : normalizedApps;
-      safeStoreOperation(() => {
-        if (store) store.set('contextApps', mergedApps);
-        else throw new Error('Store not initialized');
-      }, 'save contextApps');
-      return { success: true, apps: mergedApps };
-    } catch (error) {
-      return { success: false, error: error.message };
     }
   });
 

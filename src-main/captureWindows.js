@@ -590,18 +590,6 @@ async function recordCurrentWindow() {
     lastEmittedPermission = true
     // Do not auto-resume main capture here; user/system flow will re-enable as needed
     
-    // Notify context capture about the active window (non-blocking)
-    try {
-      const contextCapture = require('./contextCapture')
-      if (contextCapture && typeof contextCapture.onActiveWindowTracked === 'function') {
-        contextCapture.onActiveWindowTracked(activeWindowInfo).catch(err => {
-          // Silent fail - context capture is optional
-        })
-      }
-    } catch (_) {
-      // Context capture module may not be available
-    }
-    
   } catch (error) {
     log.warn('Error tracking window (treated as transient):', error?.message || error)
     
@@ -742,44 +730,6 @@ function shouldExcludeWindow(window, excludedApps) {
     }
   }
   
-  return false
-}
-
-/**
- * Check if a window should be included for context capture (inverse of shouldExcludeWindow)
- * Same matching logic: app name + optional title patterns
- * @param {Object} window Window object with appName/name and title
- * @param {Array} contextApps Array of inclusion rules { appName, titlePatterns? }
- * @returns {boolean} True if window should be included for context capture
- */
-function shouldIncludeForContext(window, contextApps) {
-  if (!contextApps || contextApps.length === 0) return false
-  const appName = (window.appName || window.app || window.name || window.owner?.name || window.owner?.processName || '').trim()
-  const title = (window.title || '').trim()
-  if (!appName) return false
-
-  for (const rule of contextApps) {
-    if (!rule.appName || !rule.appName.trim()) continue
-    const ruleAppName = rule.appName.trim().toLowerCase()
-    const windowAppName = appName.toLowerCase()
-    const normalizedRule = normalizeAppName(ruleAppName)
-    const normalizedWindow = normalizeAppName(windowAppName)
-    const appMatches = normalizedWindow === normalizedRule ||
-                       normalizedWindow.includes(normalizedRule) ||
-                       normalizedRule.includes(normalizedWindow) ||
-                       windowAppName.includes(ruleAppName) ||
-                       ruleAppName.includes(windowAppName)
-    if (!appMatches) continue
-
-    let titlePatterns = rule.titlePatterns || []
-    if (rule.titlePattern && !titlePatterns.length) titlePatterns = [rule.titlePattern]
-    if (!titlePatterns || titlePatterns.length === 0) return true
-    const titleLower = title.toLowerCase()
-    for (const pattern of titlePatterns) {
-      if (!pattern || !pattern.trim()) continue
-      if (titleLower.includes(pattern.trim().toLowerCase())) return true
-    }
-  }
   return false
 }
 
@@ -1074,7 +1024,6 @@ module.exports = {
   initWindowsPermissionHandling,
   normalizeAppName,
   shouldExcludeWindow,
-  shouldIncludeForContext,
   convertBoundsToDIP,
   getActiveWindowSafe: (ms = 300) => safeActiveWindow(ms),
   __test__: {

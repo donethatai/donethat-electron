@@ -35,7 +35,6 @@ The relevant endpoints currently used by the client are:
 - `https://europe-west1-donethat.cloudfunctions.net/inputConfig`
 - `https://europe-west1-donethat.cloudfunctions.net/inputProcess`
 - `https://europe-west1-donethat.cloudfunctions.net/captureScreenshot`
-- `https://europe-west1-donethat.cloudfunctions.net/contextCapture`
 - `https://app.donethat.ai`
 - `https://checkout.stripe.com`
 
@@ -90,16 +89,6 @@ Firebase handles:
 - email/password or federated sign-in data
 - token refresh and installation metadata used by the Firebase SDK
 
-### Context Capture
-
-When context capture is enabled, the client can send `contextCapture` with:
-
-- focused screenshots for configured apps/windows
-- app names and window titles associated with those screenshots
-- capture timestamp
-
-This path is optional and separate from the normal capture cycle.
-
 ### Embedded Web App
 
 The desktop app embeds `app.donethat.ai` for dashboard, account, and billing-related flows. Typical data categories there include:
@@ -116,12 +105,11 @@ You can inspect the client code directly:
 - Read [main.js](../main.js) for updater, auth-window, and embedded-webview behavior.
 - Read [src-main/capture.js](../src-main/capture.js) for the main capture-cycle upload flow.
 - Read [src-main/processLocal.js](../src-main/processLocal.js) for the local-processing submission path.
-- Read [src-main/contextCapture.js](../src-main/contextCapture.js) for the optional focused-screenshot flow.
 - Read [src-main/main-state.js](../src-main/main-state.js) for token handling and persisted capture-related settings.
 
 Useful checks:
 
-- Search for `captureScreenshot`, `inputProcess`, `inputConfig`, and `contextCapture`.
+- Search for `captureScreenshot`, `inputProcess`, and `inputConfig`.
 - Search for `clientTelemetry` to see where diagnostic payloads are attached.
 - Search for `app.donethat.ai` and `checkout.stripe.com` to inspect embedded web flows.
 

@@ -62,7 +62,6 @@ const llmManagedLocks = {
   openAICompatible: false
 };
 let applyAppExclusionsManagedConfig = null;
-let applyContextCaptureManagedConfig = null;
 let applySaveCaptureManagedConfig = null;
 let waylandWindowsPersistInFlight = false;
 
@@ -139,21 +138,6 @@ function normalizeAppExclusions(value) {
     .filter(Boolean);
 }
 
-function normalizeContextApps(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const appName = typeof item.appName === 'string' ? item.appName.trim() : '';
-      if (!appName) return null;
-      return {
-        appName,
-        titlePatterns: normalizeTitlePatterns(item.titlePatterns)
-      };
-    })
-    .filter(Boolean);
-}
-
 function normalizeManagedAppExclusionsConfig(value) {
   if (!isManagedValue(value)) return null;
   if (Array.isArray(value)) {
@@ -176,24 +160,6 @@ function normalizeManagedAppExclusionsConfig(value) {
   return {
     mode: normalizeManagedListMode(value.mode, MANAGED_LIST_MODE_FIXED),
     entries
-  };
-}
-
-function normalizeManagedContextCaptureConfig(value) {
-  if (!isManagedValue(value)) return null;
-  if (!value || typeof value !== 'object') return null;
-  const hasExplicitConfig =
-    isManagedValue(value.enabled) ||
-    isManagedValue(value.mode) ||
-    isManagedValue(value.apps) ||
-    isManagedValue(value.entries) ||
-    isManagedValue(value.list);
-  if (!hasExplicitConfig) return null;
-
-  return {
-    enabled: normalizeBoolOrNull(value.enabled),
-    mode: normalizeManagedListMode(value.mode, MANAGED_LIST_MODE_FIXED),
-    apps: normalizeContextApps(value.apps ?? value.entries ?? value.list ?? [])
   };
 }
 
@@ -239,8 +205,6 @@ function normalizeAppSettings(raw) {
   const localRaw = raw?.localProcessing;
 
   const appExclusions = normalizeManagedAppExclusionsConfig(captureRaw?.appExclusions);
-  const contextCapture = normalizeManagedContextCaptureConfig(captureRaw?.contextCapture);
-
   const saveCaptureData = normalizeManagedSaveCaptureDataConfig(captureRaw?.saveCaptureData);
   const gemini = normalizeManagedGeminiConfig(localRaw?.gemini);
   const openAICompatible = normalizeManagedOpenAICompatibleConfig(localRaw?.openAICompatible);
@@ -257,7 +221,6 @@ function normalizeAppSettings(raw) {
         screen: normalizeManagedInputState(captureRaw?.inputData?.screen)
       },
       appExclusions,
-      contextCapture,
       saveCaptureData
     },
     localProcessing: {
@@ -360,7 +323,6 @@ function isWindowsEffectivelyEnabled() {
 function refreshCaptureDependentVisibility() {
   const audioCard = document.getElementById('microphonePermissionsCard');
   const appMaskingCard = document.getElementById('appMaskingCard');
-  const contextCaptureCard = document.getElementById('contextCaptureCard');
   const dimClass = ['opacity-50'];
 
   const setDimmed = (el, isDimmed, tooltip = '') => {
@@ -379,7 +341,6 @@ function refreshCaptureDependentVisibility() {
   if (!isCaptureReadinessReady()) {
     setDimmed(audioCard, false);
     setDimmed(appMaskingCard, false);
-    setDimmed(contextCaptureCard, false);
     return;
   }
 
@@ -389,7 +350,6 @@ function refreshCaptureDependentVisibility() {
   const bothRequiredMsg = 'Both Screenshare and Active applications must be enabled for this feature to work.';
   setDimmed(audioCard, !screenEnabled && !windowsEnabled);
   setDimmed(appMaskingCard, !screenEnabled || !windowsEnabled, bothRequiredMsg);
-  setDimmed(contextCaptureCard, !screenEnabled || !windowsEnabled, bothRequiredMsg);
 }
 
 
@@ -458,8 +418,6 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupSystemAudioDependency();
   // Set up app exclusions listeners
   setupAppExclusionsListeners();
-  // Set up context capture (experimental) listeners
-  setupContextCaptureListeners();
   setupSaveCaptureDataListeners();
   setupClientTelemetryListeners();
 
@@ -753,10 +711,6 @@ async function updateSettingsUI(settings) {
 
   if (typeof applyAppExclusionsManagedConfig === 'function') {
     await applyAppExclusionsManagedConfig(nextManagedAppSettings.capture.appExclusions);
-    if (managedAppSettings !== nextManagedAppSettings) return;
-  }
-  if (typeof applyContextCaptureManagedConfig === 'function') {
-    await applyContextCaptureManagedConfig(nextManagedAppSettings.capture.contextCapture);
     if (managedAppSettings !== nextManagedAppSettings) return;
   }
   if (typeof applySaveCaptureManagedConfig === 'function') {
@@ -1761,239 +1715,6 @@ function setupAppExclusionsListeners() {
         testBtn.textContent = 'Test';
       }
     });
-  }
-}
-
-// Set up context capture (experimental) listeners
-function setupContextCaptureListeners() {
-  const appsSection = document.getElementById('contextAppsSection');
-  const appsList = document.getElementById('contextAppsList');
-  const addBtn = document.getElementById('addContextAppBtn');
-
-  if (!appsSection || !appsList || !addBtn) return;
-
-  let contextApps = [];
-  let contextManaged = false;
-  let contextMode = null;
-  let contextDisabledManaged = false;
-
-  function isContextEditingLocked() {
-    return contextManaged || contextDisabledManaged;
-  }
-
-  async function loadContextCaptureState() {
-    try {
-      const appsResult = await ipcRenderer.invoke('get-context-apps');
-      if (isContextEditingLocked()) return;
-      if (appsResult?.success && Array.isArray(appsResult.apps)) {
-        contextApps = appsResult.apps.map((app) => ({
-          appName: app.appName || '',
-          titlePatterns: app.titlePatterns || []
-        }));
-      }
-      appsSection.classList.remove('hidden');
-      renderContextAppsList();
-    } catch (error) {
-      console.error('Error loading context capture state:', error);
-    }
-  }
-
-  async function applyManagedContextCapture(managedContextCaptureConfig) {
-    if (!isManagedValue(managedContextCaptureConfig)) {
-      contextManaged = false;
-      contextMode = null;
-      contextDisabledManaged = false;
-      appsSection.classList.remove('hidden');
-      setManagedCardLock('contextCaptureCard', false);
-      await loadContextCaptureState();
-      return;
-    }
-
-    const normalized = normalizeManagedContextCaptureConfig(managedContextCaptureConfig);
-    contextMode = normalized?.mode || MANAGED_LIST_MODE_FIXED;
-    contextManaged = contextMode === MANAGED_LIST_MODE_FIXED;
-    contextDisabledManaged = normalized?.enabled === false;
-
-    setManagedCardLock('contextCaptureCard', contextManaged || contextDisabledManaged);
-
-    if (contextManaged || contextDisabledManaged) {
-      contextApps = normalized?.apps || [];
-      appsSection.classList.toggle('hidden', contextDisabledManaged);
-      renderContextAppsList();
-      return;
-    }
-
-    await loadContextCaptureState();
-  }
-
-  applyContextCaptureManagedConfig = applyManagedContextCapture;
-
-  function renderContextAppsList() {
-    appsList.innerHTML = '';
-    contextApps.forEach((app, index) => {
-      const entry = document.createElement('div');
-      entry.className = 'dt-card dt-card--subtle dt-settings-entry';
-
-      const appNameRow = document.createElement('div');
-      appNameRow.className = 'dt-settings-field';
-      const appNameLabel = document.createElement('label');
-      appNameLabel.className = 'dt-label';
-      appNameLabel.textContent = 'App name';
-      const appNameInputContainer = document.createElement('div');
-      appNameInputContainer.className = 'relative';
-      const appNameInput = document.createElement('input');
-      appNameInput.type = 'text';
-      appNameInput.className = 'dt-input dt-input--compact dt-input--with-trailing-action';
-      appNameInput.placeholder = 'e.g., Notion, Google Chrome, Calendar';
-      appNameInput.value = app.appName || '';
-      appNameInput.dataset.index = index;
-      appNameInput.dataset.field = 'appName';
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-remove-button';
-      removeBtn.dataset.index = index;
-      removeBtn.innerHTML = '×';
-      removeBtn.title = 'Remove';
-      appNameInputContainer.appendChild(appNameInput);
-      appNameInputContainer.appendChild(removeBtn);
-      appNameRow.appendChild(appNameLabel);
-      appNameRow.appendChild(appNameInputContainer);
-
-      const titlePatternRow = document.createElement('div');
-      titlePatternRow.className = 'dt-settings-field';
-      const titlePatternLabel = document.createElement('label');
-      titlePatternLabel.className = 'dt-label';
-      titlePatternLabel.textContent = 'Window name keywords (optional)';
-      let titlePatterns = app.titlePatterns || [];
-      if (!Array.isArray(titlePatterns)) titlePatterns = [];
-      const titlePatternContainer = document.createElement('div');
-      titlePatternContainer.className = 'dt-chip-input';
-      titlePatternContainer.dataset.index = index;
-
-      const renderChips = () => {
-        titlePatternContainer.querySelectorAll('.context-pattern-chip').forEach((c) => c.remove());
-        titlePatterns.forEach((pattern) => {
-          if (!pattern || !pattern.trim()) return;
-          const chip = document.createElement('div');
-          chip.className = 'dt-chip context-pattern-chip';
-
-          const chipText = document.createElement('span');
-          chipText.textContent = pattern;
-          const chipRemove = document.createElement('button');
-          chipRemove.type = 'button';
-          chipRemove.className = 'dt-chip-remove';
-          chipRemove.textContent = '×';
-
-          chipRemove.addEventListener('click', () => {
-            if (isContextEditingLocked()) return;
-            const i = titlePatterns.indexOf(pattern);
-            if (i !== -1) {
-              titlePatterns.splice(i, 1);
-              contextApps[index].titlePatterns = titlePatterns.filter((p) => p && p.trim());
-              renderChips();
-              saveContextApps();
-            }
-          });
-          chip.appendChild(chipText);
-          chip.appendChild(chipRemove);
-          titlePatternContainer.insertBefore(chip, titlePatternInput);
-        });
-      };
-      const titlePatternInput = document.createElement('input');
-      titlePatternInput.type = 'text';
-      titlePatternInput.className = 'flex-1 min-w-[120px] border-0 outline-none bg-transparent text-xs';
-      titlePatternInput.placeholder = titlePatterns.length === 0 ? 'e.g. todos, projects' : 'Add another...';
-      titlePatternInput.dataset.index = index;
-      titlePatternInput.addEventListener('keydown', async (e) => {
-        if (isContextEditingLocked()) return;
-        if (e.key === 'Enter' && titlePatternInput.value.trim()) {
-          e.preventDefault();
-          const newPattern = titlePatternInput.value.trim();
-          if (!titlePatterns.includes(newPattern)) {
-            titlePatterns.push(newPattern);
-            contextApps[index].titlePatterns = titlePatterns;
-            titlePatternInput.value = '';
-            renderChips();
-            await saveContextApps();
-          }
-        }
-      });
-      titlePatternInput.addEventListener('blur', async () => {
-        if (isContextEditingLocked()) return;
-        if (titlePatternInput.value.trim() && !titlePatterns.includes(titlePatternInput.value.trim())) {
-          titlePatterns.push(titlePatternInput.value.trim());
-          contextApps[index].titlePatterns = titlePatterns;
-          titlePatternInput.value = '';
-          renderChips();
-          await saveContextApps();
-        }
-      });
-      titlePatternContainer.appendChild(titlePatternInput);
-      renderChips();
-      titlePatternRow.appendChild(titlePatternLabel);
-      titlePatternRow.appendChild(titlePatternContainer);
-
-      entry.appendChild(appNameRow);
-      entry.appendChild(titlePatternRow);
-      appsList.appendChild(entry);
-    });
-
-    appsList.querySelectorAll('input[data-field="appName"]').forEach((input) => {
-      input.addEventListener('blur', async () => {
-        if (isContextEditingLocked()) return;
-        const index = parseInt(input.dataset.index);
-        if (contextApps[index]) {
-          contextApps[index].appName = input.value.trim() || '';
-          if (!contextApps[index].appName) {
-            contextApps.splice(index, 1);
-            renderContextAppsList();
-          } else {
-            await saveContextApps();
-          }
-        }
-      });
-    });
-    appsList.querySelectorAll('button[data-index]').forEach((btn) => {
-      if (btn.textContent === '×') {
-        btn.addEventListener('click', async () => {
-          if (isContextEditingLocked()) return;
-          const index = parseInt(btn.dataset.index);
-          contextApps.splice(index, 1);
-          renderContextAppsList();
-          await saveContextApps();
-        });
-      }
-    });
-  }
-
-  async function saveContextApps() {
-    if (isContextEditingLocked()) return;
-    try {
-      const result = await ipcRenderer.invoke('save-context-apps', contextApps);
-      if (!result?.success) {
-        showBanner(`Error saving context apps: ${result?.error || 'Unknown error'}`, { title: 'Settings', sticky: true });
-      } else if (contextMode === MANAGED_LIST_MODE_MINIMUM && Array.isArray(result.apps)) {
-        contextApps = result.apps;
-        renderContextAppsList();
-      }
-    } catch (error) {
-      console.error('Error saving context apps:', error);
-      showBanner(`Error saving context apps: ${error.message}`, { title: 'Settings', sticky: true });
-    }
-  }
-
-  addBtn.addEventListener('click', () => {
-    if (isContextEditingLocked()) return;
-    contextApps.push({ appName: '', titlePatterns: [] });
-    renderContextAppsList();
-    const newInput = appsList.querySelector(`input[data-index="${contextApps.length - 1}"][data-field="appName"]`);
-    if (newInput) newInput.focus();
-  });
-
-  if (managedAppSettings) {
-    applyManagedContextCapture(managedAppSettings.capture.contextCapture);
-  } else {
-    loadContextCaptureState();
   }
 }
 
