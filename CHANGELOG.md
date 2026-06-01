@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+## 2.2.6
+
 - Remove experimental context capture settings and disable the focused-screenshot capture path.
 - Improve Electron child-process exit reporting in Sentry diagnostics.
 - Relaunch on repeated GPU process crashes with hardware acceleration disabled.
 - Fix system audio capture request handling when Electron cancels the media request.
+- Fix chat overlay visibility on macOS fullscreen Spaces.
 - Fix settings loading crash when auth state changes during managed settings sync.
 - Sync capture interval from user settings.
 - Handle local storage full errors without reporting them as renderer crashes.

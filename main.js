@@ -682,7 +682,7 @@ try {
       const data = Array.isArray(message.data) ? message.data : [message.data];
       const text = data.filter(Boolean).map(String).join(' ');
       const body = text.substring(0, 160) + (text.length > 160 ? '…' : '');
-      try { if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) overlayWindow.hide(); } catch (e) {}
+      try { if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) hideOverlayWindow(); } catch (e) {}
       mainWindow.webContents.send('request-notification', {
         id: 'log-error-' + Date.now(),
         title: 'DoneThat Error',
@@ -1050,7 +1050,7 @@ ipcMain.on('logout-request', () => {
 ipcMain.on('logout', () => {
   try {
     if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
-      overlayWindow.hide();
+      hideOverlayWindow();
     }
   } catch (e) {}
   if (mainWindow) {
@@ -1076,7 +1076,7 @@ ipcMain.on('process-external-url', (event, urlString) => {
 ipcMain.on('focus-app-window', (event) => {
   try {
     if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
-      overlayWindow.hide();
+      hideOverlayWindow();
     }
   } catch (e) {}
   if (mainWindow) {
@@ -1374,7 +1374,7 @@ app.whenReady().then(async () => {
         try {
           try {
             if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
-              overlayWindow.hide();
+              hideOverlayWindow();
             }
           } catch (e) {}
           try {
@@ -1587,7 +1587,7 @@ ipcMain.handle('overlay:get-state', () => {
     try {
       if (overlayWindow && !overlayWindow.isDestroyed() && event.sender !== overlayWindow.webContents) return
       const text = typeof payload?.text === 'string' ? payload.text : ''
-      try { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide() } catch (_) {}
+      try { if (overlayWindow && !overlayWindow.isDestroyed()) hideOverlayWindow() } catch (_) {}
       presentMainWindow()
       setTimeout(() => {
         try {
@@ -1618,11 +1618,19 @@ ipcMain.on('create-overlay-if-needed', () => {
 function hideOverlayWithoutFocusingMain() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   if (returnFocusToMainOnOverlayClose) {
-    overlayWindow.hide();
+    hideOverlayWindow();
   } else {
     suppressMainFocusAfterOverlayHideUntil = Date.now() + 500;
     try { overlayWindow.blur(); } catch (e) {}
-    overlayWindow.hide();
+    hideOverlayWindow();
+  }
+}
+
+function hideOverlayWindow() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+  try { overlayWindow.hide() } catch (e) {}
+  if (process.platform === 'darwin') {
+    try { overlayWindow.setVisibleOnAllWorkspaces(false) } catch (e) {}
   }
 }
 
@@ -1641,7 +1649,7 @@ ipcMain.on('overlay:open-main', (event, view) => {
       navigateToView('signup-next')
     }
     if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.hide()
+      hideOverlayWindow()
     }
     restoreShowAndFocusMainWindow()
   } catch (e) {}
@@ -2476,6 +2484,7 @@ function createOverlayWindow() {
       fullscreenable: false,
       transparent: true,
       backgroundColor: '#00000000',
+      ...(isPlatformMac ? { type: 'panel' } : {}),
       webPreferences: {
         nodeIntegration: false,    // SECURED
         contextIsolation: true,    // SECURED
@@ -2485,7 +2494,7 @@ function createOverlayWindow() {
         backgroundThrottling: true,
         spellcheck: true
       },
-      ...(isPlatformMac ? { visibleOnAllWorkspaces: true, acceptFirstMouse: true } : {})
+      ...(isPlatformMac ? { acceptFirstMouse: true } : {})
     })
 
     overlayWindow.loadFile(path.join(__dirname, 'src', 'chat.html'))
@@ -2609,11 +2618,10 @@ function showOverlayOnCurrentSpace(opts = {}) {
         if (noFocus) {
           overlayWindow.showInactive();
         } else {
-          overlayWindow.show(); 
+          overlayWindow.show();
           overlayWindow.focus();
         }
       } catch (e) {}
-      try { overlayWindow.setVisibleOnAllWorkspaces(false); } catch (e) {}
     } else {
       try { 
         if (noFocus) {
