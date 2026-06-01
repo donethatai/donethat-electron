@@ -46,6 +46,7 @@ const validSendChannels = [
   'chat:recent-chats-updated',
   'chat:message-result',
   'chat:load-chat-result',
+  'feedback:open-with-chat-history',
 
   // Overlay / windows
   'overlay:show-if-hidden',
@@ -151,6 +152,7 @@ const validReceiveChannels = [
   'chat:get-recent-chats',
   'chat:load-chat',
   'liquid-glass-active',
+  'feedback:open',
 
   // Webview / hotkey / updates
   'app:window-hidden',

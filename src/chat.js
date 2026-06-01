@@ -28,14 +28,18 @@ updateOverlayVisualMode()
 
 const input0 = document.getElementById('chatInput')
 const includeScreenBtn = document.getElementById('includeScreenBtn')
+const screenAttachmentChip = document.getElementById('screenAttachmentChip')
 const openAppBtn = document.getElementById('openAppBtn')
 const closeOverlayBtn = document.getElementById('closeOverlayBtn')
 const clearBtn = document.getElementById('clearBtn')
 const chatContainer = document.getElementById('chatContainer')
 const recentChatsContainer = document.getElementById('recentChatsContainer')
 const chatNotice = document.getElementById('chatNotice')
+const reportIssueBtn = document.getElementById('reportIssueBtn')
 const overlayRoot = document.getElementById('overlayRoot')
 const overlayCard = document.querySelector('.overlay-card')
+const inputRow = document.querySelector('.input-row')
+const overlayTooltip = document.getElementById('overlayTooltip')
 const mascotWrap = document.getElementById('mascotWrap')
 const mascotCanvas = document.getElementById('mascotCanvas')
 const mascotFallback = document.getElementById('mascotFallback')
@@ -58,12 +62,12 @@ let chatVisible = false
 let lastSentHeight = null
 let lastOverlayRenderTelemetryAt = 0
 let includeScreenOnNextMessage = false
-const MIN_INPUT_HEIGHT = 28
+const MIN_INPUT_HEIGHT = 32
 let typingTimer = null
 const TYPING_DELAY_MS = 300
 const INACTIVITY_RESET_MS = 10 * 60 * 1000
 const COLLAPSED_OVERLAY_HEIGHT = 52
-const MAX_OVERLAY_HEIGHT = 600
+const MAX_OVERLAY_HEIGHT = 720
 const ASSISTANT_WRITING_HOLD_MS = 2500
 const ASSISTANT_EMOTION_PLAYBACK_MS = 7000
 const MASCOT_OPEN_RESET_MS = 120
@@ -71,6 +75,50 @@ const MASCOT_OPEN_IDLE_SETTLE_MS = 500
 const MASCOT_SOURCE = '../resources/rive/donethat_mascot.riv'
 const MASCOT_ARTBOARD_NAME = 'face'
 const MASCOT_STATE_MACHINE_NAME = 'face'
+const EMPTY_CHAT_PROMPTS = Object.freeze([
+  'Please log an offline meeting for me',
+  'Please send feedback to Christoph',
+  'Please interrupt me less often',
+  'Set my goal for today',
+  'What did I work on yesterday?',
+  'Generate my work report for today',
+  'Record two hours of planning for yesterday',
+  'Generate my daily summary',
+  'Approve today\'s summary',
+  'Edit my daily summary',
+  'Set my weekly goal',
+  'Set my monthly goal',
+  'Review my quarterly goals',
+  'Create a project for onboarding',
+  'Rename my client project',
+  'Merge two duplicate projects',
+  'Move this task to another project',
+  'List my active projects',
+  'Who follows me?',
+  'Show who I am following',
+  'Search for Christoph',
+  'Accept my pending follow requests',
+  'Turn proactive chat off',
+  'Update my workhours',
+  'Search the DoneThat docs',
+  'How do goals work in DoneThat?',
+  'How does DoneThat work?',
+  'Explain me how the calendar feature works.',
+  'Schedule a meeting tomorrow',
+  'Schedule a meeting with John for tomorrow at 3.',
+  'Log a coffee chat',
+  'Help me plan my afternoon',
+  'What should I focus on next?',
+  'Cheer me up',
+  'Tell me a joke',
+  'Give me a tiny pep talk',
+  'Make my day sound productive',
+  'Write a haiku about deep work',
+  'Help me procrastinate less',
+  'Nudge me back on track'
+])
+const FEEDBACK_HISTORY_MESSAGE_LIMIT = 20
+const FEEDBACK_HISTORY_CHAR_LIMIT = 6000
 const MASCOT_MOODS = Object.freeze({
   IDLE: 0,
   CHILLING: 1,
@@ -134,6 +182,10 @@ let mascotOpenSequenceToken = 0
 let mascotIdleOverrideUntil = 0
 let activeWaitingMood = null
 let activePausedMood = null
+let promptAnimationTimer = null
+let promptAnimationRunning = false
+let emptyChatPromptIndex = 0
+let tooltipHideTimer = null
 let lastDocumentVisibilityState = document.visibilityState
 const IDLE_SLEEP_MS = 60 * 1000
 /**
@@ -152,6 +204,91 @@ function markOverlayEngaged() {
 
 function getMessageKey(message, index) {
   return message.id || message.ts || `idx-${index}`
+}
+
+function hasActiveChatMessages() {
+  return messages.length > 0 || pendingMessages.length > 0
+}
+
+function updateInputPlaceholder() {
+  if (!input0) return
+  syncPromptAnimation()
+}
+
+function shufflePrompts(prompts) {
+  const shuffled = prompts.slice()
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled
+}
+
+const SHUFFLED_EMPTY_CHAT_PROMPTS = Object.freeze(shufflePrompts(EMPTY_CHAT_PROMPTS))
+
+function getNextEmptyChatPrompt() {
+  const prompt = SHUFFLED_EMPTY_CHAT_PROMPTS[emptyChatPromptIndex % SHUFFLED_EMPTY_CHAT_PROMPTS.length]
+  emptyChatPromptIndex += 1
+  return prompt
+}
+
+function shouldAnimatePrompt() {
+  return !!input0 &&
+    !hasActiveChatMessages() &&
+    !input0.value &&
+    document.visibilityState !== 'hidden'
+}
+
+function stopPromptAnimation(clearPlaceholder = true) {
+  if (promptAnimationTimer) {
+    try { clearTimeout(promptAnimationTimer) } catch (e) {}
+    promptAnimationTimer = null
+  }
+  promptAnimationRunning = false
+  if (clearPlaceholder && input0) input0.placeholder = ''
+}
+
+function startPromptAnimation() {
+  if (promptAnimationRunning || !shouldAnimatePrompt()) return
+  promptAnimationRunning = true
+  let prompt = getNextEmptyChatPrompt()
+  let charCount = 0
+  let deleting = false
+
+  function step() {
+    if (!shouldAnimatePrompt()) {
+      stopPromptAnimation()
+      return
+    }
+
+    input0.placeholder = prompt.slice(0, charCount)
+
+    let delay = deleting ? 28 : 42
+    if (!deleting && charCount < prompt.length) {
+      charCount += 1
+    } else if (!deleting) {
+      deleting = true
+      delay = 1800
+    } else if (charCount > 0) {
+      charCount -= 1
+    } else {
+      deleting = false
+      prompt = getNextEmptyChatPrompt()
+      delay = 250
+    }
+
+    promptAnimationTimer = setTimeout(step, delay)
+  }
+
+  step()
+}
+
+function syncPromptAnimation() {
+  if (shouldAnimatePrompt()) {
+    startPromptAnimation()
+  } else {
+    stopPromptAnimation()
+  }
 }
 
 function hasNewAssistantMessage(previousMessages, nextMessages) {
@@ -514,15 +651,24 @@ function createRowForMessage(message) {
 }
 
 function computeDesiredHeight() {
-  // Input box is COMPLETELY FIXED - always the same height
-  const inputH = MIN_INPUT_HEIGHT
+  const inputH = getInputRowHeight()
   const chrome = 16
   const chatH = chatContainer.scrollHeight
-  // Add fixed height for recent chats container if visible (super short, 24px + 4px margin)
-  const recentChatsH = (recentChatsContainer && recentChatsContainer.style.display !== 'none') ? 28 : 0
+  const recentChatsH = getRecentChatsHeight()
   // Add fixed height for chat notice if visible (only when there are messages)
   const noticeH = (chatNotice && chatNotice.style.display !== 'none') ? (chatNotice.offsetHeight || 16) : 0
   return chatH + inputH + chrome + recentChatsH + noticeH
+}
+
+function getRecentChatsHeight() {
+  if (!recentChatsContainer || recentChatsContainer.style.display === 'none') return 0
+  const styles = window.getComputedStyle ? window.getComputedStyle(recentChatsContainer) : null
+  const marginBottom = styles ? parseFloat(styles.marginBottom) || 0 : 0
+  return (recentChatsContainer.offsetHeight || 28) + marginBottom
+}
+
+function getInputRowHeight() {
+  return inputRow?.offsetHeight || input0?.offsetHeight || MIN_INPUT_HEIGHT
 }
 
 function clampOverlayHeight(height) {
@@ -530,11 +676,9 @@ function clampOverlayHeight(height) {
 }
 
 function applyScrollAndClamp(desired) {
-  // Input box is COMPLETELY FIXED - always the same height
-  const inputH = MIN_INPUT_HEIGHT
+  const inputH = getInputRowHeight()
   const chrome = 16
-  // Fixed height for recent chats container if visible (super short, 24px + 4px margin)
-  const recentChatsH = (recentChatsContainer && recentChatsContainer.style.display !== 'none') ? 28 : 0
+  const recentChatsH = getRecentChatsHeight()
   // Fixed height for chat notice if visible
   const noticeH = (chatNotice && chatNotice.style.display !== 'none') ? (chatNotice.offsetHeight || 16) : 0
   const clamped = clampOverlayHeight(desired)
@@ -554,7 +698,7 @@ function sendOverlayHeight(height, opts = {}) {
 }
 
 function restoreChatHeightIfNeeded() {
-  if (messages.length === 0 && pendingMessages.length === 0) return
+  if (!hasActiveChatMessages()) return
   chatVisible = true
   requestAnimationFrame(() => {
     const desired = clampOverlayHeight(computeDesiredHeight())
@@ -1009,6 +1153,7 @@ function renderChat() {
 
   // Hide the message container when empty so the input is visually centered
   chatContainer.style.display = toRender.length > 0 ? '' : 'none'
+  updateInputPlaceholder()
 
   // Show/hide chat notice based on whether there are messages
   if (chatNotice) {
@@ -1091,7 +1236,7 @@ function getLastMessageTimestamp() {
 }
 
 function resetChatForNewConversation() {
-  const wasEmpty = (messages.length === 0) && (pendingMessages.length === 0)
+  const wasEmpty = !hasActiveChatMessages()
   if (wasEmpty) {
     return
   }
@@ -1206,6 +1351,7 @@ input0.addEventListener('keydown', (e) => {
 input0.addEventListener('input', () => {
   resetIdleTimer()
   breakMascotIdleOverride()
+  updateInputPlaceholder()
 })
 
 // Screenshot button functionality
@@ -1228,9 +1374,19 @@ if (includeScreenBtn) {
 
 function updateIncludeScreenBtn() {
   if (!includeScreenBtn) return
+  const inputWrap = input0 ? input0.closest('.input-wrap') : null
   includeScreenBtn.classList.toggle('active', !!includeScreenOnNextMessage)
   includeScreenBtn.setAttribute('aria-pressed', includeScreenOnNextMessage ? 'true' : 'false')
-  includeScreenBtn.title = includeScreenOnNextMessage ? 'Including screen' : 'Not including screen'
+  includeScreenBtn.title = 'Add screenshot'
+  includeScreenBtn.setAttribute('aria-label', 'Add screenshot')
+  includeScreenBtn.setAttribute('data-tooltip', 'Add screenshot')
+  includeScreenBtn.style.display = includeScreenOnNextMessage ? 'none' : 'flex'
+  if (screenAttachmentChip) {
+    screenAttachmentChip.style.display = includeScreenOnNextMessage ? 'inline-flex' : 'none'
+  }
+  if (inputWrap) {
+    inputWrap.classList.toggle('has-screen-attachment', !!includeScreenOnNextMessage)
+  }
   // Update SVG stroke to brand orange when active
   const svg = includeScreenBtn.querySelector('svg')
   if (svg) {
@@ -1246,6 +1402,16 @@ function updateIncludeScreenBtn() {
   }
 }
 
+if (screenAttachmentChip) {
+  screenAttachmentChip.addEventListener('click', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    includeScreenOnNextMessage = false
+    updateIncludeScreenBtn()
+    try { input0.focus() } catch (err) {}
+  })
+}
+
 input0.addEventListener('input', () => {
   // Do not auto-resize the input; keep fixed height and let it scroll
   // No overlay resize on typing to keep icons/overlay stable
@@ -1253,6 +1419,7 @@ input0.addEventListener('input', () => {
   if (recentChatsContainer && recentChatsContainer.style.display !== 'none') {
     updateRecentChatsVisibility()
   }
+  updateInputPlaceholder()
   syncMascotState()
 })
 
@@ -1405,6 +1572,85 @@ ipcRenderer.on('chat:load-chat-result', (event, result) => {
   }
 })
 
+function formatChatHistoryForFeedback() {
+  const history = messages
+    .concat(pendingMessages)
+    .filter((message) => message && !message.typing && typeof message.text === 'string' && message.text.trim())
+    .slice(-FEEDBACK_HISTORY_MESSAGE_LIMIT)
+
+  if (history.length === 0) {
+    return 'Issue report from chat\n\nChat history:\nNo chat messages yet.'
+  }
+
+  const lines = history.map((message) => {
+    const role = message.role === 'assistant' ? 'Don' : message.role === 'user' ? 'User' : 'Message'
+    const status = message.status === 'pending' ? ' (pending)' : message.status === 'error' ? ' (error)' : ''
+    return `${role}${status}: ${message.text.trim()}`
+  })
+
+  let feedbackText = `Issue report from chat\n\nChat history:\n${lines.join('\n\n')}`
+  if (feedbackText.length > FEEDBACK_HISTORY_CHAR_LIMIT) {
+    feedbackText = feedbackText.slice(0, FEEDBACK_HISTORY_CHAR_LIMIT).trimEnd() + '\n\n[Chat history truncated]'
+  }
+  return feedbackText
+}
+
+function hideOverlayTooltip() {
+  if (tooltipHideTimer) {
+    try { clearTimeout(tooltipHideTimer) } catch (e) {}
+    tooltipHideTimer = null
+  }
+  if (overlayTooltip) overlayTooltip.classList.remove('visible')
+}
+
+function showOverlayTooltip(target) {
+  if (!overlayTooltip || !target) return
+  const text = target.getAttribute('data-tooltip') || target.getAttribute('aria-label') || target.getAttribute('title')
+  if (!text) return
+  if (tooltipHideTimer) {
+    try { clearTimeout(tooltipHideTimer) } catch (e) {}
+    tooltipHideTimer = null
+  }
+  overlayTooltip.textContent = text
+  const rect = target.getBoundingClientRect()
+  overlayTooltip.style.left = '0px'
+  overlayTooltip.style.top = '0px'
+  overlayTooltip.style.transform = 'translate(-50%, -100%)'
+  overlayTooltip.classList.add('visible')
+
+  const margin = 8
+  const tooltipWidth = overlayTooltip.offsetWidth || 0
+  const tooltipHeight = overlayTooltip.offsetHeight || 0
+  const minLeft = margin + tooltipWidth / 2
+  const maxLeft = Math.max(minLeft, window.innerWidth - margin - tooltipWidth / 2)
+  const left = Math.min(Math.max(rect.left + rect.width / 2, minLeft), maxLeft)
+  const canShowAbove = rect.top - margin - tooltipHeight >= margin
+  let top
+  if (canShowAbove) {
+    top = rect.top - margin
+    overlayTooltip.style.transform = 'translate(-50%, -100%)'
+  } else {
+    top = Math.min(rect.bottom + margin, Math.max(margin, window.innerHeight - margin - tooltipHeight))
+    overlayTooltip.style.transform = 'translate(-50%, 0)'
+  }
+  overlayTooltip.style.left = `${left}px`
+  overlayTooltip.style.top = `${top}px`
+}
+
+function setupOverlayTooltips() {
+  if (!overlayTooltip || !overlayRoot) return
+  const tooltipTargets = overlayRoot.querySelectorAll('[data-tooltip]')
+  tooltipTargets.forEach((target) => {
+    target.addEventListener('mouseenter', () => {
+      tooltipHideTimer = setTimeout(() => showOverlayTooltip(target), 250)
+    })
+    target.addEventListener('mouseleave', hideOverlayTooltip)
+    target.addEventListener('focus', () => showOverlayTooltip(target))
+    target.addEventListener('blur', hideOverlayTooltip)
+    target.addEventListener('click', hideOverlayTooltip)
+  })
+}
+
 // UI event handlers
 if (closeOverlayBtn) {
   closeOverlayBtn.addEventListener('click', () => {
@@ -1415,13 +1661,22 @@ if (closeOverlayBtn) {
 if (openAppBtn) {
   openAppBtn.addEventListener('click', () => {
     ipcRenderer.send('overlay:open-main', 'dashboard')
-    ipcRenderer.send('overlay:hide')
   })
 }
 
 if (clearBtn) {
   clearBtn.addEventListener('click', () => {
     resetChatForNewConversation()
+  })
+}
+
+if (reportIssueBtn) {
+  reportIssueBtn.addEventListener('click', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    ipcRenderer.send('feedback:open-with-chat-history', {
+      text: formatChatHistoryForFeedback()
+    })
   })
 }
 
@@ -1441,7 +1696,7 @@ window.addEventListener('focus', () => {
     restoreChatHeightIfNeeded()
     
     // Request recent chats list when overlay opens
-    if (messages.length === 0 && pendingMessages.length === 0) {
+    if (!hasActiveChatMessages()) {
       ipcRenderer.invoke('chat:get-recent-chats').catch(() => {})
     }
     resetIdleTimer()
@@ -1460,7 +1715,9 @@ window.addEventListener('keydown', (e) => {
 try {
   const closeBtn = document.getElementById('closeOverlayBtn')
   if (closeBtn) {
-    closeBtn.title = `Close chat (Esc, ${isMacPlatform ? 'Cmd' : 'Ctrl'}+Shift+D)`
+    closeBtn.title = 'Close Chat'
+    closeBtn.setAttribute('aria-label', 'Close Chat')
+    closeBtn.setAttribute('data-tooltip', 'Close Chat')
   }
 } catch (e) {}
 
@@ -1469,7 +1726,7 @@ try {
 function renderRecentChatsList() {
   if (!recentChatsContainer) return
 
-  const hasActiveChat = messages.length > 0 || pendingMessages.length > 0
+  const hasActiveChat = hasActiveChatMessages()
   if (hasActiveChat || isLoadingChat) {
     recentChatsContainer.style.display = 'none'
     // Trigger height recalculation after hiding
@@ -1491,6 +1748,13 @@ function renderRecentChatsList() {
   const endIndex = Math.min((recentChatsPage + 1) * CHATS_PER_PAGE, recentChats.length)
   const chatsToShow = recentChats.slice(0, endIndex)
   const hasMore = endIndex < recentChats.length
+
+  const rowEl = document.createElement('div')
+  rowEl.className = 'recent-chats-row'
+
+  const labelEl = document.createElement('span')
+  labelEl.className = 'recent-chats-label'
+  labelEl.textContent = 'Chats:'
 
   const listEl = document.createElement('div')
   listEl.className = 'recent-chats-list'
@@ -1517,7 +1781,9 @@ function renderRecentChatsList() {
     listEl.appendChild(chatItem)
   })
 
-  recentChatsContainer.replaceChildren(listEl)
+  rowEl.appendChild(labelEl)
+  rowEl.appendChild(listEl)
+  recentChatsContainer.replaceChildren(rowEl)
 
   // Infinite scroll detection and drag scrolling - attach listener to the scrollable list (horizontal scroll)
   if (listEl) {
@@ -1597,7 +1863,7 @@ function loadMoreRecentChats() {
 }
 
 function updateRecentChatsVisibility() {
-  const hasActiveChat = messages.length > 0 || pendingMessages.length > 0
+  const hasActiveChat = hasActiveChatMessages()
   if (hasActiveChat || isLoadingChat) {
     if (recentChatsContainer) {
       recentChatsContainer.style.display = 'none'
@@ -1733,10 +1999,12 @@ document.addEventListener('visibilitychange', () => {
 
   if (!isVisible) {
     overlayWindowActive = false
+    syncPromptAnimation()
     syncMascotState()
     return
   }
 
+  syncPromptAnimation()
   if (!wasVisible) {
     markOverlayEngaged()
     resetIdleTimer()
@@ -1747,4 +2015,5 @@ document.addEventListener('visibilitychange', () => {
 initMascot()
 updateIncludeScreenBtn()
 renderChat()
+setupOverlayTooltips()
 setupOverlayWindowDrag()

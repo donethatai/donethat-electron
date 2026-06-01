@@ -1584,6 +1584,23 @@ ipcMain.handle('overlay:get-state', () => {
     return await captureFeedbackScreenshot(mainWindow);
   })
 
+  ipcMain.on('feedback:open-with-chat-history', (event, payload) => {
+    try {
+      if (overlayWindow && !overlayWindow.isDestroyed() && event.sender !== overlayWindow.webContents) return
+      const text = typeof payload?.text === 'string' ? payload.text : ''
+      try { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide() } catch (_) {}
+      presentMainWindow()
+      setTimeout(() => {
+        try {
+          presentMainWindow()
+          mainWindow?.webContents?.send('feedback:open', { text })
+        } catch (_) {}
+      }, 120)
+    } catch (error) {
+      console.error('[MAIN] Error opening feedback from chat:', error)
+    }
+  })
+
 
 
 
@@ -1617,11 +1634,18 @@ ipcMain.on('overlay:hide', () => {
 })
 
 ipcMain.on('overlay:open-main', (event, view) => {
-  if (typeof view === 'string') {
-    navigateToView(view)
-  } else {
-    navigateToView('signup-next')
-  }
+  try {
+    returnFocusToMainOnOverlayClose = false
+    if (typeof view === 'string') {
+      navigateToView(view)
+    } else {
+      navigateToView('signup-next')
+    }
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.hide()
+    }
+    restoreShowAndFocusMainWindow()
+  } catch (e) {}
 })
 
 // Toggle overlay visibility
@@ -1674,8 +1698,9 @@ ipcMain.on('overlay:resize', (event, height) => {
       const targetDisplay = screen.getDisplayMatching(bounds) || screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y }) || screen.getPrimaryDisplay()
       const work = targetDisplay.workArea
       const workBottom = work.y + work.height
-      const MAX_H = 600
-      const clamped = Math.max(OVERLAY_COLLAPSED_HEIGHT, Math.min(MAX_H, Math.floor(height)));
+      const MAX_H = 720
+      const maxAllowedHeight = Math.max(OVERLAY_COLLAPSED_HEIGHT, Math.min(MAX_H, work.height))
+      const clamped = Math.max(OVERLAY_COLLAPSED_HEIGHT, Math.min(maxAllowedHeight, Math.floor(height)));
       const anchoredBottom = Math.min(
         Number.isFinite(overlayResizeAnchorBottom)
         ? overlayResizeAnchorBottom
@@ -2410,7 +2435,7 @@ function createOverlayWindow() {
     const isPlatformMac = process.platform === 'darwin';
     // Compute an initial position explicitly to avoid Electron's default centering
     const margin = 16;
-    const defaultWidth = 390; // Increased from 260 to 390 (1.5x wider)
+    const defaultWidth = 520;
     const defaultHeight = DEBUG ? 260 : OVERLAY_COLLAPSED_HEIGHT; // Taller in debug so chat/debug output is visible
     let initX;
     let initY;

@@ -16,11 +16,19 @@ function closeFeedbackOverlay() {
   }
 }
 
-function openFeedbackOverlay() {
+function openFeedbackOverlay(options = {}) {
   if (feedbackOverlay) {
+    const prefillText = typeof options === 'string'
+      ? options
+      : typeof options?.text === 'string'
+        ? options.text
+        : '';
     feedbackOverlay.classList.remove('hidden');
-    // Clear previous feedback
-    if (feedbackTextarea) feedbackTextarea.value = '';
+    if (feedbackTextarea) {
+      feedbackTextarea.value = prefillText;
+      feedbackTextarea.focus();
+      feedbackTextarea.setSelectionRange(feedbackTextarea.value.length, feedbackTextarea.value.length);
+    }
     if (feedbackCheckbox) feedbackCheckbox.checked = false;
   }
 }
@@ -120,6 +128,10 @@ function initializeFeedback() {
   if (feedbackSubmitBtn) {
     feedbackSubmitBtn.addEventListener('click', submitFeedback);
   }
+
+  ipcRenderer.on('feedback:open', (_event, payload) => {
+    openFeedbackOverlay(payload || {});
+  });
 }
 
 module.exports = {
@@ -127,4 +139,3 @@ module.exports = {
   openFeedbackOverlay,
   closeFeedbackOverlay
 };
-
