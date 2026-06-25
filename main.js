@@ -2798,7 +2798,12 @@ function createOverlayWindow() {
         partition: 'persist:donethat',
         sandbox: true,             // SECURED
         preload: path.join(__dirname, 'src-main', 'preload.js'), // NEW PRELOAD
-        backgroundThrottling: true,
+        // Keep the renderer awake even when the overlay is not the active window.
+        // As an always-on-top panel floating over other apps (especially native
+        // fullscreen Spaces), macOS reports it as occluded/backgrounded, which would
+        // otherwise throttle/suspend input handling and rAF — making it impossible to
+        // type and freezing the mascot. Matches the main window.
+        backgroundThrottling: false,
         spellcheck: true
       },
       ...(isPlatformMac ? { acceptFirstMouse: true } : {})

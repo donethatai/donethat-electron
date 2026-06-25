@@ -174,25 +174,19 @@ let mascotInputs = {
 }
 let mascotMoodOverride = null
 let mascotMoodOverrideTimer = null
-let isIdleSleeping = false
-let idleSleepTimer = null
 let assistantWritingTimer = null
 let assistantWritingUntil = 0
 let mascotOpenSequenceToken = 0
 let mascotIdleOverrideUntil = 0
 let activeWaitingMood = null
-let activePausedMood = null
 let promptAnimationTimer = null
 let promptAnimationRunning = false
 let emptyChatPromptIndex = 0
 let tooltipHideTimer = null
 let lastDocumentVisibilityState = document.visibilityState
-const IDLE_SLEEP_MS = 60 * 1000
 /**
- * False while the overlay document is hidden (minimized, window hidden, etc.). Used so the mascot
- * can sleep when the overlay is not on screen. We do not flip this on window `blur`: losing focus
- * to another app still leaves the overlay visible, and that should not jump straight to sleeping.
- * `markOverlayEngaged()` runs on pointer/focus inside the overlay and when the document becomes visible again.
+ * False while the overlay document is hidden (minimized, window hidden, etc.). Tracks on-screen
+ * state so `markOverlayEngaged()` can re-sync the mascot when the overlay becomes visible again.
  */
 let overlayWindowActive = true
 
@@ -374,18 +368,6 @@ function resetAssistantAnimationState() {
   }
 }
 
-function resetIdleTimer() {
-  if (isIdleSleeping) {
-    isIdleSleeping = false
-    syncMascotState()
-  }
-  if (idleSleepTimer) clearTimeout(idleSleepTimer)
-  idleSleepTimer = setTimeout(() => {
-    isIdleSleeping = true
-    syncMascotState()
-  }, IDLE_SLEEP_MS)
-}
-
 function hasAssistantWritingState() {
   if (pendingMessages.some((message) => message && message.typing)) return true
   return Date.now() < assistantWritingUntil
@@ -417,10 +399,7 @@ function holdMascotWaitingUntilReply() {
 }
 
 function getPausedMood() {
-  if (activePausedMood === null) {
-    activePausedMood = Math.random() < 0.5 ? MASCOT_MOODS.PAUSED : MASCOT_MOODS.SLEEPING
-  }
-  return activePausedMood
+  return MASCOT_MOODS.PAUSED
 }
 
 function normalizeEmotionKey(emotion) {
@@ -529,13 +508,10 @@ function triggerMascotShake() {
 }
 
 function computeMascotMood() {
+  // The chat mascot never sleeps: it stays awake (idle/active) whenever it is on screen.
   if (recordingPaused) return getPausedMood()
-  activePausedMood = null
-  if (document.visibilityState !== 'visible' || !overlayWindowActive) return MASCOT_MOODS.SLEEPING
-  if (isIdleSleeping) return MASCOT_MOODS.SLEEPING
   if (hasWaitingForReplyState()) return getWaitingMood()
   activeWaitingMood = null
-  if (Date.now() < mascotIdleOverrideUntil) return MASCOT_MOODS.IDLE
   return MASCOT_MOODS.IDLE
 }
 
@@ -1340,7 +1316,6 @@ async function addMessageFromInput() {
 
 // Event listeners
 input0.addEventListener('keydown', (e) => {
-  resetIdleTimer()
   breakMascotIdleOverride()
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
@@ -1349,7 +1324,6 @@ input0.addEventListener('keydown', (e) => {
 })
 
 input0.addEventListener('input', () => {
-  resetIdleTimer()
   breakMascotIdleOverride()
   updateInputPlaceholder()
 })
@@ -1508,11 +1482,10 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
   renderChat()
 
   // Incoming assistant replies or proactive pushes are user-visible even if the overlay window
-  // never received focus — wake engagement + idle, and show emotion for new coach text.
+  // never received focus — wake engagement, and show emotion for new coach text.
   if (hasNewAssistant) {
     clearMascotMoodOverride()
     markOverlayEngaged()
-    resetIdleTimer()
     breakMascotIdleOverride()
     const lastMsg = newMessages[newMessages.length - 1]
     if (lastMsg && lastMsg.role === 'assistant') {
@@ -1699,7 +1672,6 @@ window.addEventListener('focus', () => {
     if (!hasActiveChatMessages()) {
       ipcRenderer.invoke('chat:get-recent-chats').catch(() => {})
     }
-    resetIdleTimer()
   } catch (e) {}
 })
 
@@ -1963,7 +1935,6 @@ if (overlayRoot) {
     'pointerdown',
     () => {
       markOverlayEngaged()
-      resetIdleTimer()
       breakMascotIdleOverride()
       syncMascotState()
     },
@@ -2007,7 +1978,6 @@ document.addEventListener('visibilitychange', () => {
   syncPromptAnimation()
   if (!wasVisible) {
     markOverlayEngaged()
-    resetIdleTimer()
     playMascotOpenSequence()
   }
 })
