@@ -541,6 +541,11 @@ const OVERLAY_COLLAPSED_HEIGHT = 52
 // Track update availability for Windows/Linux update button
 let updateAvailable = false
 let windowsUpdaterCacheWriteCheck = null
+// True when running on Linux without process.env.APPIMAGE (e.g. an extracted
+// AppImage or an env-stripping launcher). In that state electron-updater's
+// AppImageUpdater can't perform an in-place update and throws "APPIMAGE env is
+// not defined", so we disable autoDownload and offer a manual download instead.
+let linuxAppImageUnavailable = false
 const DESKTOP_NOTIFICATION_DEBOUNCE_MS = 8 * 60 * 60 * 1000
 const desktopNotificationHistory = new Map()
 /** Keep Notification objects referenced until close; otherwise GC removes them and click never fires (Electron/macOS). */
@@ -985,6 +990,26 @@ function notifyManualWindowsUpdate(info, writeCheck) {
   }
 }
 
+function notifyManualLinuxUpdate(info) {
+  updateAvailable = true
+  const version = info?.version ? ` (${info.version})` : ''
+
+  try {
+    if (mainWindow) {
+      mainWindow.webContents.send('update:available')
+      mainWindow.webContents.send('request-notification', {
+        id: 'update-manual-download-linux',
+        title: 'DoneThat Update Available',
+        message: `A new version${version} is available. Automatic updates aren't available for this install (it isn't running as an AppImage). Download and install the latest version manually.`,
+        sticky: true,
+        action: { label: 'Download', channel: 'update:open-download-page', payload: null }
+      })
+    }
+  } catch (e) {
+    log.warn('Failed to send manual-update notify (linux):', e)
+  }
+}
+
 function dispatchNotificationAction(action) {
   const channel = action && action.channel;
   const payload = action && action.payload;
@@ -1058,7 +1083,17 @@ function setupAutoUpdater() {
   autoUpdater.channel = arch
 
   autoUpdater.on('update-available', (info) => {
-    if (process.platform !== 'win32' || autoUpdater.autoDownload !== false) return
+    // Only relevant when autoDownload was disabled up front; otherwise the
+    // update-downloaded handler takes over.
+    if (autoUpdater.autoDownload !== false) return
+
+    if (process.platform === 'linux' && linuxAppImageUnavailable) {
+      log.warn('Update available but APPIMAGE env not set; offering manual download instead.')
+      notifyManualLinuxUpdate(info)
+      return
+    }
+
+    if (process.platform !== 'win32') return
     const writeCheck = windowsUpdaterCacheWriteCheck
     if (!writeCheck || writeCheck.writable) return
     log.warn(`Windows updater cache is not writable (${writeCheck.reason}); offering manual download instead.`)
@@ -1167,6 +1202,17 @@ async function checkForUpdatesSafely(label) {
 
     if (!writeCheck.writable) {
       log.warn(`Windows updater cache at ${writeCheck.path || '<unknown>'} is not writable (${writeCheck.reason}); checking metadata only.`)
+    }
+  } else if (process.platform === 'linux') {
+    // AppImageUpdater needs process.env.APPIMAGE to point at the running image.
+    // When it's unset the download throws "APPIMAGE env is not defined", so only
+    // auto-download when we have a real AppImage path; otherwise check metadata
+    // only and surface a manual-download prompt from the update-available handler.
+    linuxAppImageUnavailable = !process.env.APPIMAGE
+    autoUpdater.autoDownload = !linuxAppImageUnavailable
+
+    if (linuxAppImageUnavailable) {
+      log.warn('APPIMAGE env not set; in-place AppImage update is unavailable. Checking metadata only.')
     }
   }
 
