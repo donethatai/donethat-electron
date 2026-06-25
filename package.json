@@ -54,14 +54,14 @@
   "devDependencies": {
     "@babel/preset-env": "^7.29.5",
     "@resvg/resvg-js": "^2.6.2",
-    "@sentry/cli": "^3.4.2",
+    "@sentry/cli": "^3.5.1",
     "@tailwindcss/postcss": "^4.3.0",
     "babel-loader": "^10.1.1",
     "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "dotenv-cli": "^11.0.0",
     "electron": "41.7.0",
-    "electron-builder": "^26.8.1",
+    "electron-builder": "^26.15.3",
     "electron-notarize": "^1.2.2",
     "jest": "^30.4.2",
     "npm-check-updates": "^22.2.0",
@@ -79,7 +79,7 @@
     "@langchain/google-genai": "^2.1.30",
     "@langchain/openai": "^1.4.5",
     "@rive-app/canvas-single": "^2.37.6",
-    "@sentry/electron": "^7.13.0",
+    "@sentry/electron": "^7.14.0",
     "audiobuffer-to-wav": "^1.0.0",
     "electron-log": "^5.4.4",
     "electron-store": "^11.0.2",
@@ -97,7 +97,8 @@
     "electron-liquid-glass": "^1.1.1"
   },
   "overrides": {
-    "tar": "7.5.15"
+    "js-yaml": "4.2.0",
+    "tar": "7.5.16"
   },
   "build": {
     "appId": "com.donethat.app",
