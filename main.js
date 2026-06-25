@@ -464,6 +464,7 @@ let overlayResizeAnchorBottom = null
 const OVERLAY_COLLAPSED_HEIGHT = 52
 // Track update availability for Windows/Linux update button
 let updateAvailable = false
+let windowsUpdaterCacheWriteCheck = null
 const DESKTOP_NOTIFICATION_DEBOUNCE_MS = 8 * 60 * 60 * 1000
 const desktopNotificationHistory = new Map()
 /** Keep Notification objects referenced until close; otherwise GC removes them and click never fires (Electron/macOS). */
@@ -851,6 +852,63 @@ function openDownloadPage() {
   }
 }
 
+function isUpdaterCachePermissionError(error) {
+  const text = [
+    error?.code,
+    error?.message,
+    error?.stack
+  ].filter(Boolean).join(' ')
+
+  return /(?:EPERM|EACCES)/.test(text) && /donethat-updater|updater|pending/.test(text)
+}
+
+async function checkWindowsUpdaterCacheWritable() {
+  if (process.platform !== 'win32') return { writable: true, path: null }
+
+  try {
+    const fs = require('fs')
+    if (typeof autoUpdater.getOrCreateDownloadHelper !== 'function') {
+      return { writable: true, path: null }
+    }
+    const helper = await autoUpdater.getOrCreateDownloadHelper()
+    const cacheDir = helper?.cacheDirForPendingUpdate
+    if (!cacheDir) return { writable: true, path: null }
+
+    await fs.promises.mkdir(cacheDir, { recursive: true })
+    await fs.promises.access(cacheDir, fs.constants.W_OK)
+    return { writable: true, path: cacheDir }
+  } catch (error) {
+    return {
+      writable: false,
+      path: error?.path || null,
+      reason: error?.code || error?.message || 'unknown'
+    }
+  }
+}
+
+function notifyManualWindowsUpdate(info, writeCheck) {
+  updateAvailable = true
+  const version = info?.version ? ` (${info.version})` : ''
+  const locationHint = writeCheck?.path
+    ? `DoneThat can't write to its updater cache at ${writeCheck.path}.`
+    : `DoneThat can't write to its updater cache.`
+
+  try {
+    if (mainWindow) {
+      mainWindow.webContents.send('update:available')
+      mainWindow.webContents.send('request-notification', {
+        id: 'update-manual-download-windows',
+        title: 'DoneThat Update Available',
+        message: `A new version${version} is available. ${locationHint} Download and install the latest version manually.`,
+        sticky: true,
+        action: { label: 'Download', channel: 'update:open-download-page', payload: null }
+      })
+    }
+  } catch (e) {
+    log.warn('Failed to send manual-update notify (windows):', e)
+  }
+}
+
 function dispatchNotificationAction(action) {
   const channel = action && action.channel;
   const payload = action && action.payload;
@@ -923,6 +981,14 @@ function setupAutoUpdater() {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
   autoUpdater.channel = arch
 
+  autoUpdater.on('update-available', (info) => {
+    if (process.platform !== 'win32' || autoUpdater.autoDownload !== false) return
+    const writeCheck = windowsUpdaterCacheWriteCheck
+    if (!writeCheck || writeCheck.writable) return
+    log.warn(`Windows updater cache is not writable (${writeCheck.reason}); offering manual download instead.`)
+    notifyManualWindowsUpdate(info, writeCheck)
+  })
+
   autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded:', info.version)
     updateAvailable = true
@@ -991,6 +1057,20 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('error', (error) => {
+    if (process.platform === 'win32' && isUpdaterCachePermissionError(error)) {
+      log.warn('Windows updater cache permission error; auto-update will be skipped:', error?.message || error)
+      try { autoUpdater.autoDownload = false } catch (_) {}
+      // The up-front writability probe (fs.access W_OK) is unreliable on Windows ACLs,
+      // so the cache can read as writable yet fail the actual download here. In that
+      // case update-available already returned early without notifying, so surface the
+      // manual-download prompt now. (Deduped 8h by message, so retries don't spam.)
+      const writeCheck = (windowsUpdaterCacheWriteCheck && !windowsUpdaterCacheWriteCheck.writable)
+        ? windowsUpdaterCacheWriteCheck
+        : { writable: false, path: error?.path || null, reason: error?.code || 'EPERM' }
+      notifyManualWindowsUpdate(null, writeCheck)
+      return
+    }
+
     log.error('Update error:', error);
 
     // More detailed error logging
@@ -1003,18 +1083,39 @@ function setupAutoUpdater() {
   })
 }
 
+async function checkForUpdatesSafely(label) {
+  if (process.platform === 'win32') {
+    const writeCheck = await checkWindowsUpdaterCacheWritable()
+    windowsUpdaterCacheWriteCheck = writeCheck
+    autoUpdater.autoDownload = writeCheck.writable
+
+    if (!writeCheck.writable) {
+      log.warn(`Windows updater cache at ${writeCheck.path || '<unknown>'} is not writable (${writeCheck.reason}); checking metadata only.`)
+    }
+  }
+
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (err) {
+    if (process.platform === 'win32' && isUpdaterCachePermissionError(err)) {
+      log.warn(`Windows updater cache permission error during ${label} update check:`, err?.message || err)
+      try { autoUpdater.autoDownload = false } catch (_) {}
+      return
+    }
+    log.error(`Error in ${label} update check:`, err)
+  }
+}
+
 // Function to handle scheduled update checks
 function scheduleUpdateChecks() {
 
   // First check after 1 minute to let the app fully initialize
   setTimeout(() => {    
-    autoUpdater.checkForUpdates()
-      .catch(err => log.error('Error in first update check:', err));
+    checkForUpdatesSafely('first')
 
     // Then check every hour
     setInterval(() => {
-      autoUpdater.checkForUpdates()
-        .catch(err => log.error('Error in hourly update check:', err));
+      checkForUpdatesSafely('hourly')
     }, 60 * 60 * 1000);
   }, 1 * 60 * 1000);
 }

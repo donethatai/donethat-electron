@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Harden desktop OAuth callbacks, embedded portal token handoff, and webview navigation.
+- Fix Windows updater cache permission failures by checking update metadata without downloading and offering a manual download.
 
 ## 2.2.6
 
