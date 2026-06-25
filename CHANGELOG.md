@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Harden desktop OAuth callbacks, embedded portal token handoff, and webview navigation.
+
 ## 2.2.6
 
 - Remove experimental context capture settings and disable the focused-screenshot capture path.

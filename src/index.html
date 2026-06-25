@@ -7,7 +7,7 @@
     <!-- CSP Meta Tags -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' 'unsafe-eval' blob:;
+      script-src 'self' blob:;
       style-src 'self' 'unsafe-inline';
       img-src 'self' data:;
       connect-src 'self' sentry-ipc: https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com https://o4511426462285824.ingest.de.sentry.io;
@@ -17,7 +17,7 @@
     ">
     <meta http-equiv="X-Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' 'unsafe-eval' blob:;
+      script-src 'self' blob:;
       style-src 'self' 'unsafe-inline';
       img-src 'self' data:;
       connect-src 'self' sentry-ipc: https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://app.donethat.ai https://*.firebaseapp.com https://*.googleapis.com https://firebaseinstallations.googleapis.com https://o4511426462285824.ingest.de.sentry.io;
@@ -724,7 +724,7 @@
                 <div class="flex items-center justify-between mb-2">
                   <div>
                     <div class="dt-section-title">Save capture data to folder</div>
-                    <div class="dt-supporting-text">Writes one folder per send, organized by day.</div>
+                    <div class="dt-supporting-text">Writes plaintext screenshots, audio, and activity data to disk. Enable only for trusted troubleshooting folders.</div>
                   </div>
                   <label class="toggle"><input type="checkbox" id="saveCaptureDataCheckbox"><span class="slider"></span></label>
                 </div>

@@ -44,21 +44,26 @@ async function callHttpsCallableWithAuth(functionName, params, idToken) {
   return payload?.result ?? payload?.data ?? payload ?? null;
 }
 
-async function getGoogleSignInUrl({ port, requestCalendar, idToken }) {
+async function getGoogleSignInUrl({ port, redirectUrl, requestCalendar, idToken }) {
   if (requestCalendar && idToken) {
-    return callHttpsCallableWithAuth('authGoogleSignInStart', { port, requestCalendar: true }, idToken);
+    const params = { requestCalendar: true };
+    if (redirectUrl) params.redirectUrl = redirectUrl;
+    else params.port = port;
+    return callHttpsCallableWithAuth('authGoogleSignInStart', params, idToken);
   }
 
   const functions = getFirebaseFunctionsClient();
   const googleSignInStart = httpsCallable(functions, 'authGoogleSignInStart');
-  const params = { port };
+  const params = redirectUrl ? { redirectUrl } : { port };
   if (requestCalendar) params.requestCalendar = true;
   const result = await googleSignInStart(params);
   return result && result.data ? result.data : null;
 }
 
-async function getGoogleReauthUrl({ port, idToken, requestCalendar }) {
-  const params = { port, reauth: true };
+async function getGoogleReauthUrl({ port, redirectUrl, idToken, requestCalendar }) {
+  const params = { reauth: true };
+  if (redirectUrl) params.redirectUrl = redirectUrl;
+  else params.port = port;
   if (requestCalendar) params.requestCalendar = true;
   if (idToken) params.idToken = idToken;
   const functions = getFirebaseFunctionsClient();

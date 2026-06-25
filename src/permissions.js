@@ -95,7 +95,7 @@ function initializePermissions(viewNavigator, _currentViewGetter, topbarVisibili
 }
 
 function setupRuntimePermissionIssueListener() {
-  ipcRenderer.on('flag-permission-issues', (_event, payload) => {
+  ipcRenderer.on('flag-permission-issues', (payload) => {
     const runtimeIssues = payload && typeof payload === 'object' ? payload.runtimeIssues : null;
     if (!runtimeIssues || typeof runtimeIssues !== 'object') return;
 
@@ -300,7 +300,7 @@ function applySystemAudioPermissionUpdate(hasPermission, _fromStartup = false, s
   emitCaptureStateUpdated();
 }
 
-ipcRenderer.on('screenCapturePermission', (_event, data) => {
+ipcRenderer.on('screenCapturePermission', (data) => {
   handleIncomingPermissionEvent('screen', data, applyScreenPermissionUpdate, {
     defaultSource: 'screen-channel',
     fromStartup: true
@@ -311,21 +311,21 @@ ipcRenderer.on('screenCapturePermission', (_event, data) => {
   }
 });
 
-ipcRenderer.on('microphonePermission', (_event, data) => {
+ipcRenderer.on('microphonePermission', (data) => {
   handleIncomingPermissionEvent('microphone', data, applyMicrophonePermissionUpdate, {
     defaultSource: 'microphone-channel',
     fromStartup: false
   });
 });
 
-ipcRenderer.on('windowsPermission', (_event, data) => {
+ipcRenderer.on('windowsPermission', (data) => {
   handleIncomingPermissionEvent('windows', data, applyWindowsPermissionUpdate, {
     defaultSource: 'windows-channel',
     fromStartup: false
   });
 });
 
-ipcRenderer.on('systemAudioPermission', (_event, data) => {
+ipcRenderer.on('systemAudioPermission', (data) => {
   handleIncomingPermissionEvent('systemAudio', data, applySystemAudioPermissionUpdate, {
     defaultSource: 'system-audio-channel',
     fromStartup: false

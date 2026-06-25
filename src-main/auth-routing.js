@@ -105,7 +105,13 @@ function handleDonethatUrl(urlString, mainWindow, enqueueDeepLinkToken) {
  * - token-only -> shell
  */
 function handleAuthServerToken(token, googleTokens, mainWindow, enqueueDeepLinkToken) {
-  log.info('[handleAuthServerToken] token:', !!token, 'hasGoogleTokens:', !!(googleTokens && googleTokens.idToken), 'pendingPortalReauth:', pendingPortalReauth, 'pendingPortalSignin:', pendingPortalSignin, 'requestCalendar:', pendingPortalSigninRequestCalendar);
+  const desktopFlow = googleTokens?.desktopFlow || null;
+  log.info('[handleAuthServerToken] callback:', {
+    hasToken: !!token,
+    hasGoogleTokens: !!(googleTokens && googleTokens.idToken),
+    desktopFlow: desktopFlow || 'legacy',
+    requestCalendar: !!(googleTokens && googleTokens.requestCalendar)
+  });
   if (googleTokens && googleTokens.action === 'linked' && googleTokens.success && mainWindow && !mainWindow.isDestroyed()) {
     clearPortalReauthPending();
     clearPortalSigninPending();
@@ -118,7 +124,7 @@ function handleAuthServerToken(token, googleTokens, mainWindow, enqueueDeepLinkT
   }
 
   const hasGoogleTokens = googleTokens && googleTokens.idToken;
-  if (hasGoogleTokens && pendingPortalReauth && mainWindow && !mainWindow.isDestroyed()) {
+  if (hasGoogleTokens && (desktopFlow === 'reauth' || pendingPortalReauth) && mainWindow && !mainWindow.isDestroyed()) {
     clearPortalReauthPending();
     clearPortalSigninPending();
     try {
@@ -135,8 +141,10 @@ function handleAuthServerToken(token, googleTokens, mainWindow, enqueueDeepLinkT
   if (pendingPortalReauth) clearPortalReauthPending();
 
   // Portal-initiated sign-in (e.g. calendar linking): route token back to portal
-  if (pendingPortalSignin && token && mainWindow && !mainWindow.isDestroyed()) {
-    const requestCalendar = pendingPortalSigninRequestCalendar;
+  if ((desktopFlow === 'portal-signin' || pendingPortalSignin) && token && mainWindow && !mainWindow.isDestroyed()) {
+    const requestCalendar = desktopFlow === 'portal-signin'
+      ? !!googleTokens?.requestCalendar
+      : pendingPortalSigninRequestCalendar;
     clearPortalSigninPending();
     try {
       mainWindow.webContents.send('auth:custom-token-for-portal', {

@@ -58,6 +58,7 @@ const PORTAL_DEFAULT_URL = 'https://app.donethat.ai';
 let lastWebviewActivityTs = 0;
 let lastWebviewActivityKey = '';
 const WEBVIEW_ACTIVITY_DEDUPE_MS = 1500;
+const TRUSTED_PORTAL_ORIGIN = new URL(PORTAL_DEFAULT_URL).origin;
 // Default to visible: the renderer is loaded by the main process when the
 // window is shown, and `app:window-shown` may have already fired before this
 // script registers its IPC handler. The DOMContentLoaded probe below corrects
@@ -92,6 +93,40 @@ function emitWebviewActivity(event, reason) {
   });
   lastWebviewActivityTs = now;
   lastWebviewActivityKey = key;
+}
+
+function isTrustedPortalUrl(url) {
+  try {
+    return new URL(url).origin === TRUSTED_PORTAL_ORIGIN;
+  } catch (_) {
+    return false;
+  }
+}
+
+function getPortalViewUrl(view) {
+  try {
+    if (view && typeof view.getURL === 'function') {
+      return view.getURL();
+    }
+  } catch (_) {}
+  try {
+    return view?.getAttribute?.('src') || '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function isTrustedPortalView(view) {
+  const url = getPortalViewUrl(view);
+  return !!url && isTrustedPortalUrl(url);
+}
+
+function blockUntrustedPortalNavigation(event, url, reason) {
+  if (!url || isTrustedPortalUrl(url)) return false;
+  try { event?.preventDefault?.(); } catch (_) {}
+  emitWebviewActivity('blocked-navigation', reason || 'untrusted');
+  try { routeLink(url, { source: 'webview-navigation' }); } catch (_) {}
+  return true;
 }
 
 function clearPortalHandshakeRetries() {
@@ -245,6 +280,7 @@ async function sendPortalLoginIfPossible(options = {}) {
   try {
     if (!portalView) return;
     if (!portalDomReady) return;
+    if (!isTrustedPortalView(portalView)) return;
     if (!shouldSendGenericPortalToken(pendingPortalBridge)) return;
     if (!auth?.currentUser?.getIdToken) return;
     const token = await auth.currentUser.getIdToken();
@@ -313,6 +349,9 @@ function flushPendingPortalBridgeActions(view) {
   if (!view || view !== portalView || !portalDomReady) {
     return { suppressGenericTokenSync: false };
   }
+  if (!isTrustedPortalView(view)) {
+    return { suppressGenericTokenSync: true };
+  }
 
   const { actions, suppressGenericTokenSync } = drainPendingPortalBridge(pendingPortalBridge);
   actions.forEach((action) => {
@@ -335,6 +374,20 @@ function flushPendingPortalBridgeActions(view) {
 function attachPortalViewListeners(view) {
   const isActivePortalView = () => view === portalView;
 
+  try {
+    view.addEventListener('will-navigate', (event) => {
+      if (!isActivePortalView()) return;
+      blockUntrustedPortalNavigation(event, event.url, 'will-navigate');
+    });
+  } catch (_) {}
+
+  try {
+    view.addEventListener('new-window', (event) => {
+      if (!isActivePortalView()) return;
+      blockUntrustedPortalNavigation(event, event.url, 'new-window');
+    });
+  } catch (_) {}
+
   view.addEventListener('did-fail-load', (event) => {
     if (!isActivePortalView()) return;
     console.error('[Webview] Failed to load:', event);
@@ -346,6 +399,7 @@ function attachPortalViewListeners(view) {
   try {
     view.addEventListener('did-fail-provisional-load', (event) => {
       if (!isActivePortalView()) return;
+      if (event?.errorCode === -3) return;
       console.error('[Webview] Provisional load failed:', event);
       showWebviewError();
       clearPortalLoadWatchdog();
@@ -416,8 +470,13 @@ function attachPortalViewListeners(view) {
   } catch (_) {}
 
   try {
-    view.addEventListener('did-navigate', () => {
+    view.addEventListener('did-navigate', (event) => {
       if (!isActivePortalView()) return;
+      if (event?.url && !isTrustedPortalUrl(event.url)) {
+        emitWebviewActivity('blocked-navigation', 'did-navigate');
+        destroyPortalView('untrusted-navigation');
+        return;
+      }
       emitWebviewActivity('did-navigate', 'guest');
       nudgePortalAuthToken();
     });
@@ -453,13 +512,11 @@ function attachPortalViewListeners(view) {
     } else if (event.channel === 'auth:google-signin') {
       const payload = event.args && event.args[0] || {};
       const requestCalendar = payload.requestCalendar === true;
-      console.log('[ipc-message] auth:google-signin from portal, requestCalendar:', requestCalendar);
       const openUrl = (url) => {
         if (url) window.electronAPI.invoke('open-external', url).catch(() => {});
       };
       window.electronAPI.invoke('auth:google-signin', { requestCalendar, fromPortal: true })
         .then((res) => {
-          console.log('[ipc-message] auth:google-signin result:', JSON.stringify(res));
           if (res && res.success && res.url) openUrl(res.url);
         })
         .catch((err) => { console.error('[ipc-message] auth:google-signin error:', err); });
@@ -1004,7 +1061,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!isWaylandLinux) {
       // React to hotkey updates from main to refresh label
       try {
-        ipcRenderer.on('hotkey:updated', (_event, payload) => {
+        ipcRenderer.on('hotkey:updated', (payload) => {
           applyChatLabel(payload && payload.label ? payload.label : null);
         });
         // Also request current label once
@@ -1225,7 +1282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Change settings button label on view change
   // use global updater
 
-  ipcRenderer.on('pauseStateChanged', (event, isPaused) => {
+  ipcRenderer.on('pauseStateChanged', (isPaused) => {
     setRecordingIcon(isPaused);
   });
 
@@ -1261,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // In-app notification logic moved to notify.js
 
   // Handle notification requests from main process - routes through showBanner()
-  ipcRenderer.on('request-notification', (_event, payload) => {
+  ipcRenderer.on('request-notification', (payload) => {
     if (payload && payload.message) {
       showBanner(payload.message, {
         title: payload.title || null,
@@ -1339,7 +1396,7 @@ function updateTopbarVisibility() {
 }
 
 // Add IPC listener for navigation
-ipcRenderer.on('navigate', (event, viewName) => {
+ipcRenderer.on('navigate', (viewName) => {
   navigateToView(viewName);
 });
 
@@ -1358,12 +1415,12 @@ ipcRenderer.on('app:window-shown', () => {
 });
 
 // Add pause state handler
-ipcRenderer.on('pauseStateChanged', (event, isPaused) => {
+ipcRenderer.on('pauseStateChanged', (isPaused) => {
   updatePauseState(isPaused);
 });
 
 // Handle donethat:// forwarded from main as internal navigation
-ipcRenderer.on('router:open-link', (event, url) => {
+ipcRenderer.on('router:open-link', (url) => {
   try {
     if (url) {
       routeLink(url, { source: 'main' });
@@ -1383,7 +1440,7 @@ ipcRenderer.on('auth:calendar-linked', () => {
   } catch (_) {}
 });
 
-ipcRenderer.on('auth:custom-token-for-portal', (_event, payload) => {
+ipcRenderer.on('auth:custom-token-for-portal', (payload) => {
   try {
     if (!payload || !payload.customToken) return;
     if (portalView && portalDomReady) {
@@ -1393,7 +1450,7 @@ ipcRenderer.on('auth:custom-token-for-portal', (_event, payload) => {
     pendingPortalBridge.customToken = payload;
   } catch (e) {}
 });
-ipcRenderer.on('auth:reauth-result-for-portal', (_event, payload) => {
+ipcRenderer.on('auth:reauth-result-for-portal', (payload) => {
   try {
     if (!payload) return;
     if (portalView && portalDomReady) {

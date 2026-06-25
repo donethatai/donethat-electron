@@ -234,7 +234,7 @@ ipcRenderer.on('refresh-token', async () => {
 });
 
 // Listen for auth errors from main process
-ipcRenderer.on('auth-error', (event, error) => {
+ipcRenderer.on('auth-error', (error) => {
   handleAuthError(error || { code: 'unknown', message: 'Unknown auth error' });
 });
 
@@ -672,7 +672,7 @@ signInForm.addEventListener("submit", (e) => {
               try { googleSignInBtn.disabled = false; } catch (_) {}
             });
           } else {
-            console.error('No URL found in result:', JSON.stringify(result, null, 2));
+            console.error('No URL returned from Google Sign In start');
             showBanner('No URL returned from Google Sign In function.', { title: 'Google Sign In', sticky: true });
             hideSpinner();
             try { googleSignInBtn.disabled = false; } catch (_) {}
@@ -699,7 +699,7 @@ signInForm.addEventListener("submit", (e) => {
   });
 
   // Handle custom token from main process
-  ipcRenderer.on('firebase-custom-token', (event, token) => {
+  ipcRenderer.on('firebase-custom-token', (token) => {
     ipcRenderer.send('focus-app-window');
     signInWithCustomToken(auth, token)
       .then((userCredential) => {

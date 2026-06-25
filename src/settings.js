@@ -1574,7 +1574,7 @@ function setupAppExclusionsListeners() {
       
       ignoreActivityCheckbox.addEventListener('change', async () => {
         if (exclusionsManaged) return;
-        const idx = parseInt(ignoreActivityCheckbox.dataset.index);
+        const idx = parseInt(ignoreActivityCheckbox.dataset.index, 10);
         if (exclusions[idx]) {
           exclusions[idx].ignoreActivity = ignoreActivityCheckbox.checked;
           await saveExclusions();
@@ -1594,7 +1594,7 @@ function setupAppExclusionsListeners() {
     exclusionsList.querySelectorAll('input[data-field="appName"]').forEach(input => {
       input.addEventListener('blur', async () => {
         if (exclusionsManaged) return;
-        const index = parseInt(input.dataset.index);
+        const index = parseInt(input.dataset.index, 10);
         if (exclusions[index]) {
           exclusions[index].appName = input.value.trim() || null;
           if (!exclusions[index].appName) {
@@ -1613,7 +1613,7 @@ function setupAppExclusionsListeners() {
       if (btn.textContent === '×') {
         btn.addEventListener('click', async () => {
           if (exclusionsManaged) return;
-          const index = parseInt(btn.dataset.index);
+          const index = parseInt(btn.dataset.index, 10);
           exclusions.splice(index, 1);
           renderExclusionsList();
           await saveExclusions();

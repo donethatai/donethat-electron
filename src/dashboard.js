@@ -433,7 +433,7 @@ function resumeRecording() {
 }
 
 // Add pause state change listener
-ipcRenderer.on('pauseStateChanged', (_event, isPaused, meta) => {
+ipcRenderer.on('pauseStateChanged', (isPaused, meta) => {
   // Pause state changed - no notification needed
   // The workday ended notification will handle informing the user when appropriate
 });

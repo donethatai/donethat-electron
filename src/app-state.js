@@ -381,7 +381,7 @@ function setupChatIpcBridge() {
   state.chatIpcInitialized = true;
 
   // Handle chat message processing from overlay
-  ipcRenderer.on('chat:process-message', async (_event, messageData) => {
+  ipcRenderer.on('chat:process-message', async (messageData) => {
     if (!auth?.currentUser) {
       try { ipcRenderer.send('chat:message-result', { success: false, error: 'Not authenticated' }); } catch (_) {}
       return;
@@ -421,7 +421,7 @@ function setupChatIpcBridge() {
   });
 
   // Handle loading a specific chat by ID
-  ipcRenderer.on('chat:load-chat', (_event, chatId) => {
+  ipcRenderer.on('chat:load-chat', (chatId) => {
     if (!chatId || !auth?.currentUser) {
       try { ipcRenderer.send('chat:load-chat-result', { success: false, error: 'Invalid chat ID or not authenticated' }); } catch (_) {}
       return;

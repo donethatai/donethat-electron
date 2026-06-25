@@ -129,7 +129,7 @@ function initializeFeedback() {
     feedbackSubmitBtn.addEventListener('click', submitFeedback);
   }
 
-  ipcRenderer.on('feedback:open', (_event, payload) => {
+  ipcRenderer.on('feedback:open', (payload) => {
     openFeedbackOverlay(payload || {});
   });
 }

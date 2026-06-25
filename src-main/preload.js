@@ -199,7 +199,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   on: (channel, func) => {
     if (validReceiveChannels.includes(channel)) {
       // Deliberately strip event as it includes `sender` 
-      const subscription = (event, ...args) => func(event, ...args);
+      const subscription = (_event, ...args) => func(...args);
       ipcRenderer.on(channel, subscription);
       
       // Return a cleanup function

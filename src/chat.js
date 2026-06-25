@@ -1424,7 +1424,7 @@ input0.addEventListener('input', () => {
 })
 
 // IPC handlers for communication with main window
-ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
+ipcRenderer.on('chat:receive-messages', (newMessages) => {
   const previousMessages = messages
   const hasNewAssistant = hasNewAssistantMessage(previousMessages, newMessages)
   messages = newMessages
@@ -1537,7 +1537,7 @@ ipcRenderer.on('chat:receive-messages', (event, newMessages) => {
   }
 })
 
-ipcRenderer.on('chat:message-update', (event, result) => {
+ipcRenderer.on('chat:message-update', (result) => {
   if (!result.success) {
     // Mark any pending message as error, but do not remove optimistic UI yet
     const pendingMessage = pendingMessages.find(m => m.status === 'pending')
@@ -1552,14 +1552,14 @@ ipcRenderer.on('chat:message-update', (event, result) => {
 })
 
 // Handle recent chats list updates
-ipcRenderer.on('chat:recent-chats-updated', (event, newRecentChats) => {
+ipcRenderer.on('chat:recent-chats-updated', (newRecentChats) => {
   recentChats = Array.isArray(newRecentChats) ? newRecentChats : []
   recentChatsPage = 0
   updateRecentChatsVisibility()
 })
 
 // Handle chat load result
-ipcRenderer.on('chat:load-chat-result', (event, result) => {
+ipcRenderer.on('chat:load-chat-result', (result) => {
   isLoadingChat = false
   breakMascotIdleOverride()
   syncMascotState()
@@ -1909,7 +1909,7 @@ ipcRenderer.invoke('getInitialPauseState')
   .then((isPaused) => setRecordingPausedState(isPaused))
   .catch(() => {})
 
-ipcRenderer.on('pauseStateChanged', (_event, isPaused) => {
+ipcRenderer.on('pauseStateChanged', (isPaused) => {
   setRecordingPausedState(isPaused)
 })
 

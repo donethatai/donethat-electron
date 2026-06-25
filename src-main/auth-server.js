@@ -37,8 +37,17 @@ class AuthServer {
             const success = url.searchParams.get('success') === 'true';
 
             if (action === 'linked' && success) {
-              if (this.onTokenReceived) {
-                this.onTokenReceived(null, { action, success });
+              const accepted = this.onTokenReceived
+                ? this.onTokenReceived(null, {
+                    action,
+                    success,
+                    desktopState: url.searchParams.get('desktopState') || null
+                  }) !== false
+                : true;
+              if (!accepted) {
+                res.writeHead(403, { 'Content-Type': 'text/plain' });
+                res.end('Invalid or expired authentication session');
+                return;
               }
 
               res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -54,8 +63,17 @@ class AuthServer {
             }
 
             if (token || idToken) {
-              if (this.onTokenReceived) {
-                this.onTokenReceived(token, { idToken, accessToken });
+              const accepted = this.onTokenReceived
+                ? this.onTokenReceived(token, {
+                    idToken,
+                    accessToken,
+                    desktopState: url.searchParams.get('desktopState') || null
+                  }) !== false
+                : true;
+              if (!accepted) {
+                res.writeHead(403, { 'Content-Type': 'text/plain' });
+                res.end('Invalid or expired authentication session');
+                return;
               }
 
               res.writeHead(200, { 'Content-Type': 'text/html' });

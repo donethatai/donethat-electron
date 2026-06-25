@@ -22,6 +22,7 @@ if (process.platform === 'linux') {
 
 const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor, globalShortcut, session } = require('electron')
 const path = require('path')
+const crypto = require('crypto')
 const { autoUpdater } = require('electron-updater')
 const log = require('electron-log')
 const Sentry = require('@sentry/electron/main')
@@ -479,6 +480,53 @@ let returnFocusToMainOnOverlayClose = false;
 
 // Localhost server for OAuth callback
 let authServer = null;
+const AUTH_CALLBACK_TTL_MS = 10 * 60 * 1000;
+const pendingAuthCallbacks = new Map();
+
+function createAuthCallback(flow, requestCalendar = false) {
+  const desktopState = crypto.randomBytes(32).toString('base64url');
+  pendingAuthCallbacks.set(desktopState, {
+    flow,
+    requestCalendar: !!requestCalendar,
+    expiresAt: Date.now() + AUTH_CALLBACK_TTL_MS
+  });
+  return desktopState;
+}
+
+function buildAuthRedirectUrl(port, desktopState) {
+  const url = new URL(`http://localhost:${port}/auth`);
+  url.searchParams.set('desktopState', desktopState);
+  return url.toString();
+}
+
+function consumeAuthCallback(desktopState) {
+  if (!desktopState || typeof desktopState !== 'string') return null;
+  const pending = pendingAuthCallbacks.get(desktopState);
+  pendingAuthCallbacks.delete(desktopState);
+  if (!pending) return null;
+  if (pending.expiresAt < Date.now()) return null;
+  return pending;
+}
+
+function isExpectedAuthCallback(callbackState, token, googleTokens) {
+  const isLinked = googleTokens?.action === 'linked' && googleTokens?.success === true;
+  const hasGoogleTokens = !!googleTokens?.idToken;
+  const hasToken = !!token;
+
+  if (callbackState.flow === 'reauth') {
+    return hasGoogleTokens;
+  }
+
+  if (callbackState.flow === 'portal-signin') {
+    return callbackState.requestCalendar ? isLinked || hasToken : hasToken;
+  }
+
+  if (callbackState.flow === 'signin') {
+    return hasToken;
+  }
+
+  return false;
+}
 
 function enqueueDeepLinkToken(token) {
   if (!token) return;
@@ -510,7 +558,29 @@ async function startAuthServer() {
 
   authServer = new AuthServer();
   const port = await authServer.start((token, googleTokens) => {
-    handleAuthServerToken(token, googleTokens, mainWindow, enqueueDeepLinkToken);
+    const callbackState = consumeAuthCallback(googleTokens?.desktopState);
+    if (!callbackState) {
+      log.warn('Rejected localhost auth callback with invalid or expired desktop state');
+      return false;
+    }
+    if (!isExpectedAuthCallback(callbackState, token, googleTokens)) {
+      log.warn('Rejected localhost auth callback with unexpected flow result', {
+        flow: callbackState.flow,
+        requestCalendar: callbackState.requestCalendar,
+        hasToken: !!token,
+        hasGoogleTokens: !!googleTokens?.idToken,
+        action: googleTokens?.action || null
+      });
+      return false;
+    }
+
+    handleAuthServerToken(token, {
+      ...googleTokens,
+      desktopFlow: callbackState.flow,
+      requestCalendar: callbackState.requestCalendar
+    }, mainWindow, enqueueDeepLinkToken);
+    setImmediate(stopAuthServer);
+    return true;
   });
   return port;
 }
@@ -521,6 +591,7 @@ function stopAuthServer() {
     authServer.stop();
     authServer = null;
   }
+  pendingAuthCallbacks.clear();
 }
 
 // Track last time we reloaded the embedded webview to avoid excessive reloads
@@ -1267,13 +1338,17 @@ app.whenReady().then(async () => {
     try {
       const port = await startAuthServer();
       const requestCalendar = !!(payload && payload.requestCalendar);
+      const fromPortal = !!(payload && payload.fromPortal);
       const idToken = requestCalendar ? stateManager?.getIdToken?.() ?? null : null;
       if (requestCalendar && !idToken) {
         return { success: false, error: 'Missing authenticated session for calendar linking' };
       }
-      const data = await getGoogleSignInUrl({ port, requestCalendar, idToken });
+      const flow = fromPortal ? 'portal-signin' : 'signin';
+      const desktopState = createAuthCallback(flow, requestCalendar);
+      const redirectUrl = buildAuthRedirectUrl(port, desktopState);
+      const data = await getGoogleSignInUrl({ port, redirectUrl, requestCalendar, idToken });
       const url = data && (data.authUrl || data.url || (data.data && data.data.url));
-      if (url && payload && payload.fromPortal) markPortalSigninPending(requestCalendar);
+      if (url && fromPortal) markPortalSigninPending(requestCalendar);
       return url ? { success: true, url } : { success: false, error: 'No URL in response' };
     } catch (error) {
       log.error('Failed to get desktop Google Sign In URL from main:', error);
@@ -1284,8 +1359,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('auth:google-reauth', async (_event, payload) => {
     try {
       const port = await startAuthServer();
+      const desktopState = createAuthCallback('reauth', !!(payload && payload.requestCalendar));
+      const redirectUrl = buildAuthRedirectUrl(port, desktopState);
       const data = await getGoogleReauthUrl({
         port,
+        redirectUrl,
         idToken: payload && payload.idToken,
         requestCalendar: !!(payload && payload.requestCalendar),
       });
