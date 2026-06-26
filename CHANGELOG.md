@@ -8,6 +8,7 @@
 ## 2.2.8
 
 - Sign Windows ARM64 releases by compiling on ARM runners and signing/package-publishing on x64 runners.
+- Pin Electron Builder to avoid the upstream NSIS 7z filter regression that skips Windows executables during install.
 
 ## 2.2.6
 

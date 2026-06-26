@@ -63,7 +63,7 @@
     "dotenv": "^17.4.2",
     "dotenv-cli": "^11.0.0",
     "electron": "41.7.0",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "26.10.0",
     "electron-notarize": "^1.2.2",
     "jest": "^30.4.2",
     "npm-check-updates": "^22.2.0",
@@ -179,7 +179,9 @@
       "artifactName": "${productName}-${arch}.${ext}",
       "signtoolOptions": {
         "sign": "./scripts/azure-sign-windows.js",
-        "signingHashAlgorithms": ["sha256"]
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
       }
     },
     "nsis": {
