@@ -5,7 +5,7 @@
 - Harden desktop OAuth callbacks, embedded portal token handoff, and webview navigation.
 - Fix Windows updater cache permission failures by checking update metadata without downloading and offering a manual download.
 
-## 2.2.8
+## 2.2.9
 
 - Sign Windows ARM64 releases by compiling on ARM runners and signing/package-publishing on x64 runners.
 - Pin Electron Builder to avoid the upstream NSIS 7z filter regression that skips Windows executables during install.
