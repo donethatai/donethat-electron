@@ -628,12 +628,23 @@ function createRowForMessage(message) {
 
 function computeDesiredHeight() {
   const inputH = getInputRowHeight()
-  const chrome = 16
+  const chrome = getOverlayChromeHeight()
   const chatH = chatContainer.scrollHeight
   const recentChatsH = getRecentChatsHeight()
   // Add fixed height for chat notice if visible (only when there are messages)
   const noticeH = (chatNotice && chatNotice.style.display !== 'none') ? (chatNotice.offsetHeight || 16) : 0
   return chatH + inputH + chrome + recentChatsH + noticeH
+}
+
+function getOverlayChromeHeight() {
+  if (!overlayCard || !window.getComputedStyle) return 18
+  const styles = window.getComputedStyle(overlayCard)
+  return [
+    styles.paddingTop,
+    styles.paddingBottom,
+    styles.borderTopWidth,
+    styles.borderBottomWidth
+  ].reduce((total, value) => total + (parseFloat(value) || 0), 0)
 }
 
 function getRecentChatsHeight() {
@@ -653,7 +664,7 @@ function clampOverlayHeight(height) {
 
 function applyScrollAndClamp(desired) {
   const inputH = getInputRowHeight()
-  const chrome = 16
+  const chrome = getOverlayChromeHeight()
   const recentChatsH = getRecentChatsHeight()
   // Fixed height for chat notice if visible
   const noticeH = (chatNotice && chatNotice.style.display !== 'none') ? (chatNotice.offsetHeight || 16) : 0

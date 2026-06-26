@@ -13,7 +13,7 @@
     <link href="../build/output.css" rel="stylesheet" />
     <title>Chat</title>
     <style>
-      html, body { height: 100%; }
+      html, body { height: 100%; overflow: hidden; }
       body { background: transparent; font-family: var(--dt-font-body); color: var(--dt-color-text-default); }
       .overlay-root { }
       /* When liquid glass is active, remove any window/content border */
@@ -110,7 +110,7 @@
       html.non-mac.fallback-overlay .screen-toggle { right: 18px; }
     </style>
   </head>
-  <body class="w-full h-full overflow-visible">
+  <body class="w-full h-full">
     <div id="overlayRoot" class="overlay-root relative w-full h-full">
         <div class="overlay-card w-full p-2 relative flex flex-col">
           <div id="mascotWrap" class="mascot-wrap no-drag" hidden aria-hidden="true">
