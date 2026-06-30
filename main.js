@@ -261,6 +261,35 @@ installChildProcessGoneReporting()
 
 recordStartupPhase('child_process_reporting_installed')
 
+// Safety net for a bug in @sentry/electron's handleScope (main/ipc.js), which
+// calls `sentScope.breadcrumbs.pop()` without checking the array exists. A scope
+// IPC message that arrives without a breadcrumbs array throws an uncaught
+// TypeError in the main process. Electron's default behaviour is to show the
+// "A JavaScript error occurred in the main process" dialog and keep running, so
+// this never terminated the app — it just spammed users with the dialog.
+// Swallow only that specific error (no dialog); for everything else reproduce
+// Electron's default dialog, which our presence as a listener would suppress.
+process.on('uncaughtException', (error) => {
+  const stack = error && error.stack ? error.stack : ''
+  const isSentryBreadcrumbCrash =
+    error instanceof TypeError &&
+    /reading 'pop'/.test(error.message || '') &&
+    /@sentry[\\/]electron[\\/]main[\\/]ipc/.test(stack)
+
+  if (isSentryBreadcrumbCrash) {
+    console.warn('Suppressed @sentry/electron handleScope breadcrumbs crash:', error.message)
+    return
+  }
+
+  // Everything else: reproduce Electron's default error dialog (app keeps running).
+  console.error('Uncaught Exception:', error)
+  const { dialog } = require('electron')
+  dialog.showErrorBox(
+    'A JavaScript error occurred in the main process',
+    'Uncaught Exception:\n' + (error && error.stack ? error.stack : String(error))
+  )
+})
+
 // Conditionally load liquid glass with fallback. This is intentionally lazy so
 // the macOS native addon is not loaded during AppKit/Electron startup.
 let liquidGlass = null;
