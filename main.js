@@ -1699,6 +1699,10 @@ app.whenReady().then(async () => {
 
       activeDesktopNotifications.push(notification)
       notification.on('close', releaseDesktopNotification)
+      notification.on('failed', (event, error) => {
+        log.warn('Desktop notification failed:', error?.message || error || 'unknown')
+        releaseDesktopNotification()
+      })
 
       notification.on('click', () => {
         try {
@@ -2811,6 +2815,7 @@ function createOverlayWindow() {
       x: initX,
       y: initY,
       frame: false,
+      roundedCorners: false,
       resizable: false,
       movable: true,
       show: false,

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Upgrade Electron from 41.7.0 to 43.4.1.
+
 ## 2.2.12
 
 - Fix a crash dialog ("A JavaScript error occurred in the main process") caused by an unguarded breadcrumbs bug in @sentry/electron 7.14; pin to 7.13 and guard the main-process error handler.

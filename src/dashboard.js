@@ -448,6 +448,19 @@ function findProjectById(projectId) {
   return projects.find(p => p.id === projectId) || null;
 }
 
+// Projects offered in the picker: the ones this user may log time to, plus the
+// current assignment even when it is restricted, so an existing pick stays
+// visible. `canAssign === false` means the project limits who can log time to
+// it and this user isn't on that list; it stays readable elsewhere.
+function assignableProjects(currentProjectId) {
+  const assignable = projects.filter(p => p.canAssign !== false);
+  const current = findProjectById(currentProjectId);
+  if (current && !assignable.includes(current)) {
+    return [current, ...assignable];
+  }
+  return assignable;
+}
+
 function buildProjectPicker(selectedProjectId, onChange) {
   const wrapper = document.createElement('div');
   wrapper.className = 'project-picker';
@@ -535,7 +548,7 @@ function buildProjectPicker(selectedProjectId, onChange) {
     };
 
     addOption('', 'No project', null);
-    projects.forEach(p => addOption(p.id, p.name, getProjectColor(p)));
+    assignableProjects(currentId).forEach(p => addOption(p.id, p.name, getProjectColor(p)));
 
     wrapper.appendChild(panel);
 
