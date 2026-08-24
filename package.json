@@ -159,7 +159,6 @@
         "zip"
       ],
       "extendInfo": {
-        "NSCameraUseContinuityCameraDeviceType": true,
         "NSMicrophoneUsageDescription": "DoneThat needs microphone access to record audio for transcription and analysis.",
         "NSAudioCaptureUsageDescription": "DoneThat needs system audio access to capture playback audio."
       },

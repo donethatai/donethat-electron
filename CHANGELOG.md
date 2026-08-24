@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Reduce the macOS local-network permission prompt by disabling Chromium Cast discovery and Continuity Camera.
 - Upgrade Electron from 41.7.0 to 43.4.1.
 
 ## 2.2.12

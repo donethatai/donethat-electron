@@ -54,6 +54,12 @@ if (process.platform === 'linux') {
     app.setDesktopName('donethat.desktop')
   } catch (_) {}
 }
+
+// Avoid macOS "Allow DoneThat to find devices on local networks?" from Chromium
+// Cast/DIAL browsing. We don't use Cast. Do not add NSCameraUseContinuityCameraDeviceType
+// to mac.extendInfo — that opts into iPhone Continuity Camera discovery and the same prompt.
+// --disable-features is last-write-wins; merge extra features into this string.
+app.commandLine.appendSwitch('disable-features', 'MediaRouter,DialMediaRouteProvider')
 const {
   checkScreenCapturePermission: moduleCheckPermission,
   initScreenCapturePermissionHandling,
