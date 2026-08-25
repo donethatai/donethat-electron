@@ -165,7 +165,6 @@ let recentChats = []
 let recentChatsPage = 0
 const CHATS_PER_PAGE = 10
 let isLoadingChat = false
-let recordingPaused = false
 let mascotRive = null
 let mascotInputs = {
   focusLevel: null,
@@ -398,10 +397,6 @@ function holdMascotWaitingUntilReply() {
   setMascotMoodOverride(activeWaitingMood, Infinity)
 }
 
-function getPausedMood() {
-  return MASCOT_MOODS.PAUSED
-}
-
 function normalizeEmotionKey(emotion) {
   return String(emotion || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
 }
@@ -508,8 +503,8 @@ function triggerMascotShake() {
 }
 
 function computeMascotMood() {
-  // The chat mascot never sleeps: it stays awake (idle/active) whenever it is on screen.
-  if (recordingPaused) return getPausedMood()
+  // The chat mascot never sleeps and ignores recording pause (incl. the automatic
+  // out-of-work-hours pause): it stays awake (idle/active) whenever it is on screen.
   if (hasWaitingForReplyState()) return getWaitingMood()
   activeWaitingMood = null
   return MASCOT_MOODS.IDLE
@@ -1882,19 +1877,6 @@ async function loadChatById(chatId) {
     syncMascotState()
   }
 }
-
-function setRecordingPausedState(isPaused) {
-  recordingPaused = !!isPaused
-  syncMascotState()
-}
-
-ipcRenderer.invoke('getInitialPauseState')
-  .then((isPaused) => setRecordingPausedState(isPaused))
-  .catch(() => {})
-
-ipcRenderer.on('pauseStateChanged', (isPaused) => {
-  setRecordingPausedState(isPaused)
-})
 
 function setupOverlayWindowDrag() {
   if (!overlayCard || !ipcRenderer?.send) return
