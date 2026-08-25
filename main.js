@@ -383,6 +383,17 @@ app.on('activate', () => {
 let DEBUG = false
 const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus'
 const PENDING_PERMISSION_POST_RESTART_FOCUS_TTL_MS = 10 * 60 * 1000
+// Mirrors TRUSTED_PORTAL_ORIGIN in src/portal-preload.js.
+const TRUSTED_PORTAL_ORIGIN = 'https://app.donethat.ai'
+
+function isTrustedPortalOrigin(url) {
+  if (!url) return false
+  try {
+    return new URL(url).origin === TRUSTED_PORTAL_ORIGIN
+  } catch (e) {
+    return false
+  }
+}
 
 // Global hotkey configuration (suffix only, final character)
 let HOTKEY_SUFFIX = 'D' // default
@@ -2763,7 +2774,20 @@ function createWindow() {
     });
 
     // Sandboxed renderer needs explicit approval for capture permissions used by audio-recorder.js.
-    mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    // The portal webview and chat overlay share this session, so they land here too: copy buttons in
+    // the embedded web app go through navigator.clipboard, which needs clipboard-sanitized-write.
+    mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      if (permission === 'clipboard-sanitized-write') {
+        const requestingUrl = details?.requestingUrl || webContents?.getURL?.()
+        if (isTrustedPortalOrigin(requestingUrl)) {
+          callback(true);
+          return;
+        }
+        console.warn(`Blocked clipboard write from untrusted origin: ${requestingUrl}`);
+        callback(false);
+        return;
+      }
+
       const trustedMainId = mainWindow?.webContents?.id
       if (!trustedMainId || webContents.id !== trustedMainId) {
         console.warn(`Blocked permission request from untrusted renderer (permission=${permission}, wcId=${webContents.id})`);

@@ -701,10 +701,10 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
       }
     }
 
-    // If all LLMs failed, skip this round
+    // A successful HTTP call can still yield nothing: the structured-output parser returns
+    // undefined (no throw) when the provider ignores response_format or omits tool calls.
     if (!response) {
-      log.warn('Skipping analysis this round due to repeated LLM failures.');
-      return null;
+      throw new Error('The model returned no usable output. Check that your endpoint supports JSON schema responses or tool calling, and that the model id is correct.');
     }
 
     // Truncate description field to <200 tokens if it exists

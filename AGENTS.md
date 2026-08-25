@@ -31,7 +31,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 ### Key Modules
 
 - `main.js`: window/tray/menu setup, hotkey registration, updater, IPC wiring, overlay lifecycle.
-- `src-main/capture.js`: capture scheduler, collects enabled inputs, local-first processing, fallback upload.
+- `src-main/capture.js`: capture scheduler, collects enabled inputs, routes to local processing when a local LLM is configured (local-only — no cloud fallback on failure), otherwise uploads to the cloud function.
 - `src-main/captureScreenshots.js`: screenshots capture/processing.
 - `src-main/captureWindows.js`: active window timeline + permissions.
 - `src-main/captureAudio.js`: rolling audio capture (chunks sent as multimodal input to LLM).
@@ -55,7 +55,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 1. Interval configured in `main.js` with `setCaptureInterval(minutes)` (default 5). Token is fetched inside each cycle.
 2. On each cycle (`src-main/capture.js`):
    - Collect audio transcript, window timeline into compact activity.
-   - Try local processing (`processLocal`) with current + previous screenshots; else POST to Cloud Function `captureScreenshot` with `Authorization: Bearer <idToken>`.
+   - If a local LLM is configured, process locally (`processLocal`) with current + previous screenshots; otherwise POST to Cloud Function `captureScreenshot` with `Authorization: Bearer <idToken>`. A local failure does not fall back to the cloud; the cycle is lost and the user is notified.
 3. Errors/permission issues flag runtime issues per failing module and notify renderer; auth/token expiry is signaled back for refresh.
 
 ### Overlay Chat Flow

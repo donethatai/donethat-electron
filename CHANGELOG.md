@@ -2,8 +2,10 @@
 
 ## Unreleased
 
+- Fix a custom LLM endpoint that answers but returns nothing usable failing silently all day: the app now notifies you, and the Test button reports the failure instead of reporting success.
 - Move Setup out of the top bar: its sections now open as an overlay straight from the web dashboard's settings (Permissions and App from the nav, App masking and LLM from Privacy), leaving the dashboard loaded underneath.
 - Fix capture interval changes made in the web dashboard never reaching the app.
+- Fix copy buttons in the embedded web dashboard (such as the MCP server settings) silently copying nothing.
 - Fix a burst of recording each day during holidays longer than a week, where the daily pause expired mid-holiday and briefly resumed capture before the state check caught it.
 - App masking rules move to your account: edit them in Privacy in the web dashboard and they apply on every computer you sign in on. Rules that only existed on this machine are uploaded once, and the desktop panel keeps the part a browser cannot do — testing them against a live capture.
 - Say why App masking is greyed out instead of hiding the reason in a tooltip.
