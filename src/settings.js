@@ -66,7 +66,6 @@ const llmManagedLocks = {
   gemini: false,
   openAICompatible: false
 };
-let applyAppExclusionsManagedConfig = null;
 let applySaveCaptureManagedConfig = null;
 let waylandWindowsPersistInFlight = false;
 
@@ -346,6 +345,25 @@ function isWindowsEffectivelyEnabled() {
   return !!inputData.windows && !!hasWindowsPermission();
 }
 
+/**
+ * Say why App masking is inert, in place of the dimmed card's tooltip.
+ *
+ * The panel can be opened on the masking section alone, where a greyed-out card
+ * and a tooltip nobody hovers is the whole screen.
+ */
+function setMaskingDependencyNote(isBlocked, screenEnabled, windowsEnabled) {
+  const note = document.getElementById('appMaskingDependencyNote');
+  if (!note) return;
+
+  note.classList.toggle('hidden', !isBlocked);
+  if (!isBlocked) return;
+
+  const missing = [];
+  if (!screenEnabled) missing.push('Screenshare');
+  if (!windowsEnabled) missing.push('Active applications');
+  note.textContent = `App masking needs ${missing.join(' and ')} turned on with permission granted. Until then these rules are not applied.`;
+}
+
 function refreshCaptureDependentVisibility() {
   const audioCard = document.getElementById('microphonePermissionsCard');
   const appMaskingCard = document.getElementById('appMaskingCard');
@@ -367,6 +385,7 @@ function refreshCaptureDependentVisibility() {
   if (!isCaptureReadinessReady()) {
     setDimmed(audioCard, false);
     setDimmed(appMaskingCard, false);
+    setMaskingDependencyNote(false);
     return;
   }
 
@@ -374,8 +393,10 @@ function refreshCaptureDependentVisibility() {
   const windowsEnabled = isWindowsEffectivelyEnabled();
 
   const bothRequiredMsg = 'Both Screenshare and Active applications must be enabled for this feature to work.';
+  const maskingBlocked = !screenEnabled || !windowsEnabled;
   setDimmed(audioCard, !screenEnabled && !windowsEnabled);
-  setDimmed(appMaskingCard, !screenEnabled || !windowsEnabled, bothRequiredMsg);
+  setDimmed(appMaskingCard, maskingBlocked, bothRequiredMsg);
+  setMaskingDependencyNote(maskingBlocked, screenEnabled, windowsEnabled);
 }
 
 
@@ -608,7 +629,13 @@ async function saveUserSettings(type, value) {
   try {
     let settingsData = {};
 
-    if (type === 'screenshots') {
+    if (type === 'appExclusions') {
+      settingsData.capture = { appExclusions: Array.isArray(value) ? value : [] };
+      logAnalyticsEvent('settings_updated', {
+        type: 'appExclusions',
+        count: settingsData.capture.appExclusions.length
+      });
+    } else if (type === 'screenshots') {
       settingsData.storeScreenshots = value;
       logAnalyticsEvent('settings_updated', {
         type: 'screenshots',
@@ -738,16 +765,73 @@ async function saveUserSettings(type, value) {
   }
 }
 
+/**
+ * Push the account's app masking rules into the desktop's effective list.
+ *
+ * The rules are a user setting now, edited in the web dashboard; main keeps the
+ * merged copy (user rules plus whatever the organization enforces on top) in its
+ * own store because capture has to read them synchronously on every screenshot.
+ *
+ * On the first run of a build that syncs, rules that only ever existed on this
+ * machine are uploaded instead of being overwritten by an empty server value —
+ * without that, updating the app would silently unmask whatever the user had
+ * masked here.
+ */
+async function syncAppExclusionsFromSettings(settingsExclusions, managedConfig) {
+  // A "fixed" policy replaces the member's list outright, and main already wrote
+  // the organization's entries to the store when it applied the policy. Pushing
+  // the user's own rules here would only be rejected.
+  if (isManagedValue(managedConfig) && managedConfig.mode === MANAGED_LIST_MODE_FIXED) return;
+
+  const fromSettings = Array.isArray(settingsExclusions) ? settingsExclusions : [];
+
+  try {
+    const migrated = await ipcRenderer.invoke('get-app-exclusions-migrated');
+    if (!migrated?.migrated) {
+      const local = await ipcRenderer.invoke('get-app-exclusions');
+      const localExclusions = (local && local.success && Array.isArray(local.exclusions))
+        ? local.exclusions
+        : [];
+
+      if (localExclusions.length > 0) {
+        // Union, not "server wins": rules may have been added in the web app
+        // while this machine still ran a build that kept its own list, and
+        // whichever side we dropped would be a mask the user thinks is on.
+        const seen = new Set(fromSettings.map((entry) => (entry?.appName || '').trim().toLowerCase()));
+        const merged = fromSettings.concat(
+          localExclusions.filter((entry) => {
+            const name = (entry?.appName || '').trim().toLowerCase();
+            if (!name || seen.has(name)) return false;
+            seen.add(name);
+            return true;
+          })
+        );
+
+        if (merged.length !== fromSettings.length) {
+          await saveUserSettings('appExclusions', merged);
+          await ipcRenderer.invoke('set-app-exclusions-migrated');
+          return;
+        }
+      }
+      await ipcRenderer.invoke('set-app-exclusions-migrated');
+    }
+  } catch (error) {
+    console.warn('App exclusion migration check failed:', error);
+  }
+
+  try {
+    await ipcRenderer.invoke('save-app-exclusions', fromSettings);
+  } catch (error) {
+    console.error('Error applying app exclusions from settings:', error);
+  }
+}
+
 async function updateSettingsUI(settings) {
   const nextManagedAppSettings = normalizeAppSettings(settings?.appSettings || null);
   managedAppSettings = nextManagedAppSettings;
   applyManualPausePolicy(nextManagedAppSettings.recording.manualPauseEnabled);
   pushManagedSettingsToMain();
 
-  if (typeof applyAppExclusionsManagedConfig === 'function') {
-    await applyAppExclusionsManagedConfig(nextManagedAppSettings.capture.appExclusions);
-    if (managedAppSettings !== nextManagedAppSettings) return;
-  }
   if (typeof applySaveCaptureManagedConfig === 'function') {
     await applySaveCaptureManagedConfig(nextManagedAppSettings.capture.saveCaptureData);
     if (managedAppSettings !== nextManagedAppSettings) return;
@@ -834,6 +918,11 @@ async function updateSettingsUI(settings) {
 
   const captureIntervalMinutes = normalizeCaptureIntervalMinutes(settings?.capture?.intervalMinutes);
   ipcRenderer.send('updateCaptureInterval', captureIntervalMinutes);
+
+  await syncAppExclusionsFromSettings(
+    settings?.capture?.appExclusions,
+    nextManagedAppSettings.capture.appExclusions
+  );
 
 
   // Handle workhours setting
@@ -1396,315 +1485,16 @@ function setupHotkeyConfiguration() {
 
 // Set up app exclusions listeners
 function setupAppExclusionsListeners() {
-  const exclusionsList = document.getElementById('appExclusionsList');
-  const addBtn = document.getElementById('addAppExclusionBtn');
   const testBtn = document.getElementById('testAppExclusions');
   const testResult = document.getElementById('appExclusionsTestResult');
   const testIcon = document.getElementById('appExclusionsTestIcon');
   const testMessage = document.getElementById('appExclusionsTestMessage');
   const testScreenshots = document.getElementById('appExclusionsTestScreenshots');
   let testResultHideTimer = null;
-  
-  if (!exclusionsList || !addBtn) return;
-  
-  let exclusions = [];
-  let exclusionsManaged = false;
-  let managedExclusionsMode = null;
 
-  async function loadExclusionsFromStore() {
-    try {
-      const result = await ipcRenderer.invoke('get-app-exclusions');
-      if (exclusionsManaged) return;
-      if (result && result.success) {
-        // Migrate old format (titlePattern) to new format (titlePatterns)
-        exclusions = (result.exclusions || []).map(exclusion => {
-          if (exclusion.titlePattern && !exclusion.titlePatterns) {
-            exclusion.titlePatterns = [exclusion.titlePattern];
-            delete exclusion.titlePattern;
-          } else if (!exclusion.titlePatterns) {
-            exclusion.titlePatterns = [];
-          }
-          // Ensure ignoreActivity field exists (default to false for backward compatibility)
-          if (exclusion.ignoreActivity === undefined) {
-            exclusion.ignoreActivity = false;
-          }
-          return exclusion;
-        });
-        renderExclusionsList();
-      }
-    } catch (error) {
-      console.error('Error loading app exclusions:', error);
-    }
-  }
-
-  async function applyManagedExclusions(managedExclusionsConfig) {
-    if (!isManagedValue(managedExclusionsConfig)) {
-      exclusionsManaged = false;
-      managedExclusionsMode = null;
-      setManagedCardLock('appMaskingCard', false);
-      await loadExclusionsFromStore();
-      return;
-    }
-
-    const normalizedConfig = normalizeManagedAppExclusionsConfig(managedExclusionsConfig);
-    managedExclusionsMode = normalizedConfig?.mode || MANAGED_LIST_MODE_FIXED;
-    exclusionsManaged = managedExclusionsMode === MANAGED_LIST_MODE_FIXED;
-    setManagedCardLock('appMaskingCard', exclusionsManaged);
-
-    if (exclusionsManaged) {
-      exclusions = normalizedConfig?.entries || [];
-      renderExclusionsList();
-      return;
-    }
-
-    await loadExclusionsFromStore();
-  }
-
-  applyAppExclusionsManagedConfig = applyManagedExclusions;
-  if (managedAppSettings) {
-    applyManagedExclusions(managedAppSettings.capture.appExclusions);
-  } else {
-    loadExclusionsFromStore();
-  }
-  
-  // Render exclusions list
-  function renderExclusionsList() {
-    exclusionsList.innerHTML = '';
-    exclusions.forEach((exclusion, index) => {
-      const entry = document.createElement('div');
-      entry.className = 'dt-card dt-card--subtle dt-settings-entry';
-      
-      const appNameRow = document.createElement('div');
-      appNameRow.className = 'dt-settings-field';
-      const appNameLabel = document.createElement('label');
-      appNameLabel.className = 'dt-label';
-      appNameLabel.textContent = 'App name';
-      
-      // Container for input and remove button
-      const appNameInputContainer = document.createElement('div');
-      appNameInputContainer.className = 'relative';
-      
-      const appNameInput = document.createElement('input');
-      appNameInput.type = 'text';
-      appNameInput.className = 'dt-input dt-input--compact dt-input--with-trailing-action';
-      appNameInput.placeholder = 'e.g., Slack, Chrome, Candy Crush';
-      appNameInput.value = exclusion.appName || '';
-      appNameInput.dataset.index = index;
-      appNameInput.dataset.field = 'appName';
-      
-      // Remove button (x) on the right
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'dt-button dt-button--ghost dt-button--icon dt-button--small dt-inline-remove-button';
-      removeBtn.dataset.index = index;
-      removeBtn.innerHTML = '×';
-      removeBtn.title = 'Remove exclusion';
-      
-      appNameInputContainer.appendChild(appNameInput);
-      appNameInputContainer.appendChild(removeBtn);
-      appNameRow.appendChild(appNameLabel);
-      appNameRow.appendChild(appNameInputContainer);
-      
-      const titlePatternRow = document.createElement('div');
-      titlePatternRow.className = 'dt-settings-field';
-      const titlePatternLabel = document.createElement('label');
-      titlePatternLabel.className = 'dt-label';
-      titlePatternLabel.textContent = 'Window name keywords (optional)';
-      
-      // Convert old format (single string) to new format (array)
-      let titlePatterns = exclusion.titlePatterns || [];
-      if (exclusion.titlePattern && !titlePatterns.length) {
-        titlePatterns = [exclusion.titlePattern];
-      }
-      if (!Array.isArray(titlePatterns)) {
-        titlePatterns = [];
-      }
-      
-      // Container for chips and input
-      const titlePatternContainer = document.createElement('div');
-      titlePatternContainer.className = 'dt-chip-input';
-      titlePatternContainer.dataset.index = index;
-      
-      // Render chips
-      const renderChips = () => {
-        // Clear existing chips (but keep input)
-        const existingChips = titlePatternContainer.querySelectorAll('.title-pattern-chip');
-        existingChips.forEach(chip => chip.remove());
-        
-        // Add chips
-        titlePatterns.forEach((pattern, patternIndex) => {
-          if (!pattern || !pattern.trim()) return;
-          
-          const chip = document.createElement('div');
-          chip.className = 'dt-chip title-pattern-chip';
-          
-          const chipText = document.createElement('span');
-          chipText.textContent = pattern;
-          
-          const chipRemove = document.createElement('button');
-          chipRemove.type = 'button';
-          chipRemove.className = 'dt-chip-remove';
-          chipRemove.innerHTML = '×';
-          chipRemove.addEventListener('click', () => {
-            if (exclusionsManaged) return;
-            // Find the current index of this pattern (in case array changed)
-            const currentIndex = titlePatterns.indexOf(pattern);
-            if (currentIndex !== -1) {
-              titlePatterns.splice(currentIndex, 1);
-              exclusions[index].titlePatterns = titlePatterns.filter(p => p && p.trim());
-              renderChips();
-              saveExclusions();
-            }
-          });
-          
-          chip.appendChild(chipText);
-          chip.appendChild(chipRemove);
-          titlePatternContainer.insertBefore(chip, titlePatternInput);
-        });
-      };
-      
-      // Input for adding new patterns
-      const titlePatternInput = document.createElement('input');
-      titlePatternInput.type = 'text';
-      titlePatternInput.className = 'flex-1 min-w-[120px] border-0 outline-none bg-transparent text-xs';
-      titlePatternInput.placeholder = titlePatterns.length === 0 ? 'e.g. budget, John, incognito' : 'Add another keyword...';
-      titlePatternInput.dataset.index = index;
-      
-      titlePatternInput.addEventListener('keydown', async (e) => {
-        if (exclusionsManaged) return;
-        if (e.key === 'Enter' && titlePatternInput.value.trim()) {
-          e.preventDefault();
-          const newPattern = titlePatternInput.value.trim();
-          if (!titlePatterns.includes(newPattern)) {
-            titlePatterns.push(newPattern);
-            exclusions[index].titlePatterns = titlePatterns;
-            titlePatternInput.value = '';
-            renderChips();
-            await saveExclusions();
-          }
-        }
-      });
-      
-      titlePatternInput.addEventListener('blur', async () => {
-        if (exclusionsManaged) return;
-        // Also add on blur if there's a value
-        if (titlePatternInput.value.trim() && !titlePatterns.includes(titlePatternInput.value.trim())) {
-          titlePatterns.push(titlePatternInput.value.trim());
-          exclusions[index].titlePatterns = titlePatterns;
-          titlePatternInput.value = '';
-          renderChips();
-          await saveExclusions();
-        }
-      });
-      
-      titlePatternContainer.appendChild(titlePatternInput);
-      titlePatternRow.appendChild(titlePatternLabel);
-      titlePatternRow.appendChild(titlePatternContainer);
-      
-      // Initial render of chips
-      renderChips();
-      
-      // Ignore activity toggle row
-      const ignoreActivityRow = document.createElement('div');
-      ignoreActivityRow.className = 'flex items-center justify-between';
-      const ignoreActivityLabel = document.createElement('label');
-      ignoreActivityLabel.className = 'text-sm font-normal text-gray-700';
-      ignoreActivityLabel.textContent = 'Ignore activity';
-      const ignoreActivityToggle = document.createElement('label');
-      ignoreActivityToggle.className = 'toggle';
-      const ignoreActivityCheckbox = document.createElement('input');
-      ignoreActivityCheckbox.type = 'checkbox';
-      ignoreActivityCheckbox.checked = exclusion.ignoreActivity === true;
-      ignoreActivityCheckbox.dataset.index = index;
-      ignoreActivityToggle.appendChild(ignoreActivityCheckbox);
-      const toggleSlider = document.createElement('span');
-      toggleSlider.className = 'slider';
-      ignoreActivityToggle.appendChild(toggleSlider);
-      
-      ignoreActivityCheckbox.addEventListener('change', async () => {
-        if (exclusionsManaged) return;
-        const idx = parseInt(ignoreActivityCheckbox.dataset.index, 10);
-        if (exclusions[idx]) {
-          exclusions[idx].ignoreActivity = ignoreActivityCheckbox.checked;
-          await saveExclusions();
-        }
-      });
-      
-      ignoreActivityRow.appendChild(ignoreActivityLabel);
-      ignoreActivityRow.appendChild(ignoreActivityToggle);
-      
-      entry.appendChild(appNameRow);
-      entry.appendChild(titlePatternRow);
-      entry.appendChild(ignoreActivityRow);
-      exclusionsList.appendChild(entry);
-    });
-    
-    // Add event listeners for app name inputs only (title patterns handled separately)
-    exclusionsList.querySelectorAll('input[data-field="appName"]').forEach(input => {
-      input.addEventListener('blur', async () => {
-        if (exclusionsManaged) return;
-        const index = parseInt(input.dataset.index, 10);
-        if (exclusions[index]) {
-          exclusions[index].appName = input.value.trim() || null;
-          if (!exclusions[index].appName) {
-            // Remove if app name is empty
-            exclusions.splice(index, 1);
-            renderExclusionsList();
-          } else {
-            await saveExclusions();
-          }
-        }
-      });
-    });
-    
-    // Add event listeners for remove buttons (x buttons in app name inputs)
-    exclusionsList.querySelectorAll('button[data-index]').forEach(btn => {
-      if (btn.textContent === '×') {
-        btn.addEventListener('click', async () => {
-          if (exclusionsManaged) return;
-          const index = parseInt(btn.dataset.index, 10);
-          exclusions.splice(index, 1);
-          renderExclusionsList();
-          await saveExclusions();
-        });
-      }
-    });
-  }
-  
-  // Save exclusions
-  async function saveExclusions() {
-    if (exclusionsManaged) return;
-    try {
-      const result = await ipcRenderer.invoke('save-app-exclusions', exclusions);
-      if (!result || !result.success) {
-        console.error('Error saving app exclusions:', result?.error);
-        showBanner(`Error saving exclusions: ${result?.error || 'Unknown error'}`, { title: 'Settings', sticky: true });
-      } else if (managedExclusionsMode === MANAGED_LIST_MODE_MINIMUM && Array.isArray(result.exclusions)) {
-        exclusions = result.exclusions;
-        renderExclusionsList();
-      }
-    } catch (error) {
-      console.error('Error saving app exclusions:', error);
-      showBanner(`Error saving exclusions: ${error.message}`, { title: 'Settings', sticky: true });
-    }
-  }
-  
-  // Add new exclusion
-  addBtn.addEventListener('click', () => {
-    if (exclusionsManaged) return;
-    exclusions.push({ appName: '', titlePatterns: [], ignoreActivity: false });
-    renderExclusionsList();
-    // Focus the new app name input
-    const newInput = exclusionsList.querySelector(`input[data-index="${exclusions.length - 1}"][data-field="appName"]`);
-    if (newInput) {
-      newInput.focus();
-    }
-  });
-  
   // Test button
   if (testBtn && testResult && testIcon && testMessage && testScreenshots) {
     testBtn.addEventListener('click', async () => {
-      if (exclusionsManaged) return;
       try {
         testBtn.disabled = true;
         testBtn.textContent = 'Testing...';

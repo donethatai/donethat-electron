@@ -289,6 +289,32 @@ describe('checkScreenCapturePermission (macOS TCC priority)', () => {
     )
   })
 
+  test('interactive check probes despite TCC "denied" so macOS can prompt', async () => {
+    // CGPreflightScreenCaptureAccess reports "denied" for an app that was never
+    // asked, and getSources is what raises the prompt — so the request path has
+    // to probe or a first-run user can never grant access.
+    jest.useFakeTimers()
+    mockGetMediaAccessStatus.mockReturnValue('denied')
+    mockGetScreenSources.mockResolvedValueOnce([minimalScreenSource])
+
+    const pending = checkScreenCapturePermission('unit-tcc-denied-interactive', { interactive: true })
+    await jest.advanceTimersByTimeAsync(0)
+    const result = await pending
+
+    expect(result).toBe(true)
+    expect(mockGetScreenSources).toHaveBeenCalled()
+    jest.useRealTimers()
+  })
+
+  test('TCC "restricted" short-circuits as denied even when interactive', async () => {
+    mockGetMediaAccessStatus.mockReturnValue('restricted')
+
+    const result = await checkScreenCapturePermission('unit-tcc-restricted-interactive', { interactive: true })
+
+    expect(result).toBe(false)
+    expect(mockGetScreenSources).not.toHaveBeenCalled()
+  })
+
   test('TCC "restricted" short-circuits as denied', async () => {
     mockGetMediaAccessStatus.mockReturnValue('restricted')
 

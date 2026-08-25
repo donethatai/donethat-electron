@@ -1873,6 +1873,34 @@ function setupIPCHandlers() {
     }
   });
 
+  // One-time marker for the move of user masking rules into account settings.
+  // Kept in main because the renderer is reloaded far more often than the store.
+  ipcMain.handle('get-app-exclusions-migrated', async () => {
+    try {
+      const migrated = safeStoreOperation(() => {
+        return store ? store.get('appExclusionsMigratedToSettings') === true : false;
+      }, 'read app exclusions migration marker');
+      return { success: true, migrated: !!migrated };
+    } catch (error) {
+      log.error('Error reading app exclusions migration marker:', error);
+      // Reported as migrated: a failed read must not cause an upload that
+      // overwrites the account's rules with this machine's copy.
+      return { success: false, migrated: true };
+    }
+  });
+
+  ipcMain.handle('set-app-exclusions-migrated', async () => {
+    try {
+      safeStoreOperation(() => {
+        if (store) store.set('appExclusionsMigratedToSettings', true);
+      }, 'write app exclusions migration marker');
+      return { success: true };
+    } catch (error) {
+      log.error('Error writing app exclusions migration marker:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('save-app-exclusions', async (event, exclusions) => {
     try {
       const managedExclusionConfig = managedAppSettings.capture.appExclusions;

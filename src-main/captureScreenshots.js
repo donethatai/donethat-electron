@@ -287,12 +287,18 @@ async function checkScreenCapturePermission(source = 'unknown', probeOptions = {
         try { recordSignal('screen_permission_resolved_via_tcc', { source, status: tccStatus }) } catch (_) {}
         return true
       }
-      if (tccStatus === 'denied' || tccStatus === 'restricted') {
+      // 'restricted' is definitive (MDM); no prompt will ever come, so never probe.
+      // 'denied' is not: CGPreflightScreenCaptureAccess reports it for an app that
+      // has simply never been asked, and getSources is the only call that raises the
+      // system prompt. Short-circuiting it on the interactive path left a first-run
+      // user with no way to grant access at all, so that path probes anyway.
+      if (tccStatus === 'restricted' || (tccStatus === 'denied' && !probeOptions.interactive)) {
         recordPermissionCheck('screen', source, 'denied', Date.now() - startedAt)
         try { recordSignal('screen_permission_resolved_via_tcc', { source, status: tccStatus }) } catch (_) {}
         return false
       }
-      // 'not-determined', 'unknown', or null → fall through to active probe.
+      // 'not-determined', 'unknown', null, or an interactive check of 'denied'
+      // → fall through to the active probe.
     }
 
     return await probeDesktopCapturerScreenPermission(source, probeOptions)

@@ -591,7 +591,6 @@ function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnab
   // what `getUserSettings` reported; until it does, collection stays off.
   ipcMain.on('updateLocationFeatureEnabled', (_event, enabled) => {
     locationFeatureEnabled = enabled === true;
-    log.info('[networks] location feature enabled:', locationFeatureEnabled);
   });
 
   // Location permission has to be its own channel: `updateInputDataSettings` is

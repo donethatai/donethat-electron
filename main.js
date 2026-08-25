@@ -308,15 +308,12 @@ function loadLiquidGlass() {
   liquidGlassLoadAttempted = true;
 
   try {
-    recordStartupPhase('liquid_glass_load_start')
     // Support both ESM default and CJS export shapes
     const raw = require('electron-liquid-glass');
     liquidGlass = raw && raw.default ? raw.default : raw;
     liquidGlassAvailable = !!(liquidGlass && typeof liquidGlass.addView === 'function');
-    recordStartupPhase('liquid_glass_load_done', { available: liquidGlassAvailable })
   } catch (e) {
     liquidGlassAvailable = false;
-    recordStartupPhase('liquid_glass_load_failed', { error: e.message })
     console.warn('Liquid glass not available, using standard windows:', e.message);
   }
 

@@ -99,6 +99,8 @@ const validInvokeChannels = [
   'save-openai-compatible-config',
   'clear-openai-compatible-config',
   'get-app-exclusions',
+  'get-app-exclusions-migrated',
+  'set-app-exclusions-migrated',
   'save-app-exclusions',
   'test-app-exclusions',
   'test-local-processing',

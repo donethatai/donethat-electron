@@ -242,20 +242,175 @@ function startPortalLoadWatchdog(reason) {
   } catch (_) {}
 }
 
-// Global updater for the Settings/Dashboard toggle button label
-function updateSettingsToggleLabelGlobal() {
-  try {
-    const settingsToggleBtn = document.getElementById('openSettingsViewBtn');
-    if (!settingsToggleBtn) return;
-    const v = getCurrentView();
-    if (v === 'settings' || v === 'permissions') {
-      settingsToggleBtn.textContent = 'Dashboard';
-      settingsToggleBtn.className = 'dt-button dt-button--primary dt-button--small dt-topbar-button'; // Bright orange when on permissions
-    } else {
-      settingsToggleBtn.textContent = 'Setup';
-      settingsToggleBtn.className = 'dt-button dt-button--secondary dt-button--small dt-topbar-button'; // Normal style otherwise
-    }
-  } catch (_) {}
+/**
+ * Which Setup cards belong to each section the portal can ask for.
+ *
+ * Setup used to be one long page reached from the top bar. It is now opened from
+ * the portal's own settings nav, one section at a time, so the cards are grouped
+ * to match those entries. 'all' keeps the full page available for the entry
+ * points that are not section-specific (the app menu).
+ */
+const SETUP_SECTIONS = {
+  all: null,
+  permissions: ['requiredPermissionsCard', 'microphonePermissionsCard', 'locationCard'],
+  llm: ['llmSettingsCard'],
+  appconfig: ['appConfigCard'],
+  masking: ['appMaskingCard']
+};
+
+const SETUP_SECTION_TITLES = {
+  all: 'Setup',
+  permissions: 'Permissions',
+  llm: 'LLM',
+  appconfig: 'App',
+  masking: 'Test app masking'
+};
+
+function isSetupOverlayOpen() {
+  const overlay = document.getElementById('settingsView');
+  return !!overlay && !overlay.classList.contains('hidden');
+}
+
+/**
+ * Show the Setup panel over whatever is on screen.
+ *
+ * Deliberately not a view: the portal webview underneath must stay loaded,
+ * because on the common path it is the portal's own settings nav that asked for
+ * this panel and destroying it would unload the page the user came from.
+ */
+function openSetupOverlay(section) {
+  const overlay = document.getElementById('settingsView');
+  if (!overlay) return;
+  // The portal has its own session, so it can ask for this while the host is
+  // still mid-handshake. Nothing here is usable without auth, so drop it — but
+  // leave a trace, because from the portal's side the click just did nothing.
+  if (!isAuthenticated()) {
+    console.warn('[setup] ignoring open request while unauthenticated:', section || 'all');
+    return;
+  }
+
+  let key = 'all';
+  if (Object.prototype.hasOwnProperty.call(SETUP_SECTIONS, section)) {
+    key = section;
+  } else if (section) {
+    // The portal asked for something this build does not have — show the whole
+    // panel rather than nothing, but say so: it means the two sides disagree
+    // about what this version can do.
+    console.warn('[setup] unknown section, falling back to the full panel:', section);
+  }
+  const visibleCards = SETUP_SECTIONS[key];
+
+  const outOfSection = (cardId) => !!visibleCards && !visibleCards.includes(cardId);
+
+  document.querySelectorAll('#settingsView [data-settings-card]').forEach((card) => {
+    // A card hidden for its own reasons (the location rollout flag, for one)
+    // stays hidden; sections only ever narrow what is already on offer.
+    card.classList.toggle('setup-card-out-of-section', outOfSection(card.id));
+  });
+
+  // Notes live outside their card (see the dim in refreshCaptureDependentVisibility)
+  // so they have to follow it out of the section by hand.
+  document.querySelectorAll('#settingsView [data-settings-card-note]').forEach((note) => {
+    note.classList.toggle('setup-card-out-of-section', outOfSection(note.dataset.settingsCardNote));
+  });
+
+  // A section showing a single card would otherwise say its name twice: once in
+  // the panel header, once on the card. The card's own title is the better of
+  // the two (it is written for a reader, not for a nav entry), so it becomes the
+  // header and the card drops it.
+  const soleCard = visibleCards && visibleCards.length === 1
+    ? document.getElementById(visibleCards[0])
+    : null;
+  const soleCardTitle = soleCard ? soleCard.querySelector('.dt-card-title') : null;
+
+  document.querySelectorAll('#settingsView [data-settings-card] .dt-card-title').forEach((cardTitle) => {
+    cardTitle.classList.toggle('hidden', cardTitle === soleCardTitle);
+  });
+
+  const title = document.getElementById('setupOverlayTitle');
+  if (title) {
+    title.textContent = (soleCardTitle && soleCardTitle.textContent.trim())
+      || SETUP_SECTION_TITLES[key]
+      || SETUP_SECTION_TITLES.all;
+  }
+
+  applyLinuxSetupSections();
+  resetSummaryState();
+  overlay.classList.remove('hidden');
+
+  const body = overlay.querySelector('.setup-dialog-body');
+  if (body) body.scrollTop = 0;
+
+  // Move focus into the panel: it is what makes the Tab trap below hold, since a
+  // keypress inside the webview never reaches this document.
+  const dialog = overlay.querySelector('.setup-dialog');
+  if (dialog) dialog.focus();
+  else if (document.activeElement) document.activeElement.blur();
+
+  trackPageView('settings');
+}
+
+function closeSetupOverlay() {
+  const overlay = document.getElementById('settingsView');
+  if (!overlay) return;
+  // Focus left on a node that is about to be hidden is focus nobody owns.
+  if (overlay.contains(document.activeElement)) document.activeElement.blur();
+  overlay.classList.add('hidden');
+}
+
+const SETUP_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(', ');
+
+/** Tabbable nodes inside the panel, minus the cards the current section hides. */
+function getSetupFocusableElements(overlay) {
+  return Array.from(overlay.querySelectorAll(SETUP_FOCUSABLE_SELECTOR))
+    .filter((el) => el.offsetParent !== null);
+}
+
+/**
+ * Keep Tab inside the panel while it is open.
+ *
+ * Without this the dashboard webview behind the scrim stays tabbable, so a
+ * keyboard user walks straight out of a dialog that claims to be modal.
+ */
+function handleSetupOverlayTab(event) {
+  const overlay = document.getElementById('settingsView');
+  if (!overlay) return;
+
+  const focusables = getSetupFocusableElements(overlay);
+  if (focusables.length === 0) return;
+
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+
+  if (!overlay.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+/** Linux-only Setup content, revealed whenever the panel opens. */
+function applyLinuxSetupSections() {
+  if (!(window.electronAPI && window.electronAPI.platform === 'linux')) return;
+  const linuxInstallGuideNote = document.getElementById('linuxInstallGuideNote');
+  if (linuxInstallGuideNote) linuxInstallGuideNote.classList.remove('hidden');
+  const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
+  if (linuxScreenshotSection) linuxScreenshotSection.classList.remove('hidden');
 }
 
 function updateTopbarReloadVisibility(viewName) {
@@ -520,6 +675,14 @@ function attachPortalViewListeners(view) {
           if (res && res.success && res.url) openUrl(res.url);
         })
         .catch((err) => { console.error('[ipc-message] auth:google-signin error:', err); });
+    } else if (event.channel === 'desktop:open-setup') {
+      const payload = event.args && event.args[0] || {};
+      openSetupOverlay(payload.section);
+    } else if (event.channel === 'updateCaptureInterval') {
+      const minutes = event.args && event.args[0];
+      if (Number.isFinite(minutes)) {
+        try { ipcRenderer.send('updateCaptureInterval', minutes); } catch (e) {}
+      }
     } else if (event.channel === 'auth:google-reauth') {
       const payload = event.args && event.args[0] || {};
       window.electronAPI.invoke('auth:google-reauth', {
@@ -645,7 +808,6 @@ const mfaChallengeView = document.getElementById("mfaChallengeView");
 const signUpView = document.getElementById("signUpView");
 const resetView = document.getElementById("resetView");
 const dashboardView = document.getElementById("dashboardView");
-  const settingsView = document.getElementById("settingsView");
 
 /** Chromium focuses the first tabbable node when the BrowserWindow gains focus; blur after that frame so the top bar does not stay focused (e.g. Setup). */
 function blurTopbarChromeFocus() {
@@ -669,7 +831,21 @@ function scheduleBlurTopbarChromeFocus() {
 function navigateToView(viewName) {
   const currentView = getCurrentView();
 
+  // Setup is an overlay, not a view. Callers still ask for it by the old view
+  // names (the app menu, deep links, the capture warning), so translate here
+  // rather than making every caller know the difference.
+  if (viewName === 'settings' || viewName === 'permission' || viewName === 'permissions') {
+    if (!isAuthenticated()) {
+      viewName = 'signin';
+    } else {
+      openSetupOverlay('all');
+      return;
+    }
+  }
 
+  // Anything that navigates somewhere else dismisses Setup, which is what makes
+  // the Finish button and the tray/menu entries close it without extra wiring.
+  closeSetupOverlay();
 
   // Handle 'signup-next' parameter
   if (viewName === 'signup-next') {
@@ -682,7 +858,7 @@ function navigateToView(viewName) {
   }
 
   // Protected views require authentication
-  const protectedViews = ['dashboard', 'settings', 'permission', 'permissions'];
+  const protectedViews = ['dashboard'];
   if (protectedViews.includes(viewName) && !isAuthenticated()) {
     viewName = 'signin';
   }
@@ -692,14 +868,6 @@ function navigateToView(viewName) {
   switch (viewName) {
     case 'dashboard':
       viewToShow = dashboardView;
-      break;
-    case 'settings':
-      resetSummaryState();
-      viewToShow = settingsView;
-      break;
-    case 'permission':
-    case 'permissions':
-      viewToShow = settingsView;
       break;
     case 'signin':
       viewToShow = signInView;
@@ -733,27 +901,6 @@ function navigateToView(viewName) {
   allViews.forEach(view => view.classList.add('hidden'));
   viewToShow.classList.remove('hidden');
 
-  if (viewName === 'settings' || viewName === 'permissions') {
-    try {
-      const container = document.querySelector('#settingsView .auth-container');
-      if (container) {
-        const cards = Array.from(document.querySelectorAll('#settingsView [data-settings-card]'));
-        cards.forEach((el) => { if (!container.contains(el)) container.appendChild(el); });
-      }
-    } catch (_) {}
-  }
-
-  if ((viewName === 'settings' || viewName === 'permissions') && window.electronAPI && window.electronAPI.platform === 'linux') {
-    const linuxInstallGuideNote = document.getElementById('linuxInstallGuideNote');
-    if (linuxInstallGuideNote) {
-      linuxInstallGuideNote.classList.remove('hidden');
-    }
-    const linuxScreenshotSection = document.getElementById('linuxScreenshotSection');
-    if (linuxScreenshotSection) {
-      linuxScreenshotSection.classList.remove('hidden');
-    }
-  }
-
   const appTopbar = document.getElementById('appTopbar');
   const isAuthScreen = (viewName === 'signin' || viewName === 'signup' || viewName === 'reset' || viewName === 'mfa');
   if (appTopbar) {
@@ -772,10 +919,8 @@ function navigateToView(viewName) {
     destroyPortalView('navigate-away-from-dashboard');
   }
 
-  updateSettingsToggleLabelGlobal();
-
   const topbarActionsElement = document.querySelector('.topbar-actions');
-  if (topbarActionsElement && viewName !== 'settings') {
+  if (topbarActionsElement) {
     topbarActionsElement.classList.remove('hidden');
   }
   updateTopbarReloadVisibility(viewName);
@@ -814,8 +959,10 @@ async function loadUserSettingsCallback() {
     // Update app-state with the initial value
     updatePauseState(initialIsPaused);
 
-    // Only navigate if we're not already in the settings view
-    if (getCurrentView() !== 'settings') {
+    // Settings arrive from a Firestore listener, so this runs again every time a
+    // Setup control writes one. Navigating would dismiss the panel the user is
+    // still working in, so leave the view alone while it is open.
+    if (!isSetupOverlayOpen()) {
       // Now hide spinner only after we've prepared everything for navigation
       navigateToView('signup-next');
     }
@@ -946,7 +1093,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initializeAuth(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeDashboard(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
   initializeSettings(loadUserSettingsCallback, showBlockingSpinner, hideBlockingSpinner, navigateToView);
-  initializePermissions(navigateToView, getCurrentView, updateTopbarVisibility);
+  initializePermissions(updateTopbarVisibility);
   initializeFeedback();
   initializeAnalytics();
   document.addEventListener('capture-state-updated', updateDashboardCaptureWarning);
@@ -1030,8 +1177,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Reloads on focus are coordinated via main process (webview:reload)
   const openChatBtn = document.getElementById('openChatBtn');
-  const openSettingsViewBtn = document.getElementById('openSettingsViewBtn');
-  
 
   if (openChatBtn) {
     const isWaylandLinux = window.electronAPI?.platform === 'linux' && !!window.electronAPI?.isWayland;
@@ -1071,24 +1216,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
   }
-  if (openSettingsViewBtn) {
-    openSettingsViewBtn.addEventListener('click', () => {
-      const current = getCurrentView();
-      if (current === 'settings') {
-        navigateToView('dashboard');
-      } else {
-        // When not on settings, navigate to settings
-        navigateToView('settings');
-      }
-    });
+  const setupOverlayCloseBtn = document.getElementById('setupOverlayCloseBtn');
+  if (setupOverlayCloseBtn) {
+    setupOverlayCloseBtn.addEventListener('click', () => closeSetupOverlay());
   }
 
   const dashboardCaptureWarningSetupBtn = document.getElementById('dashboardCaptureWarningSetupBtn');
   if (dashboardCaptureWarningSetupBtn) {
     dashboardCaptureWarningSetupBtn.addEventListener('click', () => {
-      navigateToView('settings');
+      openSetupOverlay('permissions');
     });
   }
+
+  document.addEventListener('keydown', (event) => {
+    if (!isSetupOverlayOpen()) return;
+    if (event.key === 'Escape') closeSetupOverlay();
+    else if (event.key === 'Tab') handleSetupOverlayTab(event);
+  });
 
   // Reload iframe button (manually reload when dashboard goes blank)
   const reloadIframeBtn = document.getElementById('reloadIframeBtn');
@@ -1157,24 +1301,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   })();
-  // Settings/back icon swap
-  const settingsOrBackBtn = document.getElementById('settingsOrBackBtn');
-  const settingsOrBackIcon = document.getElementById('settingsOrBackIcon');
-  function updateSettingsIcon() {
-    const v = getCurrentView();
-    if (v === 'settings') {
-      settingsOrBackBtn?.setAttribute('title', 'Back');
-      if (settingsOrBackIcon) settingsOrBackIcon.textContent = '←';
-    } else {
-      settingsOrBackBtn?.setAttribute('title', 'Settings');
-      if (settingsOrBackIcon) settingsOrBackIcon.textContent = '⚙︎';
-    }
-  }
-  settingsOrBackBtn?.addEventListener('click', () => {
-    const v = getCurrentView();
-    if (v === 'settings') navigateToView('dashboard'); else navigateToView('settings');
-  });
-
   // Recording dropdown
   const recordingBtn = document.getElementById('recordingStateBtn');
   const recordingText = document.getElementById('recordingStateText');
@@ -1279,9 +1405,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setRecordingIcon(false);
   });
 
-  // Change settings button label on view change
-  // use global updater
-
   ipcRenderer.on('pauseStateChanged', (isPaused) => {
     setRecordingIcon(isPaused);
   });
@@ -1290,12 +1413,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateRecordingMenuState(lastKnownPauseState);
   });
 
-  // Sync initial labels
-  updateSettingsToggleLabelGlobal();
   updateDashboardCaptureWarning();
-
-  // Keep settings/back icon accurate on load
-  updateSettingsIcon();
   ensurePortalActive('dom-content-loaded');
 
   document.addEventListener('click', (e) => {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Move Setup out of the top bar: its sections now open as an overlay straight from the web dashboard's settings (Permissions and App from the nav, App masking and LLM from Privacy), leaving the dashboard loaded underneath.
+- Fix capture interval changes made in the web dashboard never reaching the app.
+- App masking rules move to your account: edit them in Privacy in the web dashboard and they apply on every computer you sign in on. Rules that only existed on this machine are uploaded once, and the desktop panel keeps the part a browser cannot do — testing them against a live capture.
+- Say why App masking is greyed out instead of hiding the reason in a tooltip.
+- Drop the Finish button from Setup, and stop repeating a section's name in both the panel header and the card below it.
+- Fix macOS never asking for Screen Recording: the permission request now probes even when TCC reports "denied", which is what it reports for an app that was never asked.
 - Fix macOS work-location fingerprints not attaching to captures after Location was granted.
 - Only collect the router identifier once location access is granted, and stop scanning after it is refused.
 - Verify signed macOS helpers at package time instead of shipping a silently broken one.

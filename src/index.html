@@ -33,7 +33,6 @@
     <!-- Global Top Bar (visible on all views except auth screens) -->
     <div id="appTopbar" class="dashboard-topbar hidden">
       <div class="topbar-left">
-        <button id="openSettingsViewBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button" title="Setup">Setup</button>
         <button id="openFeedbackBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button" title="Feedback">Feedback</button>
         <button id="reloadIframeBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button dt-button--icon" title="Reload Dashboard" aria-label="Reload Dashboard">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -453,11 +452,18 @@
     
 
     
-    <!-- Settings View -->
-    <div id="settingsView" class="view-container hidden">
-      <div class="auth-page">
-        
-        <div class="auth-container">
+    <!-- Setup Overlay (rendered above the dashboard; the portal stays loaded underneath) -->
+    <div id="settingsView" class="setup-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="setupOverlayTitle">
+      <div class="dt-dialog setup-dialog" tabindex="-1">
+        <div class="setup-dialog-header">
+          <h2 id="setupOverlayTitle" class="setup-dialog-title">Setup</h2>
+          <button id="setupOverlayCloseBtn" class="dt-button dt-button--ghost dt-button--icon dt-button--small" aria-label="Close setup">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        </div>
+        <div class="setup-dialog-body">
           <div class="dt-card dt-settings-card" id="requiredPermissionsCard" data-settings-card>
             <div class="dt-card-header">
               <h2 class="dt-card-title">Required permissions</h2>
@@ -609,19 +615,18 @@
             </div>
           </div>
 
+          <!-- Sits outside the card because the dim is an opacity on the card itself,
+               which a child can never escape. -->
+          <div id="appMaskingDependencyNote" class="hidden mb-3 rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 leading-5" data-settings-card-note="appMaskingCard"></div>
           <div class="dt-card dt-settings-card" id="appMaskingCard" data-settings-card>
             <div class="dt-card-header">
-              <h2 class="dt-card-title">App masking</h2>
-              <p class="dt-card-description">Mask apps with gray fill to protect sensitive data. Use keywords to ignore specific windows or fully exclude an app's activity. Use this for meeting apps (Zoom, Teams, etc.) to keep them private.</p>
+              <h2 class="dt-card-title">Test app masking</h2>
+              <p class="dt-card-description">Takes a capture right now and shows what your masking rules did to it. The rules themselves live in Privacy in the dashboard, so they follow your account to every machine.</p>
             </div>
             <div class="dt-card-content">
-              <div id="appExclusionsList" class="space-y-3 mb-3">
-                <!-- Exclusion entries will be added here dynamically -->
-              </div>
-              <button id="addAppExclusionBtn" class="dt-button dt-button--secondary dt-button--small dt-button--full mb-4">Add app</button>
-              <div class="grid grid-cols-2 items-center gap-4 mt-4">
+              <div class="grid grid-cols-2 items-center gap-4">
                 <div>
-                  <div class="dt-section-title">Test Exclusions</div>
+                  <div class="dt-section-title">Test masking</div>
                   <div class="dt-supporting-text mt-1">Note: Apps must be active for at least 2 seconds to cover others</div>
                 </div>
                 <div>
@@ -782,12 +787,6 @@
               </div>
             </div>
           </div>
-        </div>
-        
-        <div id="finishButtonContainer" class="finish-button-container">
-          <button id="finishButton" class="dt-button dt-button--solid dt-button--small finish-button">
-            Finish
-          </button>
         </div>
       </div>
     </div>

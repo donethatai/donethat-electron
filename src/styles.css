@@ -868,19 +868,6 @@ h6,
   border: none;
 }
 
-/* Finish button container - positioned bottom right */
-.finish-button-container {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 40;
-}
-
-/* Finish button styling - match other buttons exactly */
-.finish-button {
-  width: auto;
-}
-
 /* Keep cards hoverable for title tooltips while disabling nested controls */
 .capture-dimmed-card button,
 .capture-dimmed-card input,
@@ -1105,6 +1092,56 @@ h6,
 .topbar-overlay {
   @apply absolute inset-0 bg-white/50;
   pointer-events: none;
+}
+
+/* Setup Overlay Modal
+   Rendered above the dashboard rather than as a .view-container, so the portal
+   webview underneath stays loaded while Setup is open. The header and footer are
+   pinned and only the body scrolls, because the cards inside are tall. */
+.setup-overlay {
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
+  backdrop-filter: blur(2px);
+}
+
+.setup-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 40rem);
+  max-height: calc(100vh - 96px);
+  margin-inline: var(--dt-space-4);
+  overflow: hidden;
+}
+
+.setup-dialog-header {
+  @apply flex items-center justify-between;
+  flex: 0 0 auto;
+  padding: var(--dt-space-4) var(--dt-space-6);
+  border-bottom: 1px solid var(--dt-color-border-subtle);
+}
+
+.setup-dialog-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--dt-color-text-default);
+}
+
+.setup-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--dt-space-6) var(--dt-space-6) 0;
+}
+
+/* Cards outside the section the panel was opened for. Kept in the DOM because
+   other code reads their controls directly (the dashboard capture warning reads
+   the screen and windows checkboxes to decide whether to show itself). */
+.setup-card-out-of-section {
+  display: none !important;
+}
+
+/* The cards carry their own bottom margin; the body adds the last gap itself. */
+.setup-dialog-body .dt-settings-card:last-child {
+  margin-bottom: var(--dt-space-6);
 }
 
 /* Summary Overlay Modal */

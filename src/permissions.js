@@ -10,7 +10,6 @@ const {
 const { logAnalyticsEvent } = require('./analytics.js');
 const { handleCaptureToggleIntent } = require('./settings.js');
 
-let navigateToView;
 let updateTopbarVisibility;
 
 const permissionStartupLoaded = {
@@ -77,8 +76,7 @@ function markPermissionLoaded(type) {
   emitCaptureStateUpdated();
 }
 
-function initializePermissions(viewNavigator, _currentViewGetter, topbarVisibilityUpdater) {
-  navigateToView = viewNavigator;
+function initializePermissions(topbarVisibilityUpdater) {
   updateTopbarVisibility = topbarVisibilityUpdater;
 
   setupPlatformSpecificListeners();
@@ -89,7 +87,6 @@ function initializePermissions(viewNavigator, _currentViewGetter, topbarVisibili
   setupSystemAudioCheckboxBehavior();
   setupLocationCheckboxBehavior();
   setupPermissionRecheckButtons();
-  setupFinishButtonHandler();
   setupPermissionIndicatorRefresh();
 
   checkPermissionsOnStartup();
@@ -240,7 +237,6 @@ function applyScreenPermissionUpdate(hasPermission, fromStartup = false, source 
   }
 
   updateScreenCaptureCheckbox(hasPermission);
-  updateFinishButtonVisibility();
   if (updateTopbarVisibility) updateTopbarVisibility();
 
   if (fromStartup) {
@@ -260,7 +256,6 @@ function applyWindowsPermissionUpdate(hasPermission, fromStartup = false, source
   });
 
   updateWindowsCheckbox(hasPermission);
-  updateFinishButtonVisibility();
 
   if (updateTopbarVisibility) updateTopbarVisibility();
 
@@ -495,12 +490,10 @@ function setupScreenCaptureCheckboxBehavior() {
     if (result?.reverted) {
       checkbox.checked = !enabled;
       updateScreenCaptureCheckbox(checkbox.dataset.permissionGranted === 'true');
-      updateFinishButtonVisibility();
       emitCaptureStateUpdated();
       return;
     }
     updateScreenCaptureCheckbox(checkbox.dataset.permissionGranted === 'true');
-    updateFinishButtonVisibility();
     if (enabled) {
       requestScreenCapturePermission();
     }
@@ -525,12 +518,10 @@ function setupWindowsCheckboxBehavior() {
     if (result?.reverted) {
       checkbox.checked = !enabled;
       updateWindowsCheckbox(checkbox.dataset.permissionGranted === 'true');
-      updateFinishButtonVisibility();
       emitCaptureStateUpdated();
       return;
     }
     updateWindowsCheckbox(checkbox.dataset.permissionGranted === 'true');
-    updateFinishButtonVisibility();
     if (enabled) {
       requestWindowsPermission(true);
     }
@@ -701,30 +692,8 @@ function requestSystemAudioPermission(shouldOpenSettings = true) {
   ipcRenderer.send('requestSystemAudioPermission', shouldOpenSettings);
 }
 
-function updateFinishButtonVisibility() {
-  const finishButtonContainer = document.getElementById('finishButtonContainer');
-  if (!finishButtonContainer) return;
-  finishButtonContainer.classList.remove('hidden');
-}
-
-function setupFinishButtonHandler() {
-  const finishButton = document.getElementById('finishButton');
-  if (!finishButton) return;
-
-  finishButton.addEventListener('click', () => {
-    logAnalyticsEvent('permissions_finished', {
-      platform: window.electronAPI.platform
-    });
-
-    if (navigateToView) {
-      navigateToView('dashboard');
-    }
-  });
-}
-
 module.exports = {
   initializePermissions,
   requestMicrophonePermission,
-  requestWindowsPermission,
-  updateFinishButtonVisibility
+  requestWindowsPermission
 };
