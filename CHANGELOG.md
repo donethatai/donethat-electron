@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Patch electron-builder macOS signing so Intel CI can unlock the temporary keychain (workaround for electron-builder#10066 until PR #10101 ships).
+
 ## 2.3.0
 
 - Pause auto-update for 7 days by clicking the Settings version label 7 times, or set `DONETHAT_DISABLE_AUTO_UPDATE=1`.

@@ -29,6 +29,7 @@ This means the release version and the source tag are locked together by the rel
 - macOS release builds use Apple signing credentials provided through GitHub Actions secrets.
 - Electron Builder runs the `afterSign` hook in `scripts/notarize.js`.
 - The notarization step uses App Store Connect API credentials when available, with Apple ID credentials as a fallback.
+- `patches/app-builder-lib+26.15.3.patch` works around [electron-builder#10066](https://github.com/electron-userland/electron-builder/issues/10066): 26.15.3 passes the `.p12` password to `security set-key-partition-list` instead of the temporary keychain password, which fails on macOS 26 Intel (`macos-26-large`) with `SecKeychainUnlock`. Remove the patch, `patch-package`, and its `postinstall` hook once [electron-builder#10101](https://github.com/electron-userland/electron-builder/pull/10101) is in a published release and we upgrade to it.
 
 ### Windows
 

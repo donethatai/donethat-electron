@@ -12,7 +12,7 @@
     "build:prepare": "npm run build:css && npm run build:webpack",
     "release:prepare": "node scripts/ensure-release-tag.js",
     "sentry:sourcemaps": "sentry-cli sourcemaps upload --org donethat --project electron --release donethat@$npm_package_version --url-prefix \"~/build\" --validate --wait build",
-    "postinstall": "node scripts/build-os-helpers.js || electron-builder install-app-deps",
+    "postinstall": "patch-package && (node scripts/build-os-helpers.js || electron-builder install-app-deps)",
     "dev": "npm test && npm run build:prepare && electron .",
     "dev:linux": "npm test && npm run build:prepare && electron . --no-sandbox",
     "build": "npm run build:prepare && electron-builder",
@@ -67,6 +67,7 @@
     "electron-notarize": "^1.2.2",
     "jest": "^30.4.2",
     "npm-check-updates": "^22.2.0",
+    "patch-package": "^8.0.1",
     "postcss-cli": "^11.0.1",
     "webpack": "^5.106.2",
     "webpack-cli": "^7.0.2"
