@@ -599,6 +599,10 @@ function stopSettingsListener(resetManagedState = true) {
   applyManualPausePolicy(null);
   try { ipcRenderer.send('updateLocationFeatureEnabled', false); } catch (_) {}
   try { ipcRenderer.send('apply-managed-app-settings', null); } catch (_) {}
+  // Same reasoning as locationFeatureEnabled above: the holiday belongs to the
+  // session that reported it. Left set, a previous user's vacation would keep
+  // suppressing recording for the next login until settings resync.
+  try { ipcRenderer.send('updateHoliday', null); } catch (_) {}
 }
 
 /**
@@ -984,6 +988,11 @@ async function updateSettingsUI(settings) {
     workdays = loadedWorkdays;
     ipcRenderer.send('updateWorkdays', workdays);
   }
+
+  // Handle holiday window. Unlike workdays there is no "ambiguous -> skip"
+  // guard: a missing or malformed holiday can only ever mean "not on holiday",
+  // which keeps recording on, so clearing is always the safe direction.
+  ipcRenderer.send('updateHoliday', settings?.holiday ?? null);
 
   updateSettingsReady(true);
   refreshCaptureDependentVisibility();

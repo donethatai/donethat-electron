@@ -40,6 +40,7 @@ const validSendChannels = [
   'apply-managed-app-settings',
   'updateWorkhours',
   'updateWorkdays',
+  'updateHoliday',
   'audio-device-changed',
 
   // Chat

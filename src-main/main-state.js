@@ -16,6 +16,7 @@ let pauseState = {
 const PAUSE_REASON_PAUSE_TODAY = 'pause-today';
 let userWorkdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
 let userWorkhours = { start: "09:00", end: "17:00" }; // Default 9 AM to 5 PM
+let userHoliday = null; // Active holiday window, or null when none configured
 let lastSummaryTimestamp = null;
 let hasScreenCapturePermission = false;
 let idToken = null; // User authentication token
@@ -612,6 +613,7 @@ async function initState(options = {}) {
       store,
       isPaused,
       isWorkday,
+      isHoliday,
       isWithinWorkHours,
       isActiveWorkPeriod,
       pauseRecording,
@@ -788,8 +790,42 @@ function isPaused() {
   return pauseState.endTime !== null && (pauseState.endTime > new Date());
 }
 
+// Formats a Date as YYYY-MM-DD in the machine's local timezone, to compare
+// against the holiday window (which the backend stores as user-local dates).
+function _localIsoDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+// Helper function to check if a date falls inside the configured holiday window.
+// Mirrors isHolidayLocalDate in the backend (functions/src/holiday.ts).
+// Anything malformed returns false, so a bad holiday can only ever leave
+// recording enabled - it can never cause a pause.
+function isHoliday(date = new Date()) {
+  const holiday = userHoliday;
+  if (!holiday || typeof holiday !== 'object') {
+    return false;
+  }
+  if (typeof holiday.from !== 'string' || typeof holiday.to !== 'string') {
+    return false;
+  }
+  if (!Array.isArray(holiday.weekdays)) {
+    return false;
+  }
+  const localDate = _localIsoDate(date);
+  if (localDate < holiday.from || localDate > holiday.to) {
+    return false;
+  }
+  return holiday.weekdays.includes(date.getDay());
+}
+
 // Helper function to check if today is a configured workday
 function isWorkday(date = new Date()) {
+  // A holiday overrides workdays: the day is treated as a non-workday
+  if (isHoliday(date)) {
+    return false;
+  }
   const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
   // Ensure userWorkdays is an array before checking
   return Array.isArray(userWorkdays) && userWorkdays.includes(dayOfWeek);
@@ -1203,6 +1239,10 @@ function loadWorkSettings() {
     }
   }
 
+  // Load holiday window from store. safeStoreOperation returns undefined on
+  // failure, so normalize to null - isHoliday treats both as "no holiday".
+  userHoliday = safeStoreOperation(() => store.get('userHoliday'), 'load holiday') ?? null;
+
   // Load autoSubmit setting from store
   const storedAutoSubmit = safeStoreOperation(() => store.get('autoSubmit'), 'load autoSubmit');
   if (typeof storedAutoSubmit === 'boolean') {
@@ -1349,6 +1389,27 @@ function setupIPCHandlers() {
     } else {
       log.error('Received invalid workdays data:', days);
     }
+  });
+
+  // Listen for holiday updates from renderer
+  ipcMain.on('updateHoliday', (event, holiday) => {
+    // Normalize to null before storing: electron-store throws on undefined
+    // ("Use `delete()` to clear values"), and IPC uses structured clone, which
+    // - unlike JSON - preserves undefined.
+    const next = (holiday && typeof holiday === 'object' && !Array.isArray(holiday))
+      ? holiday
+      : null;
+    userHoliday = next;
+
+    safeStoreOperation(() => {
+      if (store) {
+        store.set('userHoliday', next);
+      } else {
+        log.warn('Store not initialized, cannot save userHoliday.');
+      }
+    }, 'save holiday');
+
+    _handleWorkSettingsChanged(event.sender.getOwnerBrowserWindow());
   });
 
   // Listen for workhours updates from renderer
@@ -2602,6 +2663,7 @@ module.exports = {
   resume,
   isPaused,
   isWorkday,
+  isHoliday,
   isWithinWorkHours,
   isActiveWorkPeriod,
   pauseRecording,
