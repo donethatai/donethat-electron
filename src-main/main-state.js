@@ -944,7 +944,13 @@ function _handleWorkSettingsChanged(ownerWindow) {
 }
 
 function _handlePauseTimeout(reason) {
-  if (reason === PAUSE_REASON_PAUSE_TODAY) {
+  // A work-hours pause normally expires exactly when the next work period
+  // starts, so clearing it is right. The 24h fallback (used when no workday is
+  // found within a week, e.g. during a long holiday) breaks that assumption and
+  // would resume mid-holiday. Re-validate instead: _validateState clears the
+  // pause when it really is a work period or the user manually resumed, and
+  // re-pauses otherwise. Manual timed pauses (reason null) keep resuming.
+  if (reason === PAUSE_REASON_PAUSE_TODAY || reason === 'workday-start') {
     _validateState();
     return;
   }

@@ -7,6 +7,7 @@ const { resetMocks, mockStore, mockIpcMain } = require('./mocks');
 
 let mainStateModule;
 let state;
+let checkRecording;
 
 // Formats a Date the same way main-state does (local YYYY-MM-DD)
 function localIsoDate(date) {
@@ -84,8 +85,10 @@ beforeEach(async () => {
   mockStore.set('userWorkdays', [0, 1, 2, 3, 4, 5, 6]);
   mockStore.set('userWorkhours', { start: '00:00', end: '23:59' });
 
+  checkRecording = jest.fn();
+
   state = await mainStateModule.initState({
-    checkRecording: jest.fn(),
+    checkRecording,
     navigateToView: jest.fn(),
     mainWindow: {
       webContents: { send: jest.fn() },
@@ -238,5 +241,78 @@ describe('holiday persistence', () => {
 
     expect(state.isHoliday(date)).toBe(false);
     expect(state.isWorkday(date)).toBe(true);
+  });
+});
+
+describe('pause timeout during a long holiday', () => {
+  // A holiday longer than the 7-day lookahead makes _findNextWorkday give up,
+  // so pauseUntilNextWorkPeriod falls back to a flat 24h pause. That pause
+  // expires mid-holiday, when recording must NOT resume.
+  //
+  // These tests assert on the recording callback rather than on isPaused(),
+  // because a resume mid-holiday is transient: the 60s heartbeat re-pauses
+  // shortly after, so the end state looks identical either way. Clearing the
+  // pause is what lets recording start, so that is what is checked.
+
+  const clearPauseCalls = () =>
+    checkRecording.mock.calls.filter((call) => call[0] === 'clear-pause');
+
+  function longHolidayFrom(date, days) {
+    const end = new Date(date);
+    end.setDate(end.getDate() + days);
+    return {
+      label: 'Vacation',
+      from: localIsoDate(date),
+      to: localIsoDate(end),
+      weekdays: [0, 1, 2, 3, 4, 5, 6],
+      startTime: '09:00',
+      endTime: '17:00',
+      projectId: 'project-1'
+    };
+  }
+
+  test('does not resume when the 24h fallback expires mid-holiday', () => {
+    jest.useFakeTimers();
+    try {
+      setHolidayViaIPC(longHolidayFrom(new Date(), 14));
+      mainStateModule.stopStateValidation();
+
+      state.pauseUntilNextWorkPeriod(null, true);
+      expect(state.isPaused()).toBe(true);
+
+      checkRecording.mockClear();
+
+      // Advance two days, not one: the work-period-end check fires at the
+      // holiday's end time and re-pauses, pushing the fallback's expiry past
+      // the 24h mark. A 24h window would end before any pause ever expires.
+      jest.advanceTimersByTime(48 * 60 * 60 * 1000);
+
+      expect(state.isActiveWorkPeriod(new Date())).toBe(false);
+      expect(clearPauseCalls()).toHaveLength(0);
+      expect(state.isPaused()).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a manual timed pause still resumes during a holiday', () => {
+    jest.useFakeTimers();
+    try {
+      setHolidayViaIPC(longHolidayFrom(new Date(), 14));
+      mainStateModule.stopStateValidation();
+
+      // Tray pauses pass no reason, and must keep their resume-on-expiry
+      // behaviour so a manual "pause 15 min" is not turned into a full stop.
+      state.pauseRecording(15 * 60 * 1000, null);
+      expect(state.isPaused()).toBe(true);
+
+      checkRecording.mockClear();
+
+      jest.advanceTimersByTime(15 * 60 * 1000 + 1000);
+
+      expect(clearPauseCalls()).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
