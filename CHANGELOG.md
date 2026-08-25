@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.3.0
+
 - Pause auto-update for 7 days by clicking the Settings version label 7 times, or set `DONETHAT_DISABLE_AUTO_UPDATE=1`.
 - Fix a custom LLM endpoint that answers but returns nothing usable failing silently all day: the app now notifies you, and the Test button reports the failure instead of reporting success.
 - Move Setup out of the top bar: its sections now open as an overlay straight from the web dashboard's settings (Permissions and App from the nav, App masking and LLM from Privacy), leaving the dashboard loaded underneath.
