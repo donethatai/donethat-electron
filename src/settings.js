@@ -37,14 +37,19 @@ let inputData = {
   windows: true,
   audio: false,
   systemAudio: false,
-  screen: true
+  screen: true,
+  location: false
 };
 let inputDataManagedLocks = {
   windows: false,
   audio: false,
   systemAudio: false,
-  screen: false
+  screen: false,
+  location: false
 };
+// Server-driven rollout, reported by getUserSettings. Until it says otherwise
+// the card stays hidden and main never scans.
+let locationFeatureEnabled = false;
 let managedAppSettings = null;
 let lastManagedSettingsSignature = null;
 let lastManualPauseAllowed = true;
@@ -218,7 +223,8 @@ function normalizeAppSettings(raw) {
         windows: normalizeManagedInputState(captureRaw?.inputData?.windows),
         audio: normalizeManagedInputState(captureRaw?.inputData?.audio),
         systemAudio: normalizeManagedInputState(captureRaw?.inputData?.systemAudio),
-        screen: normalizeManagedInputState(captureRaw?.inputData?.screen)
+        screen: normalizeManagedInputState(captureRaw?.inputData?.screen),
+        location: normalizeManagedInputState(captureRaw?.inputData?.location)
       },
       appExclusions,
       saveCaptureData
@@ -306,6 +312,26 @@ function applyInputDataManagedLockUI() {
     systemAudioCheckbox.disabled = shouldLock || !micOn;
     setManagedRowLock(systemAudioCheckbox, shouldLock);
   }
+
+  const locationCheckbox = document.getElementById('locationCheckbox');
+  if (locationCheckbox) {
+    locationCheckbox.disabled = !!inputDataManagedLocks.location;
+    setManagedRowLock(locationCheckbox, !!inputDataManagedLocks.location);
+  }
+}
+
+/**
+ * The whole location card is hidden unless the server says the feature is on.
+ * Gating in the client alone would be a Firebase uid compiled into a shipped
+ * binary; this way widening the rollout is one server constant.
+ */
+function applyLocationFeatureVisibility() {
+  const card = document.getElementById('locationCard');
+  if (card) card.classList.toggle('hidden', !locationFeatureEnabled);
+}
+
+function isLocationFeatureEnabled() {
+  return locationFeatureEnabled;
 }
 
 function emitCaptureStateUpdated() {
@@ -540,11 +566,17 @@ function stopSettingsListener(resetManagedState = true) {
     windows: false,
     audio: false,
     systemAudio: false,
-    screen: false
+    screen: false,
+    location: false
   };
   llmManagedLocks.gemini = false;
   llmManagedLocks.openAICompatible = false;
+  // Server-driven, so it cannot outlive the session that reported it: main
+  // would otherwise keep scanning on the last-seen value after logout.
+  locationFeatureEnabled = false;
+  applyLocationFeatureVisibility();
   applyManualPausePolicy(null);
+  try { ipcRenderer.send('updateLocationFeatureEnabled', false); } catch (_) {}
   try { ipcRenderer.send('apply-managed-app-settings', null); } catch (_) {}
 }
 
@@ -594,7 +626,8 @@ async function saveUserSettings(type, value) {
             windows: partial.windows != null ? !!partial.windows : (current.windows != null ? !!current.windows : true),
             audio: partial.audio != null ? !!partial.audio : (current.audio != null ? !!current.audio : false),
             systemAudio: partial.systemAudio != null ? !!partial.systemAudio : (current.systemAudio != null ? !!current.systemAudio : false),
-            screen: partial.screen != null ? !!partial.screen : (current.screen != null ? !!current.screen : true)
+            screen: partial.screen != null ? !!partial.screen : (current.screen != null ? !!current.screen : true),
+            location: partial.location != null ? !!partial.location : (current.location != null ? !!current.location : false)
           };
           settingsData.inputData = merged;
           logAnalyticsEvent('settings_updated', {
@@ -612,7 +645,8 @@ async function saveUserSettings(type, value) {
             windows: fallback.windows != null ? !!fallback.windows : true,
             audio: fallback.audio != null ? !!fallback.audio : false,
             systemAudio: fallback.systemAudio != null ? !!fallback.systemAudio : false,
-            screen: fallback.screen != null ? !!fallback.screen : true
+            screen: fallback.screen != null ? !!fallback.screen : true,
+            location: fallback.location != null ? !!fallback.location : false
           };
           logAnalyticsEvent('settings_updated', {
             type: 'inputData',
@@ -627,7 +661,8 @@ async function saveUserSettings(type, value) {
           windows: value.windows != null ? !!value.windows : false,
           audio: value.audio != null ? !!value.audio : false,
           systemAudio: value.systemAudio != null ? !!value.systemAudio : false,
-          screen: value.screen != null ? !!value.screen : true
+          screen: value.screen != null ? !!value.screen : true,
+          location: value.location != null ? !!value.location : false
         };
         settingsData.inputData = fullValue;
         logAnalyticsEvent('settings_updated', {
@@ -738,7 +773,8 @@ async function updateSettingsUI(settings) {
     windows: isManagedInputStateForced(managedInputData.windows),
     audio: isManagedInputStateForced(managedInputData.audio),
     systemAudio: isManagedInputStateForced(managedInputData.systemAudio),
-    screen: isManagedInputStateForced(managedInputData.screen)
+    screen: isManagedInputStateForced(managedInputData.screen),
+    location: isManagedInputStateForced(managedInputData.location)
   };
 
   // Use persisted user toggle state; permissions are tracked separately.
@@ -747,8 +783,16 @@ async function updateSettingsUI(settings) {
     windows: resolveInputDataValue(managedInputData.windows, loadedInputData.windows, true),
     audio: resolveInputDataValue(managedInputData.audio, loadedInputData.audio, false),
     systemAudio: resolveInputDataValue(managedInputData.systemAudio, loadedInputData.systemAudio, false),
-    screen: resolveInputDataValue(managedInputData.screen, loadedInputData.screen, true)
+    screen: resolveInputDataValue(managedInputData.screen, loadedInputData.screen, true),
+    location: resolveInputDataValue(managedInputData.location, loadedInputData.location, false)
   };
+
+  // Forward the server's rollout flag to main. Left in the renderer it would
+  // stop here, which is exactly what pushManagedSettingsToMain() exists to
+  // prevent for the managed settings next to it.
+  locationFeatureEnabled = settings?.features?.location === true;
+  ipcRenderer.send('updateLocationFeatureEnabled', locationFeatureEnabled);
+  applyLocationFeatureVisibility();
 
   if (isWaylandLinuxSession()) {
     const wasEnabled = !!inputData.windows;
@@ -764,6 +808,7 @@ async function updateSettingsUI(settings) {
   if (prevInputData.audio !== inputData.audio) delta.audio = inputData.audio;
   if (prevInputData.systemAudio !== inputData.systemAudio) delta.systemAudio = inputData.systemAudio;
   if (prevInputData.screen !== inputData.screen) delta.screen = inputData.screen;
+  if (prevInputData.location !== inputData.location) delta.location = inputData.location;
   
   if (Object.keys(delta).length > 0) {
     console.log('[Settings] sending updateInputDataSettings delta:', delta);
@@ -781,6 +826,8 @@ async function updateSettingsUI(settings) {
   if (systemAudioCheckbox) {
     systemAudioCheckbox.checked = inputData.systemAudio;
   }
+  const locationCheckbox = document.getElementById('locationCheckbox');
+  if (locationCheckbox) locationCheckbox.checked = inputData.location;
 
   applyInputDataManagedLockUI();
   try { recomputeSystemAudioDependency(); } catch (_) {}
@@ -1284,7 +1331,9 @@ module.exports = {
   initializeSettings,
   loadUserSettings,
   saveUserSettings,
-  handleCaptureToggleIntent
+  handleCaptureToggleIntent,
+  isLocationFeatureEnabled,
+  applyLocationFeatureVisibility
 };
 
 // --- Hotkey configuration ---

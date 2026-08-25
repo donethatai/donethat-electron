@@ -87,6 +87,7 @@ function initializePermissions(viewNavigator, _currentViewGetter, topbarVisibili
   setupWindowsCheckboxBehavior();
   setupAudioCheckboxBehavior();
   setupSystemAudioCheckboxBehavior();
+  setupLocationCheckboxBehavior();
   setupPermissionRecheckButtons();
   setupFinishButtonHandler();
   setupPermissionIndicatorRefresh();
@@ -336,6 +337,34 @@ ipcRenderer.on('systemAudioPermission-recheck', () => {
   requestSystemAudioPermission(false);
 });
 
+// A denial has to be visible. A toggle that reads "on" while nothing is ever
+// recorded is worse than one that fails loudly.
+ipcRenderer.on('locationPermission', (data) => {
+  const note = document.getElementById('locationPermissionNote');
+  if (!note) return;
+
+  const hasPermission = data?.hasPermission === true;
+  const authorization = data?.authorization || 'unknown';
+
+  if (hasPermission || authorization === 'notDetermined') {
+    note.classList.add('hidden');
+    note.textContent = '';
+    return;
+  }
+
+  const messages = {
+    denied: 'Location access is off. Enable DoneThat in System Settings.',
+    restricted: 'Location access is restricted on this machine.',
+    disabled: 'Nearby networks are not enabled for this account.',
+    noWifi: 'No Wi-Fi adapter found.',
+    noNetworks: 'No nearby networks found.',
+    unavailable: 'Couldn\'t read nearby networks.'
+  };
+
+  note.textContent = messages[authorization] || messages.unavailable;
+  note.classList.remove('hidden');
+});
+
 function updateScreenCaptureCheckbox(hasPermission) {
   const checkbox = document.getElementById('screenCheckbox');
   if (!checkbox) return;
@@ -551,6 +580,38 @@ function setupSystemAudioCheckboxBehavior() {
       requestSystemAudioPermission(true);
     }
     emitCaptureStateUpdated();
+  });
+}
+
+function setupLocationCheckboxBehavior() {
+  const checkbox = document.getElementById('locationCheckbox');
+  if (!checkbox) return;
+
+  // Only macOS gates SSID reads behind Location; elsewhere the sentence would
+  // describe a prompt that never appears.
+  if (window.electronAPI.platform === 'darwin') {
+    const macNote = document.getElementById('locationMacNote');
+    if (macNote) macNote.classList.remove('hidden');
+  }
+
+  checkbox.addEventListener('change', async () => {
+    const enabled = !!checkbox.checked;
+    const result = await handleCaptureToggleIntent('location', enabled);
+    if (result?.reverted) {
+      checkbox.checked = !enabled;
+      return;
+    }
+
+    const note = document.getElementById('locationPermissionNote');
+    if (!enabled) {
+      if (note) {
+        note.classList.add('hidden');
+        note.textContent = '';
+      }
+      return;
+    }
+
+    ipcRenderer.send('requestLocationPermission');
   });
 }
 

@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { notarize } from 'electron-notarize';
 import path from 'path';
+import verifyMacHelpers from './verify-mac-helpers.js';
 
 dotenv.config();
 
@@ -13,6 +14,9 @@ export default async function notarizing(context) {
     const appName = context.packager.appInfo.productFilename;
     const appPath = `${appOutDir}/${appName}.app`;
     const appBundleId = 'com.donethat.app'; // Make sure this matches your app's bundle ID
+
+    // Before the 30-minute notarization round trip, not after.
+    verifyMacHelpers(appPath);
 
     // --- App Store Connect API Key Credentials (Preferred) ---
     const apiKey = process.env.APP_STORE_CONNECT_KEY_ID;

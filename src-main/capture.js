@@ -31,6 +31,7 @@ const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/c
 // Import capture modules
 const audioCapture = require('./captureAudio');
 const windowsCapture = require('./captureWindows');
+const networksCapture = require('./captureNetworks');
 
 // Variable to track the capture interval
 let screenshotInterval = null;
@@ -43,6 +44,8 @@ let getClientTelemetryEnabledFunction = null;
 let captureCycleInFlight = false;
 const captureModuleStartedAt = Date.now();
 let microphonePermissionFocusListener = null;
+let locationPermissionFocusListener = null;
+let locationDenialAnswered = false;
 let systemAudioPermissionFocusListener = null;
 const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus';
 
@@ -77,6 +80,54 @@ function markPermissionFocusOnNextLaunch(reason = 'system-audio-permission') {
   }
 }
 
+const LOCATION_PERMISSION_RETURN_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Rechecks location access when the user comes back from System Settings.
+ *
+ * Bound to the main window rather than `browser-window-focus`, so focusing the
+ * chat overlay does not consume the recheck, and dropped after a timeout so a
+ * user who never returns does not leave a listener running all session.
+ */
+function watchForLocationPermissionReturn(mainWindow, networks) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  if (locationPermissionFocusListener) {
+    locationPermissionFocusListener.dispose();
+  }
+
+  const timeoutId = setTimeout(() => dispose(), LOCATION_PERMISSION_RETURN_TIMEOUT_MS);
+
+  function dispose() {
+    clearTimeout(timeoutId);
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.removeListener('focus', onFocus);
+      mainWindow.removeListener('closed', dispose);
+    }
+    if (locationPermissionFocusListener?.dispose === dispose) {
+      locationPermissionFocusListener = null;
+    }
+  }
+
+  async function onFocus() {
+    dispose();
+    let recheck = { hasPermission: false, authorization: 'unavailable', ssidCount: 0 };
+    try {
+      recheck = await networks.checkLocationPermission();
+    } catch (error) {
+      log.error('Error rechecking location permission:', error);
+    }
+    log.info('[networks] location permission recheck:', JSON.stringify(recheck));
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('locationPermission', { ...recheck, source: 'focus-recheck' });
+    }
+  }
+
+  locationPermissionFocusListener = { dispose };
+  mainWindow.once('focus', onFocus);
+  mainWindow.once('closed', dispose);
+}
+
 function isValidImageDataUrl(dataUrl) {
   if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false;
   const commaIndex = dataUrl.indexOf(',');
@@ -104,14 +155,20 @@ let inputDataSettings = {
   audio: false,
   windows: true,
   systemAudio: false,
-  screen: true
+  screen: true,
+  location: false
 };
 let managedInputDataSettings = {
   audio: null,
   windows: null,
   systemAudio: null,
-  screen: null
+  screen: null,
+  location: null
 };
+// Server-driven rollout, read from getUserSettings. Off means no scan, no
+// helper, and — critically on macOS — no permission prompt for a feature that
+// is disabled server-side anyway.
+let locationFeatureEnabled = false;
 
 function isManagedValue(value) {
   return value !== null && value !== undefined;
@@ -143,7 +200,8 @@ function applyManagedInputDataOverrides(managedInputData) {
       audio: null,
       windows: null,
       systemAudio: null,
-      screen: null
+      screen: null,
+      location: null
     };
     return;
   }
@@ -152,7 +210,8 @@ function applyManagedInputDataOverrides(managedInputData) {
     audio: normalizeManagedInputState(managedInputData.audio),
     windows: normalizeManagedInputState(managedInputData.windows),
     systemAudio: normalizeManagedInputState(managedInputData.systemAudio),
-    screen: normalizeManagedInputState(managedInputData.screen)
+    screen: normalizeManagedInputState(managedInputData.screen),
+    location: normalizeManagedInputState(managedInputData.location)
   };
 
   const enforced = {};
@@ -160,6 +219,7 @@ function applyManagedInputDataOverrides(managedInputData) {
   if (isManagedInputStateForced(managedInputDataSettings.windows)) enforced.windows = stateToBool(managedInputDataSettings.windows);
   if (isManagedInputStateForced(managedInputDataSettings.systemAudio)) enforced.systemAudio = stateToBool(managedInputDataSettings.systemAudio);
   if (isManagedInputStateForced(managedInputDataSettings.screen)) enforced.screen = stateToBool(managedInputDataSettings.screen);
+  if (isManagedInputStateForced(managedInputDataSettings.location)) enforced.location = stateToBool(managedInputDataSettings.location);
 
   if (Object.keys(enforced).length > 0) {
     updateInputDataSettings(enforced);
@@ -386,7 +446,8 @@ function updateInputDataSettings(settings) {
       ...(settings.audio !== undefined ? { audio: !!settings.audio } : {}),
       ...(settings.windows !== undefined ? { windows: !!settings.windows } : {}),
       ...(settings.systemAudio !== undefined ? { systemAudio: !!settings.systemAudio } : {}),
-      ...(settings.screen !== undefined ? { screen: !!settings.screen } : {})
+      ...(settings.screen !== undefined ? { screen: !!settings.screen } : {}),
+      ...(settings.location !== undefined ? { location: !!settings.location } : {})
     };
 
     if (isManagedInputStateForced(managedInputDataSettings.audio)) {
@@ -400,6 +461,9 @@ function updateInputDataSettings(settings) {
     }
     if (isManagedInputStateForced(managedInputDataSettings.screen)) {
       inputDataSettings.screen = stateToBool(managedInputDataSettings.screen);
+    }
+    if (isManagedInputStateForced(managedInputDataSettings.location)) {
+      inputDataSettings.location = stateToBool(managedInputDataSettings.location);
     }
 
     // Keep dependency invariant: system audio cannot remain enabled when microphone is off.
@@ -520,6 +584,76 @@ function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnab
     } catch (error) {
       log.error('Error getting audio capture status:', error);
       return { error: error.message };
+    }
+  });
+
+  // Server-driven rollout for Wi-Fi place fingerprinting. The renderer forwards
+  // what `getUserSettings` reported; until it does, collection stays off.
+  ipcMain.on('updateLocationFeatureEnabled', (_event, enabled) => {
+    locationFeatureEnabled = enabled === true;
+    log.info('[networks] location feature enabled:', locationFeatureEnabled);
+  });
+
+  // Location permission has to be its own channel: `updateInputDataSettings` is
+  // fire-and-forget, and a denial that never surfaces leaves the toggle reading
+  // "on" while nothing is ever recorded.
+  let locationPermissionInFlight = false;
+  ipcMain.on('requestLocationPermission', async () => {
+    if (locationPermissionInFlight) return;
+    locationPermissionInFlight = true;
+
+    const { shell } = require('electron');
+    const networks = require('./captureNetworks');
+
+    try {
+    if (!locationFeatureEnabled) {
+      if (mainWindow) {
+        mainWindow.webContents.send('locationPermission', {
+          hasPermission: false,
+          authorization: 'disabled',
+          source: 'request'
+        });
+      }
+      return;
+    }
+
+    let result = { hasPermission: false, authorization: 'unavailable', ssidCount: 0 };
+    try {
+      result = await networks.requestLocationPermission();
+    } catch (error) {
+      log.error('Error requesting location permission:', error);
+    }
+
+    // Logged, not just surfaced: the two halves of this failing look identical
+    // in the UI ("authorized" with zero networks vs. no grant at all).
+    log.info('[networks] location permission result:', JSON.stringify(result));
+
+    if (mainWindow) {
+      mainWindow.webContents.send('locationPermission', { ...result, source: 'request' });
+    }
+
+    if (result.hasPermission) {
+      locationDenialAnswered = false;
+      return;
+    }
+    if (result.authorization !== 'denied') return;
+
+    // The prompt never comes back, so System Settings is the only route left —
+    // but someone who just clicked "Don't Allow" does not want to be dropped
+    // there two seconds later. Show the note first; open Settings only if they
+    // ask for the permission again.
+    if (!locationDenialAnswered) {
+      locationDenialAnswered = true;
+      return;
+    }
+
+    if (process.platform === 'darwin') {
+      markPermissionFocusOnNextLaunch('location-permission');
+      shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices');
+      watchForLocationPermissionReturn(mainWindow, networks);
+    }
+    } finally {
+      locationPermissionInFlight = false;
     }
   });
 
@@ -696,6 +830,19 @@ async function collectInputData(resetBuffers = true, options = {}) {
     // Don't add to captureErrors as this is not a critical failure
   }
   
+  // Get the Wi-Fi place fingerprint. Best-effort and never fatal: an unknown
+  // place is an honest gap, not a reason to lose a capture.
+  if (inputDataSettings.location && locationFeatureEnabled) {
+    try {
+      const fingerprint = await networksCapture.collectNetworkFingerprint();
+      if (fingerprint) {
+        inputData.location = fingerprint;
+      }
+    } catch (error) {
+      log.warn('Error collecting network fingerprint:', error?.message || error);
+    }
+  }
+
   // Get audio payload for this capture cycle
   if (inputDataSettings.audio) {
     try {
@@ -860,6 +1007,9 @@ async function _sendToServer(idToken, screenshots, inputData = {}, previousScree
         }
         if (inputData.idleTime !== undefined) {
           payload.idleTime = inputData.idleTime;
+        }
+        if (inputData.location) {
+          payload.location = inputData.location;
         }
         
         if (inputData.activity && inputData.activity.length > 0) {

@@ -723,7 +723,7 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
 /**
  * Submit processed results to Firebase
  */
-async function submitResults(idToken, timestamp, structured, parameters, clientTelemetry = null) {
+async function submitResults(idToken, timestamp, structured, parameters, clientTelemetry = null, location = null) {
   try {
     const fetch = await import('node-fetch').then(module => module.default);
     
@@ -735,6 +735,9 @@ async function submitResults(idToken, timestamp, structured, parameters, clientT
     };
     if (clientTelemetry) {
       payload.clientTelemetry = clientTelemetry
+    }
+    if (location) {
+      payload.location = location
     }
     
     const headers = {
@@ -883,7 +886,8 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
       originalTs,
       structured,
       paramsToSend,
-      inputData?.clientTelemetry || null
+      inputData?.clientTelemetry || null,
+      inputData?.location || null
     );
 
     return { ...result, structured, parameters: paramsToSend };

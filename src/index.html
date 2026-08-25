@@ -590,6 +590,25 @@
             </div>
           </div>
 
+          <div class="dt-card dt-settings-card hidden" id="locationCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">WiFi permissions</h2>
+              <p class="dt-card-description">
+                To categorize your work as "office" or "remote", DoneThat checks your available WiFi networks and categorizes your location based on those.
+              </p>
+            </div>
+            <div class="dt-card-content space-y-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="dt-section-title">Nearby networks</div>
+                  <div class="dt-supporting-text">Network names and your router's ID. <span id="locationMacNote" class="hidden">macOS will ask for location permission because WiFi networks can be used to estimate location.</span></div>
+                  <div id="locationPermissionNote" class="dt-supporting-text hidden mt-2"></div>
+                </div>
+                <label class="toggle"><input type="checkbox" id="locationCheckbox"><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+
           <div class="dt-card dt-settings-card" id="appMaskingCard" data-settings-card>
             <div class="dt-card-header">
               <h2 class="dt-card-title">App masking</h2>

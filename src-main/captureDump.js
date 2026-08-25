@@ -25,7 +25,7 @@ async function getBasePath() {
 /**
  * Save capture payload and screenshots to folder
  * @param {Array<string>} screenshots Data URLs
- * @param {Object} inputData activity, audioCycle, idleTime
+ * @param {Object} inputData Everything the cycle collected (activity, audioCycle, idleTime, location, …)
  * @param {number} timestamp
  * @param {'cloud'|'local'} pathType
  * @param {Object|null} previousScreenshotData { images: [{ base64Data, index }] } or null - exactly as sent to LLM/cloud
@@ -104,12 +104,19 @@ async function saveCaptureDump(screenshots, inputData, timestamp, pathType, prev
       }
     }
 
+    // Mirror the whole collected input, so a new capture input shows up here
+    // without anyone remembering to add it. Audio is the one exception: the
+    // raw blob is written as media files and summarized as metadata instead.
+    const { audioCycle: _rawAudioCycle, ...collectedInput } = inputData || {}
+
+    // Explicit fields last: a future input named `timestamp` or `path` would
+    // otherwise silently overwrite the real ones.
     const payload = {
+      ...collectedInput,
       timestamp,
       path: pathType,
-      activity: inputData?.activity || [],
-      audioCycle: audioCycleMeta,
-      idleTime: inputData?.idleTime
+      activity: collectedInput.activity || [],
+      audioCycle: audioCycleMeta
     }
     fs.writeFileSync(path.join(sendDir, 'payload.json'), JSON.stringify(payload, null, 2))
 

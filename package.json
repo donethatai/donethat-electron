@@ -150,7 +150,8 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "binaries": [
-        "bin/mic-monitor"
+        "bin/mic-monitor",
+        "bin/wifi-scan.app"
       ],
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
@@ -160,7 +161,9 @@
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "DoneThat needs microphone access to record audio for transcription and analysis.",
-        "NSAudioCaptureUsageDescription": "DoneThat needs system audio access to capture playback audio."
+        "NSAudioCaptureUsageDescription": "DoneThat needs system audio access to capture playback audio.",
+        "NSLocationUsageDescription": "DoneThat reads the names of nearby Wi-Fi networks to tell your work locations apart. No coordinates are collected.",
+        "NSLocationWhenInUseUsageDescription": "DoneThat reads the names of nearby Wi-Fi networks to tell your work locations apart. No coordinates are collected."
       },
       "artifactName": "${productName}-${arch}.${ext}",
       "notarize": false

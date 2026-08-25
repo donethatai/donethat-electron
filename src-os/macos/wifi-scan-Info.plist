@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>CFBundleExecutable</key>
+    <string>wifi-scan</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.donethat.app.wifi-scan</string>
+    <key>CFBundleName</key>
+    <string>DoneThat</string>
+    <key>CFBundleDisplayName</key>
+    <string>DoneThat</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSLocationUsageDescription</key>
+    <string>DoneThat reads the names of nearby Wi-Fi networks to tell your work locations apart. No coordinates are collected.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>DoneThat reads the names of nearby Wi-Fi networks to tell your work locations apart. No coordinates are collected.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>DoneThat reads the names of nearby Wi-Fi networks to tell your work locations apart. No coordinates are collected.</string>
+  </dict>
+</plist>

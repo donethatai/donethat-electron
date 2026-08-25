@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix macOS work-location fingerprints not attaching to captures after Location was granted.
+- Only collect the router identifier once location access is granted, and stop scanning after it is refused.
+- Verify signed macOS helpers at package time instead of shipping a silently broken one.
 - Reduce the macOS local-network permission prompt by disabling Chromium Cast discovery and Continuity Camera.
 - Upgrade Electron from 41.7.0 to 43.4.1.
 
