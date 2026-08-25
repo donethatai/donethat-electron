@@ -159,6 +159,8 @@ const validReceiveChannels = [
   'app:window-shown',
   'webview:reload',
   'hotkey:updated',
+  'shortcuts:toggle',
+  'portal:log-time',
   'update:available',
   'update:not-available',
 

@@ -36,6 +36,7 @@ const chatContainer = document.getElementById('chatContainer')
 const recentChatsContainer = document.getElementById('recentChatsContainer')
 const chatNotice = document.getElementById('chatNotice')
 const reportIssueBtn = document.getElementById('reportIssueBtn')
+const donSettingsBtn = document.getElementById('donSettingsBtn')
 const overlayRoot = document.getElementById('overlayRoot')
 const overlayCard = document.querySelector('.overlay-card')
 const inputRow = document.querySelector('.input-row')
@@ -1649,6 +1650,14 @@ if (clearBtn) {
   })
 }
 
+if (donSettingsBtn) {
+  donSettingsBtn.addEventListener('click', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    ipcRenderer.send('overlay:open-main', 'don-settings')
+  })
+}
+
 if (reportIssueBtn) {
   reportIssueBtn.addEventListener('click', (e) => {
     e.preventDefault()
@@ -1878,48 +1887,113 @@ async function loadChatById(chatId) {
   }
 }
 
+// Controls that must keep their own click/selection behaviour instead of
+// starting a window drag. Anything else on the card is a drag handle: the old
+// rule opted whole containers out with `.no-drag`, which left only a few pixels
+// of padding to actually grab.
+const DRAG_EXEMPT_SELECTOR =
+  'button, a, input, textarea, select, [contenteditable=""], [contenteditable="true"], .no-drag'
+// Pointer travel before a press turns into a drag. Keeps clicks and text
+// selection intact while still letting the user grab almost anywhere.
+const DRAG_START_THRESHOLD_PX = 3
+
 function setupOverlayWindowDrag() {
   if (!overlayCard || !ipcRenderer?.send) return
   let drag = null
+  let pendingDx = 0
+  let pendingDy = 0
+  let flushHandle = null
+
+  function flushMove() {
+    flushHandle = null
+    const dx = pendingDx
+    const dy = pendingDy
+    pendingDx = 0
+    pendingDy = 0
+    if (!dx && !dy) return
+    ipcRenderer.send('overlay:move-by', { dx, dy })
+  }
+
+  function queueMove(dx, dy) {
+    pendingDx += dx
+    pendingDy += dy
+    if (flushHandle == null) flushHandle = requestAnimationFrame(flushMove)
+  }
 
   function endDrag() {
-    if (drag && drag.pointerId != null) {
+    if (!drag) return
+    if (drag.pointerId != null) {
       try {
         overlayCard.releasePointerCapture(drag.pointerId)
       } catch (_) {}
     }
+    if (drag.active) {
+      document.body.classList.remove('overlay-dragging')
+      if (flushHandle != null) {
+        cancelAnimationFrame(flushHandle)
+        flushMove()
+      }
+    }
     drag = null
+  }
+
+  function beginDrag() {
+    drag.active = true
+    document.body.classList.add('overlay-dragging')
+    // Clear any selection the initial press started, so the drag does not also
+    // paint a text selection across the card.
+    try {
+      window.getSelection()?.removeAllRanges()
+    } catch (_) {}
   }
 
   overlayCard.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return
-    if (e.target.closest('.no-drag')) return
+    if (e.target.closest?.(DRAG_EXEMPT_SELECTOR)) return
     if (chatContainer && chatContainer.contains(e.target)) {
+      // Leave the scrollbar gutter alone.
       const r = chatContainer.getBoundingClientRect()
       if (e.clientX >= r.right - 14) return
     }
-    e.preventDefault()
-    drag = { pointerId: e.pointerId, x: e.screenX, y: e.screenY }
+    drag = {
+      pointerId: e.pointerId,
+      x: e.screenX,
+      y: e.screenY,
+      startX: e.screenX,
+      startY: e.screenY,
+      active: false
+    }
+    // Capture up front: once the window starts moving under the cursor the
+    // pointer can leave the card, and without capture the move events stop.
     try {
       overlayCard.setPointerCapture(e.pointerId)
     } catch (_) {}
   })
 
-  window.addEventListener(
-    'pointermove',
-    (e) => {
-      if (!drag || e.pointerId !== drag.pointerId) return
-      const dx = e.screenX - drag.x
-      const dy = e.screenY - drag.y
-      drag.x = e.screenX
-      drag.y = e.screenY
-      if (dx || dy) ipcRenderer.send('overlay:move-by', { dx, dy })
-    },
-    true
-  )
+  overlayCard.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return
+    if (!drag.active) {
+      const travelX = Math.abs(e.screenX - drag.startX)
+      const travelY = Math.abs(e.screenY - drag.startY)
+      if (travelX < DRAG_START_THRESHOLD_PX && travelY < DRAG_START_THRESHOLD_PX) return
+      beginDrag()
+    }
+    const dx = e.screenX - drag.x
+    const dy = e.screenY - drag.y
+    drag.x = e.screenX
+    drag.y = e.screenY
+    e.preventDefault()
+    if (dx || dy) queueMove(dx, dy)
+  })
 
+  overlayCard.addEventListener('pointerup', endDrag)
+  overlayCard.addEventListener('pointercancel', endDrag)
+  overlayCard.addEventListener('lostpointercapture', endDrag)
+  // Backstops: a pointerup delivered outside the card, or focus lost mid-drag
+  // (window switch, Mission Control), used to leave the drag stuck on.
   window.addEventListener('pointerup', endDrag, true)
   window.addEventListener('pointercancel', endDrag, true)
+  window.addEventListener('blur', endDrag)
 }
 
 // Initialize

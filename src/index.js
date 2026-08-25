@@ -55,6 +55,24 @@ let portalHandshakeRetryTimers = [];
 let portalSpinnerTimer = null; // delay before showing dashboard spinner
 const PORTAL_RELOAD_COOLDOWN_MS = 10000; // avoid reloads shortly after token delivery
 const PORTAL_DEFAULT_URL = 'https://app.donethat.ai';
+/**
+ * View names that mean "open this route in the embedded web app" rather than a
+ * host screen. Keyed by the names main sends over `navigate` (app shortcuts,
+ * the chat overlay links), valued with the web app's own routes.
+ */
+const PORTAL_VIEW_PATHS = {
+  'don-settings': '/settings/don',
+  'portal-settings': '/settings',
+  home: '/summaries',
+  calendar: '/calendar',
+  tasks: '/tasks',
+  feed: '/social',
+  stats: '/stats',
+  'app-settings': '/settings/app-config'
+};
+// Path the portal should open on next create; consumed by createPortalView so a
+// deep link works even when the webview is currently suspended.
+let pendingPortalPath = null;
 let lastWebviewActivityTs = 0;
 let lastWebviewActivityKey = '';
 const WEBVIEW_ACTIVITY_DEDUPE_MS = 1500;
@@ -68,7 +86,8 @@ const pendingPortalBridge = {
   customToken: null,
   reauthResult: null,
   logout: false,
-  reloadAfterLoad: false
+  reloadAfterLoad: false,
+  logTime: false
 };
 
 // Inform main that renderer is ready to receive auth tokens as early as possible
@@ -350,6 +369,93 @@ function openSetupOverlay(section) {
   trackPageView('settings');
 }
 
+/**
+ * Keyboard shortcuts overview.
+ *
+ * The list is built in main, which owns the accelerators (including the
+ * user-configurable chat hotkey), so this only renders what it is handed.
+ */
+function renderShortcutsOverlay(sections) {
+  const body = document.getElementById('shortcutsOverlayBody');
+  if (!body) return;
+  body.textContent = '';
+  (Array.isArray(sections) ? sections : []).forEach((section) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'shortcuts-section';
+
+    const title = document.createElement('div');
+    title.className = 'shortcuts-section-title';
+    title.textContent = section?.title || '';
+    wrap.appendChild(title);
+
+    (Array.isArray(section?.items) ? section.items : []).forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'shortcuts-row';
+
+      const label = document.createElement('span');
+      label.className = 'shortcuts-label';
+      label.appendChild(document.createTextNode(item?.label || ''));
+
+      // Rows main marked as configurable say so, and link to where.
+      if (item?.note || item?.link) {
+        const note = document.createElement('span');
+        note.className = 'shortcuts-note';
+        if (item.note) note.appendChild(document.createTextNode(item.note));
+        if (item.link) {
+          if (item.note) note.appendChild(document.createTextNode(' in '));
+          const link = document.createElement('button');
+          link.type = 'button';
+          link.className = 'shortcuts-note-link';
+          link.textContent = item.link.label || 'Settings';
+          link.addEventListener('click', () => {
+            closeShortcutsOverlay();
+            navigateToView(item.link.view);
+          });
+          note.appendChild(link);
+        }
+        label.appendChild(note);
+      }
+
+      row.appendChild(label);
+
+      const keys = document.createElement('span');
+      keys.className = 'shortcuts-keys';
+      keys.textContent = item?.keys || '';
+      row.appendChild(keys);
+
+      wrap.appendChild(row);
+    });
+
+    body.appendChild(wrap);
+  });
+}
+
+function isShortcutsOverlayOpen() {
+  const overlay = document.getElementById('shortcutsOverlay');
+  return !!overlay && !overlay.classList.contains('hidden');
+}
+
+function closeShortcutsOverlay() {
+  const overlay = document.getElementById('shortcutsOverlay');
+  if (!overlay) return;
+  if (overlay.contains(document.activeElement)) document.activeElement.blur();
+  overlay.classList.add('hidden');
+}
+
+function toggleShortcutsOverlay(sections) {
+  const overlay = document.getElementById('shortcutsOverlay');
+  if (!overlay) return;
+  if (isShortcutsOverlayOpen()) {
+    closeShortcutsOverlay();
+    return;
+  }
+  renderShortcutsOverlay(sections);
+  overlay.classList.remove('hidden');
+  // Focus the dialog so Escape lands here and not in the webview underneath.
+  const dialog = overlay.querySelector('.setup-dialog');
+  if (dialog) dialog.focus();
+}
+
 function closeSetupOverlay() {
   const overlay = document.getElementById('settingsView');
   if (!overlay) return;
@@ -517,6 +623,8 @@ function flushPendingPortalBridgeActions(view) {
         view.send('auth:setCustomToken', action.payload);
       } else if (action.type === 'reauthResult') {
         view.send('auth:reauth-result', action.payload);
+      } else if (action.type === 'logTime') {
+        view.send('desktop:log-time');
       }
     } catch (e) {
       console.error('[PortalSync] Error sending pending bridge action', action.type, e);
@@ -587,6 +695,13 @@ function attachPortalViewListeners(view) {
   view.addEventListener('dom-ready', () => {
     if (!isActivePortalView()) return;
     portalDomReady = true;
+    // A deep link that arrived while the webview was still loading can only be
+    // applied now; createPortalView clears it when it handled the path itself.
+    if (pendingPortalPath) {
+      const path = pendingPortalPath;
+      pendingPortalPath = null;
+      navigatePortalTo(path, 'deferred-portal-path');
+    }
     if (navigator.onLine) {
       hideWebviewError();
     }
@@ -706,7 +821,8 @@ function createPortalView(reason) {
   const view = document.createElement('webview');
   view.id = 'portalView';
   view.className = 'portal-frame';
-  view.setAttribute('src', PORTAL_DEFAULT_URL);
+  view.setAttribute('src', portalUrlFor(pendingPortalPath));
+  pendingPortalPath = null;
   view.setAttribute('partition', 'persist:donethat');
   view.setAttribute('preload', './portal-preload.js');
   view.setAttribute('webpreferences', 'contextIsolation=true, nodeIntegration=false');
@@ -757,6 +873,64 @@ function ensurePortalActive(reason) {
   }
 
   return portalView || createPortalView(reason || 'ensure-portal-active');
+}
+
+/**
+ * Ask the embedded web app to open its Log time dialog.
+ *
+ * Deliberately not a navigation: the dialog belongs on whatever page the user is
+ * already looking at. If the portal is not up yet the request rides along on the
+ * pending bridge and is delivered on dom-ready.
+ */
+function requestPortalLogTime() {
+  if (!isAuthenticated()) return;
+
+  if (getCurrentView() !== 'dashboard') {
+    navigateToView('dashboard');
+  }
+
+  const view = ensurePortalActive('log-time');
+  if (view && portalDomReady && isTrustedPortalView(view)) {
+    try {
+      view.send('desktop:log-time');
+      return;
+    } catch (e) {
+      console.error('[PortalSync] Error sending log-time', e);
+    }
+  }
+
+  pendingPortalBridge.logTime = true;
+}
+
+function portalUrlFor(path) {
+  if (!path) return PORTAL_DEFAULT_URL;
+  try {
+    return new URL(path, PORTAL_DEFAULT_URL).toString();
+  } catch (_) {
+    return PORTAL_DEFAULT_URL;
+  }
+}
+
+/**
+ * Point the embedded portal at a specific route (e.g. Don's settings).
+ *
+ * The webview is destroyed whenever the dashboard is not on screen, so the path
+ * is stashed and picked up by createPortalView when there is nothing to steer.
+ */
+function navigatePortalTo(path, reason) {
+  pendingPortalPath = path || null;
+  const view = ensurePortalActive(reason || 'navigate-portal');
+  if (!view || !path) return;
+  // A freshly created webview already got the URL from pendingPortalPath.
+  if (!portalDomReady) return;
+  pendingPortalPath = null;
+  const url = portalUrlFor(path);
+  try {
+    if (typeof view.loadURL === 'function') view.loadURL(url);
+    else view.setAttribute('src', url);
+  } catch (e) {
+    console.error('[PortalLifecycle] navigate failed', reason, e);
+  }
 }
 
 function recoverPortalView(reason, options = {}) {
@@ -831,6 +1005,19 @@ function scheduleBlurTopbarChromeFocus() {
 function navigateToView(viewName) {
   const currentView = getCurrentView();
 
+  // Deep link into the web app's own routes rather than a host screen.
+  // Any navigation supersedes a deep link that never got applied.
+  pendingPortalPath = null;
+  let portalPath = null;
+  if (Object.prototype.hasOwnProperty.call(PORTAL_VIEW_PATHS, viewName)) {
+    if (!isAuthenticated()) {
+      viewName = 'signin';
+    } else {
+      portalPath = PORTAL_VIEW_PATHS[viewName];
+      viewName = 'dashboard';
+    }
+  }
+
   // Setup is an overlay, not a view. Callers still ask for it by the old view
   // names (the app menu, deep links, the capture warning), so translate here
   // rather than making every caller know the difference.
@@ -846,6 +1033,7 @@ function navigateToView(viewName) {
   // Anything that navigates somewhere else dismisses Setup, which is what makes
   // the Finish button and the tray/menu entries close it without extra wiring.
   closeSetupOverlay();
+  closeShortcutsOverlay();
 
   // Handle 'signup-next' parameter
   if (viewName === 'signup-next') {
@@ -892,7 +1080,8 @@ function navigateToView(viewName) {
   }
 
   if (currentView === 'dashboard' && viewName === 'dashboard') {
-    ensurePortalActive('repeat-navigate-to-dashboard');
+    if (portalPath) navigatePortalTo(portalPath, 'repeat-navigate-to-portal-path');
+    else ensurePortalActive('repeat-navigate-to-dashboard');
     schedulePortalKickAfterDashboardNavigation();
     return;
   }
@@ -913,7 +1102,8 @@ function navigateToView(viewName) {
   updateCurrentView(viewName);
 
   if (viewName === 'dashboard') {
-    ensurePortalActive('navigate-to-dashboard');
+    if (portalPath) navigatePortalTo(portalPath, 'navigate-to-portal-path');
+    else ensurePortalActive('navigate-to-dashboard');
     schedulePortalKickAfterDashboardNavigation();
   } else {
     destroyPortalView('navigate-away-from-dashboard');
@@ -1180,17 +1370,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (openChatBtn) {
     const isWaylandLinux = window.electronAPI?.platform === 'linux' && !!window.electronAPI?.isWayland;
+    // The button always reads just "Chat"; the hotkey lives in the tooltip and
+    // in the shortcuts overview (Cmd/Ctrl+/) instead of widening the top bar.
     const applyChatLabel = (label) => {
-      const text = label ? `Chat (${label})` : 'Chat';
-      openChatBtn.textContent = text;
-      openChatBtn.title = text;
-    };
-    if (isWaylandLinux) {
       openChatBtn.textContent = 'Chat';
-      openChatBtn.title = 'Chat';
-    } else {
-      applyChatLabel(null);
-    }
+      openChatBtn.title = label ? `Chat (${label})` : 'Chat';
+    };
+    applyChatLabel(null);
     
     openChatBtn.addEventListener('click', () => {
       // Only allow chat if authenticated and has valid access
@@ -1216,6 +1402,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
   }
+  const shortcutsOverlayCloseBtn = document.getElementById('shortcutsOverlayCloseBtn');
+  if (shortcutsOverlayCloseBtn) {
+    shortcutsOverlayCloseBtn.addEventListener('click', () => closeShortcutsOverlay());
+  }
+
+  const shortcutsOverlay = document.getElementById('shortcutsOverlay');
+  if (shortcutsOverlay) {
+    shortcutsOverlay.addEventListener('mousedown', (event) => {
+      if (event.target === shortcutsOverlay) closeShortcutsOverlay();
+    });
+  }
+
+  try {
+    ipcRenderer.on('shortcuts:toggle', (payload) => {
+      toggleShortcutsOverlay(payload && payload.sections);
+    });
+  } catch (_) {}
+
+  try {
+    ipcRenderer.on('portal:log-time', () => {
+      requestPortalLogTime();
+    });
+  } catch (_) {}
+
   const setupOverlayCloseBtn = document.getElementById('setupOverlayCloseBtn');
   if (setupOverlayCloseBtn) {
     setupOverlayCloseBtn.addEventListener('click', () => closeSetupOverlay());
@@ -1229,6 +1439,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   document.addEventListener('keydown', (event) => {
+    if (isShortcutsOverlayOpen() && event.key === 'Escape') {
+      closeShortcutsOverlay();
+      return;
+    }
     if (!isSetupOverlayOpen()) return;
     if (event.key === 'Escape') closeSetupOverlay();
     else if (event.key === 'Tab') handleSetupOverlayTab(event);

@@ -22,6 +22,11 @@ function drainPendingPortalBridge(pendingPortalBridge) {
     suppressGenericTokenSync = true;
   }
 
+  if (pendingPortalBridge.logTime) {
+    actions.push({ type: 'logTime' });
+    pendingPortalBridge.logTime = false;
+  }
+
   if (pendingPortalBridge.reauthResult) {
     actions.push({ type: 'reauthResult', payload: pendingPortalBridge.reauthResult });
     pendingPortalBridge.reauthResult = null;

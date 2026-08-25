@@ -446,6 +446,152 @@ function registerGlobalShortcut() {
   }
 }
 
+/**
+ * In-app keyboard shortcuts.
+ *
+ * Handled with `before-input-event` rather than a renderer keydown listener
+ * because a key pressed inside the portal webview never reaches the host
+ * document, and rather than `globalShortcut` because these must not fire while
+ * another application is focused.
+ *
+ * `key` is matched against `input.key` with the primary modifier held (Cmd on
+ * macOS, Ctrl elsewhere) plus Shift when the entry asks for it. The navigation
+ * entries take Shift because the bare Cmd+letter combinations they would
+ * otherwise want are copy, find and save - preventDefault here suppresses menu
+ * accelerators too, so claiming them would break editing everywhere in the app.
+ *
+ * `view` is passed to the renderer's navigateToView, which deep-links the
+ * embedded web app; `action` entries do something else instead.
+ */
+const APP_SHORTCUTS = [
+  { id: 'shortcuts', key: '/', label: 'Keyboard shortcuts' },
+  { id: 'settings', key: '-', label: 'Settings', view: 'portal-settings' },
+  { id: 'log-time', key: 'l', label: 'Log time', action: 'log-time' },
+  { id: 'home', key: 'h', shift: true, label: 'Home', view: 'home' },
+  { id: 'calendar', key: 'c', shift: true, label: 'Calendar', view: 'calendar' },
+  { id: 'tasks', key: 't', shift: true, label: 'Tasks', view: 'tasks' },
+  { id: 'feed', key: 'f', shift: true, label: 'Feed', view: 'feed' },
+  { id: 'stats', key: 's', shift: true, label: 'Stats', view: 'stats' }
+];
+
+function getAppShortcutLabel(shortcut) {
+  const key = shortcut.key === '/' || shortcut.key === '-'
+    ? shortcut.key
+    : shortcut.key.toUpperCase();
+  return `${getHotkeyLabelPrefix()}${shortcut.shift ? '+Shift' : ''}+${key}`;
+}
+
+/**
+ * Everything the shortcuts overview lists, including keys owned elsewhere (the
+ * global chat hotkey, the app menu, the chat window) so the panel is the one
+ * place that answers "what can I press?".
+ */
+function getAppShortcutOverview() {
+  const mod = getHotkeyLabelPrefix();
+  const keysFor = (id) => {
+    const shortcut = APP_SHORTCUTS.find((s) => s.id === id);
+    return shortcut ? getAppShortcutLabel(shortcut) : '';
+  };
+
+  return [
+    {
+      title: 'Go to',
+      items: APP_SHORTCUTS
+        .filter((s) => s.view)
+        .map((s) => ({ keys: getAppShortcutLabel(s), label: s.label }))
+    },
+    {
+      title: 'Actions',
+      items: [
+        { keys: keysFor('log-time'), label: 'Log time' },
+        {
+          keys: getHotkeyLabel(),
+          label: 'Open or close chat',
+          note: 'Pick your own letter',
+          link: { label: 'Settings > App', view: 'app-settings' }
+        },
+        { keys: keysFor('shortcuts'), label: 'Keyboard shortcuts' }
+      ]
+    },
+    {
+      title: 'Chat',
+      items: [
+        { keys: 'Enter', label: 'Send message' },
+        { keys: 'Shift+Enter', label: 'New line' },
+        { keys: 'Esc', label: 'Close chat' }
+      ]
+    },
+    {
+      title: 'Window',
+      items: [
+        { keys: `${mod}+W`, label: 'Close window' },
+        { keys: `${mod}+Q`, label: 'Quit DoneThat' }
+      ]
+    }
+  ];
+}
+
+function toggleShortcutsOverview() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  returnFocusToMainOnOverlayClose = false;
+  hideOverlayWindow();
+  restoreShowAndFocusMainWindow();
+  try {
+    mainWindow.webContents.send('shortcuts:toggle', { sections: getAppShortcutOverview() });
+  } catch (e) {}
+}
+
+/** @returns {boolean} whether the key was consumed (so the default is suppressed). */
+function runAppShortcut(input) {
+  if (!input || input.type !== 'keyDown') return false;
+  const primary = process.platform === 'darwin' ? input.meta : input.control;
+  if (!primary || input.alt) return false;
+
+  const key = String(input.key || '').toLowerCase();
+  const shortcut = APP_SHORTCUTS.find((s) => s.key === key && !!s.shift === !!input.shift);
+  if (!shortcut) return false;
+  // The chat hotkey is user-configurable onto the same Cmd+Shift+<letter> shape.
+  // Leave it to the global shortcut rather than shadowing the user's choice.
+  if (shortcut.shift && key === String(HOTKEY_SUFFIX || '').toLowerCase()) return false;
+
+  if (shortcut.id === 'shortcuts') {
+    toggleShortcutsOverview();
+    return true;
+  }
+
+  // Swallow the key either way: falling through would hand Cmd+- to the zoom
+  // handler on exactly the screens where the shortcut is not available yet.
+  if (!stateManager?.isAuthenticated() || !stateManager?.hasValidAccess()) return true;
+
+  returnFocusToMainOnOverlayClose = false;
+  hideOverlayWindow();
+
+  if (shortcut.action === 'log-time') {
+    restoreShowAndFocusMainWindow();
+    try { mainWindow?.webContents.send('portal:log-time'); } catch (e) {}
+    return true;
+  }
+
+  navigateToView(shortcut.view);
+  return true;
+}
+
+function attachAppShortcuts(contents) {
+  try {
+    contents.on('before-input-event', (event, input) => {
+      try {
+        if (runAppShortcut(input)) event.preventDefault();
+      } catch (e) {}
+    });
+  } catch (e) {}
+}
+
+// Every web contents, including the portal webview and the chat overlay, so the
+// shortcuts work wherever focus happens to be.
+app.on('web-contents-created', (_event, contents) => {
+  attachAppShortcuts(contents);
+});
+
 // Update screenshot interval logic
 let SCREENSHOT_INTERVAL_MINUTES = 5; // Default to 5 minutes for release
 // Set interval based on whether it's development or production
@@ -2493,7 +2639,7 @@ function checkAndAdjustRecording(source = 'unknown') {
     // Update application menu when recording state changes
     refreshMenus();
 
-    // Show sticky banner if account is inactive (once per session)
+    // Show sticky banner if account is inactive (once per inactive period)
     if (isAuthenticated && !hasValidAccess && !hasShownInactiveBanner) {
       try {
         if (mainWindow) {
@@ -2505,6 +2651,13 @@ function checkAndAdjustRecording(source = 'unknown') {
           });
           hasShownInactiveBanner = true;
         }
+      } catch (e) {}
+    } else if (hasValidAccess && hasShownInactiveBanner) {
+      // Access restored (e.g. user subscribed) - dismiss the sticky banner and
+      // re-arm it so a later lapse shows it again without needing a restart.
+      hasShownInactiveBanner = false;
+      try {
+        if (mainWindow) mainWindow.webContents.send('inapp:hide');
       } catch (e) {}
     }
 

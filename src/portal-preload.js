@@ -50,6 +50,11 @@ ipcRenderer.on('auth:setCustomToken', (_event, payload) => {
   postDesktopMessage({ source: 'donethat-desktop', type: 'auth:setCustomToken', payload: payload || {} });
 });
 
+// Host -> portal: open the web app's Log time dialog on the current page.
+ipcRenderer.on('desktop:log-time', () => {
+  postDesktopMessage({ source: 'donethat-desktop', type: 'desktop:log-time' });
+});
+
 ipcRenderer.on('auth:reauth-result', (_event, payload) => {
   postDesktopMessage({ source: 'donethat-desktop', type: 'auth:reauth-result', payload: payload || {} });
 });

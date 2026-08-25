@@ -22,6 +22,10 @@
       .liquid-glass-active .overlay-root,
       .liquid-glass-active .overlay-card { border: none !important; outline: none !important; }
       .no-drag { -webkit-app-region: no-drag; }
+      /* While a window drag is in progress: one cursor everywhere, and no text
+         selection painted across the card as the pointer travels. */
+      body.overlay-dragging, body.overlay-dragging * { cursor: grabbing !important; }
+      body.overlay-dragging { -webkit-user-select: none !important; user-select: none !important; }
       /* Translucent so native liquid glass (behind web content) shows through; window move via IPC (see chat.js). */
       .overlay-card { cursor: grab; backdrop-filter: blur(12px); background: rgba(255,255,255,0.42); border: 1px solid rgba(229,231,235,0.88); border-radius: 12px; }
       .mascot-wrap { position: relative; flex-shrink: 0; width: 40px; min-width: 40px; height: 40px; border-radius: 999px; overflow: hidden; background: #fff; border: 1px solid rgba(229,231,235,0.92); }
@@ -113,7 +117,7 @@
   <body class="w-full h-full">
     <div id="overlayRoot" class="overlay-root relative w-full h-full">
         <div class="overlay-card w-full p-2 relative flex flex-col">
-          <div id="mascotWrap" class="mascot-wrap no-drag" hidden aria-hidden="true">
+          <div id="mascotWrap" class="mascot-wrap" hidden aria-hidden="true">
             <div id="mascotFallback" class="mascot-fallback">
               <div class="mascot-fallback-mouth"></div>
             </div>
@@ -121,7 +125,7 @@
           </div>
           <div id="recentChatsContainer" class="recent-chats-container no-drag"></div>
           <div id="chatContainer" class="z-chat space-y-2 overflow-y-auto pb-2 flex-1"></div>
-          <div id="chatNotice" class="chat-notice no-drag">Don can make mistakes. <button id="reportIssueBtn" class="chat-notice-link no-drag" type="button">Please report issues.</button></div>
+          <div id="chatNotice" class="chat-notice">Don can make mistakes. <button id="reportIssueBtn" class="chat-notice-link no-drag" type="button">Please report issues.</button> <span class="chat-notice-sep" aria-hidden="true">&middot;</span> <button id="donSettingsBtn" class="chat-notice-link no-drag" type="button">Don settings</button></div>
           <div class="z-input">
             <div class="w-full flex justify-center input-row">
               <div class="input-wrap flex-1 max-w-full no-drag">
