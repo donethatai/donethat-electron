@@ -905,7 +905,12 @@ function requestPortalLogTime() {
 function portalUrlFor(path) {
   if (!path) return PORTAL_DEFAULT_URL;
   try {
-    return new URL(path, PORTAL_DEFAULT_URL).toString();
+    const url = new URL(path, PORTAL_DEFAULT_URL);
+    // Paths come from PORTAL_VIEW_PATHS today, but resolving against a base
+    // silently accepts an absolute URL. Never let one point the webview - which
+    // holds the signed-in session - at another origin.
+    if (url.origin !== TRUSTED_PORTAL_ORIGIN) return PORTAL_DEFAULT_URL;
+    return url.toString();
   } catch (_) {
     return PORTAL_DEFAULT_URL;
   }
