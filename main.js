@@ -31,6 +31,12 @@ const {
   applyStartupGpuMitigation,
   createGpuCrashMitigator
 } = require('./src-main/gpuCrashMitigation')
+const {
+  getAutoUpdateDisableState,
+  isAutoUpdateDisabled,
+  toggleAutoUpdateDisabled,
+  describeAutoUpdateDisableState
+} = require('./src-main/autoUpdateDisable')
 const { AuthServer } = require('./src-main/auth-server')
 const {
   getGoogleSignInUrl,
@@ -1082,6 +1088,10 @@ function persistOverlayPosition(x, y, height) {
 }
 
 function installUpdate(payload) {
+  if (isAutoUpdateDisabled({ store: earlyConfigStore })) {
+    log.info('Skipping update install: auto-update disabled')
+    return
+  }
   const runAfter = payload && payload.forceRunAfter === true;
   if (process.platform === 'win32') {
     autoUpdater.quitAndInstall(true, runAfter);
@@ -1089,6 +1099,18 @@ function installUpdate(payload) {
     app.isQuitting = true;
     autoUpdater.quitAndInstall();
   }
+}
+
+function applyAutoUpdateDisabledToUpdater() {
+  const disabled = isAutoUpdateDisabled({ store: earlyConfigStore })
+  if (disabled) {
+    try { autoUpdater.autoDownload = false } catch (_) {}
+    try { autoUpdater.autoInstallOnAppQuit = false } catch (_) {}
+  } else {
+    try { autoUpdater.autoDownload = true } catch (_) {}
+    try { autoUpdater.autoInstallOnAppQuit = app.isPackaged } catch (_) {}
+  }
+  return disabled
 }
 
 // electron-updater's AppImageUpdater.doInstall() unlinks the running AppImage and
@@ -1266,6 +1288,9 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = app.isPackaged; // Only install on quit in packaged app
   autoUpdater.forceDevUpdateConfig = true; // Force check in dev mode
+  if (applyAutoUpdateDisabledToUpdater()) {
+    log.info('Auto-update disabled (hidden test pause or DONETHAT_DISABLE_AUTO_UPDATE)')
+  }
 
   // Set the correct channel based on the current architecture
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
@@ -1290,6 +1315,10 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('update-downloaded', (info) => {
+    if (isAutoUpdateDisabled({ store: earlyConfigStore })) {
+      log.info('Update downloaded but auto-update is disabled; skipping install:', info.version)
+      return
+    }
     log.info('Update downloaded:', info.version)
     updateAvailable = true
 
@@ -1384,6 +1413,14 @@ function setupAutoUpdater() {
 }
 
 async function checkForUpdatesSafely(label) {
+  if (isAutoUpdateDisabled({ store: earlyConfigStore })) {
+    applyAutoUpdateDisabledToUpdater()
+    log.info(`Skipping ${label} update check: auto-update disabled`)
+    return
+  }
+
+  try { autoUpdater.autoDownload = true } catch (_) {}
+
   if (process.platform === 'win32') {
     const writeCheck = await checkWindowsUpdaterCacheWritable()
     windowsUpdaterCacheWriteCheck = writeCheck
@@ -1744,6 +1781,20 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('update:check-status', () => {
     return { available: updateAvailable };
+  });
+
+  ipcMain.handle('auto-update:get-disabled', () => {
+    return getAutoUpdateDisableState({ store: earlyConfigStore });
+  });
+
+  ipcMain.handle('auto-update:toggle-disabled', () => {
+    const state = toggleAutoUpdateDisabled({ store: earlyConfigStore });
+    applyAutoUpdateDisabledToUpdater();
+    log.info('Auto-update disable toggled', state);
+    if (!state.disabled) {
+      checkForUpdatesSafely('re-enable').catch(() => {});
+    }
+    return { ...state, message: describeAutoUpdateDisableState(state) };
   });
 
   ipcMain.handle('auth:google-signin', async (_event, payload) => {

@@ -125,6 +125,8 @@ const validInvokeChannels = [
   'hotkey:set',
   'getInitialPauseState',
   'update:check-status',
+  'auto-update:get-disabled',
+  'auto-update:toggle-disabled',
 
   // Auth server
   'auth:google-signin',

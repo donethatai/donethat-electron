@@ -523,20 +523,47 @@ function updateScreenshotsContainerVisibility(show) {
   // No-op: screenshots/local processing row removed
 }
 
-// Set up version click handler
+function formatAppVersionLabel(disabled) {
+  const version = `v${packageInfo.version}`;
+  return disabled ? `${version} · updates paused` : version;
+}
+
+// Hidden: 7 clicks on the version label pauses auto-update for 7 days.
 function setupVersionClickHandler() {
   const versionElement = document.querySelector('#appVersion');
-  
-  if (versionElement) {
-    try {
-      // Try to get version from package.json first
-      versionElement.textContent = `v${packageInfo.version}`;
-      // Remove click easter egg
-    } catch (error) {
-      // If we can't get the version, just show a placeholder
-      versionElement.textContent = 'v?.?.?';
-    }
+  if (!versionElement) return;
+
+  try {
+    versionElement.textContent = formatAppVersionLabel(false);
+    versionElement.classList.add('select-none');
+  } catch (error) {
+    versionElement.textContent = 'v?.?.?';
+    return;
   }
+
+  ipcRenderer.invoke('auto-update:get-disabled').then((state) => {
+    if (state?.disabled) versionElement.textContent = formatAppVersionLabel(true);
+  }).catch(() => {});
+
+  let clickCount = 0;
+  let clickTimer = null;
+  versionElement.addEventListener('click', async () => {
+    clickCount += 1;
+    if (clickTimer) clearTimeout(clickTimer);
+    clickTimer = setTimeout(() => { clickCount = 0; }, 2000);
+    if (clickCount < 7) return;
+    clickCount = 0;
+
+    try {
+      const state = await ipcRenderer.invoke('auto-update:toggle-disabled');
+      versionElement.textContent = formatAppVersionLabel(!!state?.disabled);
+      if (state?.message) {
+        showBanner(state.message, { title: 'DoneThat', id: 'auto-update-disabled' });
+      }
+    } catch (error) {
+      console.error('Failed to toggle auto-update:', error);
+    }
+  });
 }
 
 // Set up Firestore listener for user settings
