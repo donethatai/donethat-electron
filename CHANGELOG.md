@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.3.1
+
 - Patch electron-builder macOS signing so Intel CI can unlock the temporary keychain (workaround for electron-builder#10066 until PR #10101 ships).
 
 ## 2.3.0
