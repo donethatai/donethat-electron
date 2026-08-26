@@ -1395,12 +1395,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     shortcutsOverlayCloseBtn.addEventListener('click', () => closeShortcutsOverlay());
   }
 
-  const shortcutsOverlay = document.getElementById('shortcutsOverlay');
-  if (shortcutsOverlay) {
-    shortcutsOverlay.addEventListener('mousedown', (event) => {
-      if (event.target === shortcutsOverlay) closeShortcutsOverlay();
-    });
-  }
+  // Click-outside for every modal overlay. They all share the same shape: a
+  // full-screen backdrop whose only child is the dialog, so a mousedown landing
+  // on the backdrop itself (never on a descendant) is a click outside. Routing
+  // it through the overlay's own close button keeps each overlay's teardown —
+  // focus release, form reset — in the one place that already owns it.
+  document.addEventListener('mousedown', (event) => {
+    const backdrop = event.target;
+    if (!(backdrop instanceof Element)) return;
+    if (!backdrop.matches('.setup-overlay, .summary-overlay')) return;
+    if (backdrop.classList.contains('hidden')) return;
+    const closeBtn = backdrop.querySelector('button[aria-label^="Close"]');
+    if (closeBtn) closeBtn.click();
+    else backdrop.classList.add('hidden');
+  });
 
   try {
     ipcRenderer.on('shortcuts:toggle', (payload) => {
