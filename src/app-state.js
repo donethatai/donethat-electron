@@ -15,6 +15,11 @@ const state = {
   hasWindowsPermission: false,
   hasMicrophonePermission: false,
   hasSystemAudioPermission: false,
+  hasLocationPermission: false,
+  // Location is the only permission with a meaningful tri-state: `notDetermined`
+  // must not render as a failure, so the boolean alone is not enough.
+  locationAuthorization: 'unknown',
+  locationReason: null,
   permissionsReady: false,
 
   // User status
@@ -86,6 +91,18 @@ function hasSystemAudioPermission() {
   return state.hasSystemAudioPermission;
 }
 
+function hasLocationPermission() {
+  return state.hasLocationPermission;
+}
+
+function getLocationAuthorization() {
+  return state.locationAuthorization;
+}
+
+function getLocationReason() {
+  return state.locationReason;
+}
+
 function hasValidAccess() {
   return state.userStatus === 'active';
 }
@@ -146,6 +163,12 @@ function updateMicrophonePermission(hasPermission) {
 
 function updateSystemAudioPermission(hasPermission) {
   state.hasSystemAudioPermission = hasPermission;
+}
+
+function updateLocationPermission(hasPermission, authorization = 'unknown', reason = null) {
+  state.hasLocationPermission = !!hasPermission;
+  state.locationAuthorization = authorization || 'unknown';
+  state.locationReason = reason || null;
 }
 
 function updatePermissionsReady(isReady) {
@@ -463,6 +486,9 @@ module.exports = {
   hasWindowsPermission,
   hasMicrophonePermission,
   hasSystemAudioPermission,
+  hasLocationPermission,
+  getLocationAuthorization,
+  getLocationReason,
   hasValidAccess,
   isPermissionsReady,
   isSettingsReady,
@@ -478,6 +504,7 @@ module.exports = {
   updateWindowsPermission,
   updateMicrophonePermission,
   updateSystemAudioPermission,
+  updateLocationPermission,
   updatePermissionsReady,
   updateUserStatus,
   updateIsPublic,

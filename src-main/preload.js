@@ -84,6 +84,7 @@ const validInvokeChannels = [
   'check-main-window-focus',
   'checkWindowsPermission',
   'checkMicrophonePermission',
+  'checkLocationPermission',
 
   // Settings / Tailwind-related helpers
   'settings:load',

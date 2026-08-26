@@ -6,7 +6,7 @@ const ipcRenderer = window.electronAPI;
 
 const { auth } = require('./firebase.js');
 
-const { initializeSettings, loadUserSettings } = require('./settings.js');
+const { initializeSettings, loadUserSettings, isLocationFeatureEnabled } = require('./settings.js');
 const { initializeAuth } = require('./auth.js');
 const { initializeDashboard, resetSummaryState } = require('./dashboard.js');
 const { initializePermissions } = require('./permissions.js');
@@ -21,6 +21,8 @@ const {
 const { 
   hasScreenCapturePermission,
   hasWindowsPermission,
+  hasLocationPermission,
+  getLocationReason,
   isCaptureReadinessReady,
   updateStoreScreenshots,
   updateCurrentView,
@@ -1255,7 +1257,17 @@ function updateDashboardCaptureWarning() {
   const screenEffective = screenEnabledByToggle && screenPermissionGranted;
   const windowsEffective = windowsEnabledByToggle && windowsPermissionGranted;
 
-  if (screenEffective && windowsEffective) {
+  // Location earns a line here only when someone asked for it and the OS
+  // refused. It is never listed for being switched off — unlike screenshare it
+  // is opt-in, so "off" is the expected state, not a degraded one — and never
+  // for an empty scan, which is a Wi-Fi radio away from the app's control.
+  const locationReason = getLocationReason();
+  const locationBlocked = isLocationFeatureEnabled()
+    && !!document.getElementById('locationCheckbox')?.checked
+    && !hasLocationPermission()
+    && (locationReason === 'denied' || locationReason === 'restricted');
+
+  if (screenEffective && windowsEffective && !locationBlocked) {
     warningEl.classList.add('hidden');
     return;
   }
@@ -1274,6 +1286,10 @@ function updateDashboardCaptureWarning() {
     } else if (!windowsPermissionGranted) {
       issues.push('Active applications permission is missing');
     }
+  }
+
+  if (locationBlocked) {
+    issues.push('Nearby network permission is missing');
   }
 
   const issueSummary = issues.join(' and ');

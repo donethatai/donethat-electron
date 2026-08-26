@@ -4,6 +4,7 @@ const {
   updateWindowsPermission,
   updateMicrophonePermission,
   updateSystemAudioPermission,
+  updateLocationPermission,
   updatePermissionsReady,
   hasMicrophonePermission
 } = require('./app-state.js');
@@ -21,9 +22,16 @@ const permissionIssueVisibleState = {
   screen: false,
   windows: false,
   microphone: false,
-  systemAudio: false
+  systemAudio: false,
+  location: false
 };
 let hasRequestedInitialSystemAudioCheck = false;
+
+// The feature-flag event rides on the settings snapshot, and settings arrive
+// from a Firestore listener that re-fires on every write. Without this latch
+// the check ran per snapshot, and each run both spawned the wifi-scan helper
+// and cleared the scan-blocked latch that exists to stop exactly that.
+let locationStartupCheckDone = false;
 
 function isWaylandLinuxSession() {
   return window.electronAPI.platform === 'linux' && !!window.electronAPI.isWayland;
@@ -86,6 +94,7 @@ function initializePermissions(topbarVisibilityUpdater) {
   setupAudioCheckboxBehavior();
   setupSystemAudioCheckboxBehavior();
   setupLocationCheckboxBehavior();
+  setupLocationStartupCheck();
   setupPermissionRecheckButtons();
   setupPermissionIndicatorRefresh();
 
@@ -112,6 +121,21 @@ function setupRuntimePermissionIssueListener() {
     if (runtimeIssues.systemAudio) {
       applySystemAudioPermissionUpdate(false, false, 'runtime-issue');
     }
+
+    if (runtimeIssues.location) {
+      // Only a real refusal reaches here — the capture cycle never flags an
+      // empty room — but which refusal matters: `restricted` is an MDM policy
+      // no button can undo, so it must not be relabelled as `denied`.
+      const authorization = runtimeIssues.location.authorization === 'restricted'
+        ? 'restricted'
+        : 'denied';
+      applyLocationPermissionUpdate({
+        hasPermission: false,
+        authorization,
+        dataAvailable: false,
+        reason: authorization
+      }, 'runtime-issue');
+    }
   });
 }
 
@@ -132,6 +156,10 @@ function setupPermissionIndicatorRefresh() {
     const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
     if (systemAudioCheckbox) {
       updateSystemAudioCheckbox(readPermissionDataset(systemAudioCheckbox));
+    }
+    const locationCheckbox = document.getElementById('locationCheckbox');
+    if (locationCheckbox) {
+      updateLocationCheckbox(readPermissionDataset(locationCheckbox), lastLocationReason);
     }
   });
 }
@@ -283,6 +311,37 @@ function applyMicrophonePermissionUpdate(hasPermission, _fromStartup = false, so
   emitCaptureStateUpdated();
 }
 
+// The last reason the main process reported, kept so a re-render triggered by
+// something else (a toggle flip, a capture-state event) can redraw the note
+// without inventing a status it never received.
+let lastLocationReason = null;
+
+/**
+ * Location's payload is a record, not a boolean, so it does not go through
+ * `handleIncomingPermissionEvent` — but everything downstream of it (state,
+ * analytics, checkbox, indicator) matches the other four exactly.
+ */
+function applyLocationPermissionUpdate(payload, source = 'unknown') {
+  const hasPermission = payload?.hasPermission === true;
+  const authorization = payload?.authorization || 'unknown';
+  const reason = payload?.reason || null;
+
+  lastLocationReason = reason;
+  updateLocationPermission(hasPermission, authorization, reason);
+
+  logAnalyticsEvent('location_permission', {
+    status: hasPermission ? 'granted' : 'denied',
+    authorization,
+    reason: reason || 'none',
+    dataAvailable: payload?.dataAvailable === true ? 'true' : 'false',
+    platform: window.electronAPI.platform,
+    source
+  });
+
+  updateLocationCheckbox(hasPermission, reason);
+  emitCaptureStateUpdated();
+}
+
 function applySystemAudioPermissionUpdate(hasPermission, _fromStartup = false, source = 'unknown') {
   updateSystemAudioPermission(hasPermission);
 
@@ -334,30 +393,33 @@ ipcRenderer.on('systemAudioPermission-recheck', () => {
 
 // A denial has to be visible. A toggle that reads "on" while nothing is ever
 // recorded is worse than one that fails loudly.
+//
+// Keyed on `reason`, not `hasPermission`: a granted machine with the radio off
+// still has nothing to report, and saying so is not the same as saying access
+// was refused. Only LOCATION_ACTIONABLE_REASONS are the user's to fix in
+// System Settings; the rest are hardware states that lead nowhere.
+const LOCATION_NOTE_MESSAGES = {
+  denied: 'Location access is off. Enable DoneThat in System Settings.',
+  restricted: 'Location access is restricted on this machine.',
+  disabled: 'Nearby networks are not enabled for this account.',
+  unknown: 'Couldn\'t read nearby networks.',
+  unavailable: 'Couldn\'t read nearby networks.',
+  noWifi: 'No Wi-Fi adapter found.',
+  noNetworks: 'No nearby networks found.'
+};
+
+// Two different questions, so two different sets.
+//
+// BLOCKING: the grant is what stops the fingerprint — worth a tooltip and a
+// `permission_issue_visible` event, whether or not the user can do anything.
+// ACTIONABLE: the user can actually change it, so a Settings button leads
+// somewhere. `restricted` is an MDM policy and the main process refuses to open
+// Settings for it, so offering the button would be offering a no-op.
+const LOCATION_BLOCKING_REASONS = new Set(['denied', 'restricted']);
+const LOCATION_ACTIONABLE_REASONS = new Set(['denied']);
+
 ipcRenderer.on('locationPermission', (data) => {
-  const note = document.getElementById('locationPermissionNote');
-  if (!note) return;
-
-  const hasPermission = data?.hasPermission === true;
-  const authorization = data?.authorization || 'unknown';
-
-  if (hasPermission || authorization === 'notDetermined') {
-    note.classList.add('hidden');
-    note.textContent = '';
-    return;
-  }
-
-  const messages = {
-    denied: 'Location access is off. Enable DoneThat in System Settings.',
-    restricted: 'Location access is restricted on this machine.',
-    disabled: 'Nearby networks are not enabled for this account.',
-    noWifi: 'No Wi-Fi adapter found.',
-    noNetworks: 'No nearby networks found.',
-    unavailable: 'Couldn\'t read nearby networks.'
-  };
-
-  note.textContent = messages[authorization] || messages.unavailable;
-  note.classList.remove('hidden');
+  applyLocationPermissionUpdate(data, data?.source || 'location-channel');
 });
 
 function updateScreenCaptureCheckbox(hasPermission) {
@@ -480,6 +542,62 @@ function updateSystemAudioCheckbox(hasPermission) {
   if (recheckBtn) recheckBtn.classList.toggle('hidden', !blockedByPermission);
 }
 
+/**
+ * Mirrors the other four checkbox updaters, with one extra axis: a missing
+ * fingerprint is only worth a Settings button when the cause is a refusal.
+ *
+ * @param {boolean|null} hasPermission - null while the status is still unknown.
+ * @param {string|null} reason
+ */
+function updateLocationCheckbox(hasPermission, reason = null) {
+  const checkbox = document.getElementById('locationCheckbox');
+  if (!checkbox) return;
+
+  const isKnown = typeof hasPermission === 'boolean';
+  if (isKnown) {
+    checkbox.dataset.permissionGranted = hasPermission ? 'true' : 'false';
+  }
+
+  const enabledByToggle = !!checkbox.checked;
+  const blockedByPermission =
+    isKnown && enabledByToggle && !hasPermission && LOCATION_BLOCKING_REASONS.has(reason);
+  const actionable = blockedByPermission && LOCATION_ACTIONABLE_REASONS.has(reason);
+
+  if (blockedByPermission !== permissionIssueVisibleState.location) {
+    permissionIssueVisibleState.location = blockedByPermission;
+    if (blockedByPermission) {
+      logAnalyticsEvent('permission_issue_visible', {
+        type: 'location',
+        platform: window.electronAPI.platform
+      });
+    }
+  }
+
+  const toggleLabel = checkbox.closest('.toggle');
+  if (toggleLabel) {
+    toggleLabel.title = blockedByPermission
+      ? 'Enabled in settings, but currently blocked by missing location permission'
+      : (!isKnown
+        ? 'Location permission status is still being checked'
+        : (hasPermission
+          ? 'Location permission granted'
+          : 'Location permission required to read nearby networks'));
+  }
+
+  // The note speaks for both axes; the button only for the actionable one.
+  const note = document.getElementById('locationPermissionNote');
+  if (note) {
+    const message = enabledByToggle && reason && reason !== 'notDetermined'
+      ? (LOCATION_NOTE_MESSAGES[reason] || LOCATION_NOTE_MESSAGES.unavailable)
+      : null;
+    note.textContent = message || '';
+    note.classList.toggle('hidden', !message);
+  }
+
+  const recheckBtn = document.getElementById('recheckLocationPermissionBtn');
+  if (recheckBtn) recheckBtn.classList.toggle('hidden', !actionable);
+}
+
 function setupScreenCaptureCheckboxBehavior() {
   const checkbox = document.getElementById('screenCheckbox');
   if (!checkbox) return;
@@ -590,20 +708,58 @@ function setupLocationCheckboxBehavior() {
     const result = await handleCaptureToggleIntent('location', enabled);
     if (result?.reverted) {
       checkbox.checked = !enabled;
+      updateLocationCheckbox(readPermissionDataset(checkbox), lastLocationReason);
+      emitCaptureStateUpdated();
       return;
     }
 
-    const note = document.getElementById('locationPermissionNote');
-    if (!enabled) {
-      if (note) {
-        note.classList.add('hidden');
-        note.textContent = '';
-      }
-      return;
+    updateLocationCheckbox(readPermissionDataset(checkbox), lastLocationReason);
+    if (enabled) {
+      requestLocationPermission();
     }
-
-    ipcRenderer.send('requestLocationPermission');
+    emitCaptureStateUpdated();
   });
+}
+
+/**
+ * Runs once the server-side feature flag is known — not on the startup sweep.
+ * Before the flag arrives the main process answers `disabled` without spawning
+ * the helper, so an unconditional startup check would only ever learn nothing.
+ */
+function setupLocationStartupCheck() {
+  document.addEventListener('location-feature-changed', (event) => {
+    // A logout clears the flag; re-arm so the next session checks again.
+    if (event?.detail?.enabled !== true) {
+      locationStartupCheckDone = false;
+      return;
+    }
+    // Nobody who left the toggle off should pay for a helper spawn, or see a
+    // prompt they never asked for.
+    if (event.detail.capturing !== true) return;
+    if (locationStartupCheckDone) return;
+
+    locationStartupCheckDone = true;
+    checkLocationPermissionPassively();
+  });
+}
+
+async function checkLocationPermissionPassively() {
+  let result;
+  try {
+    result = await ipcRenderer.invoke('checkLocationPermission');
+  } catch (_) {
+    return;
+  }
+
+  // A helper that timed out reports `unavailable`, which is strictly less
+  // informative than a refusal already on record. Letting it through would
+  // replace "Location access is off" with "Couldn't read nearby networks" —
+  // turning a fixable, actionable state into a shrug.
+  if (result?.reason === 'unavailable' && LOCATION_BLOCKING_REASONS.has(lastLocationReason)) {
+    return;
+  }
+
+  applyLocationPermissionUpdate(result, 'startup-passive-check');
 }
 
 function setupPermissionRecheckButtons() {
@@ -654,6 +810,17 @@ function setupPermissionRecheckButtons() {
       requestSystemAudioPermission(true);
     });
   }
+
+  const recheckLocationBtn = document.getElementById('recheckLocationPermissionBtn');
+  if (recheckLocationBtn) {
+    recheckLocationBtn.addEventListener('click', () => {
+      logAnalyticsEvent('permission_recheck_clicked', {
+        type: 'location',
+        platform: window.electronAPI.platform
+      });
+      requestLocationPermission();
+    });
+  }
 }
 
 function requestMicrophonePermission() {
@@ -682,6 +849,14 @@ function requestScreenCapturePermission() {
     platform: window.electronAPI.platform
   });
   ipcRenderer.send('requestScreenCapturePermission', true);
+}
+
+function requestLocationPermission() {
+  logAnalyticsEvent('location_capture_requested', {
+    status: 'requested',
+    platform: window.electronAPI.platform
+  });
+  ipcRenderer.send('requestLocationPermission');
 }
 
 function requestSystemAudioPermission(shouldOpenSettings = true) {

@@ -2882,7 +2882,8 @@ function createWindow() {
         mainWindow,
         handleCaptureAuthErrors,
         stateManager.getIdToken,
-        stateManager.getClientTelemetryEnabled
+        stateManager.getClientTelemetryEnabled,
+        stateManager
       );
       if (!startupInputDataListenerRegistered) {
         startupInputDataListenerRegistered = true;

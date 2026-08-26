@@ -623,6 +623,9 @@ async function initState(options = {}) {
       updateScreenCapturePermission,
       updateWindowsPermission,
       hasWindowsPermission: getWindowsPermission,
+      updateLocationPermission,
+      hasLocationPermission: getLocationPermission,
+      getLocationAuthorization,
       updateUserStatus,
       getUserWorkdays: () => userWorkdays,
       getUserWorkhours: () => userWorkhours,
@@ -1309,6 +1312,25 @@ function updateWindowsPermission(permission) {
 // Get Windows permission status
 function getWindowsPermission() {
   return hasWindowsPermission;
+}
+
+// Location permission state. Unlike the others this carries the OS authorization
+// alongside the boolean: `notDetermined` is not a denial, and only `denied` is
+// worth sending anyone to System Settings over.
+let hasLocationPermission = false;
+let locationAuthorization = 'unknown';
+
+function updateLocationPermission(permission, authorization = 'unknown') {
+  hasLocationPermission = !!permission;
+  locationAuthorization = authorization || 'unknown';
+}
+
+function getLocationPermission() {
+  return hasLocationPermission;
+}
+
+function getLocationAuthorization() {
+  return locationAuthorization;
 }
 
 // Update user status
@@ -2681,6 +2703,9 @@ module.exports = {
   updateScreenCapturePermission,
   updateWindowsPermission,
   hasWindowsPermission: getWindowsPermission,
+  updateLocationPermission,
+  hasLocationPermission: getLocationPermission,
+  getLocationAuthorization,
   setupIPCHandlers,
   cleanupOnQuit,
   stopStateValidation,

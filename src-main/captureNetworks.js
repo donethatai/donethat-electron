@@ -116,6 +116,13 @@ function dedupeSsids(values) {
 // when the user explicitly asks for permission again.
 let darwinScanBlocked = false;
 
+/**
+ * The authorization the most recent scan reported. Lets a capture cycle tell a
+ * refusal apart from an empty room without paying for a second helper spawn —
+ * the scan it already ran carries the answer.
+ */
+let lastAuthorization = 'unknown';
+
 // Same lookup order as resolveMacMicHelperPath() in audioSessionDetector.js:
 // `bin/**/*` is in asarUnpack, so the packaged copy lives under
 // app.asar.unpacked.
@@ -180,7 +187,11 @@ async function scanDarwin(requestAuthorization = false) {
 
   const ssids = Array.isArray(parsed.ssids) ? parsed.ssids : [];
   const authorization = typeof parsed.authorization === 'string' ? parsed.authorization : 'unknown';
-  darwinScanBlocked = authorization !== 'authorized';
+  lastAuthorization = authorization;
+  // Latch only on a definitive refusal. `notDetermined`, `unknown`, or a
+  // transient helper failure must stay scannable — treating those as blocked
+  // turned one bad spawn into a session-long outage.
+  darwinScanBlocked = authorization === 'denied' || authorization === 'restricted';
   if (!requestAuthorization) {
     log.info('[networks] scan result:', JSON.stringify({
       authorization,
@@ -416,32 +427,69 @@ function isHotspotGateway(gatewayIp) {
 
 async function scanWifi() {
   if (process.platform === 'darwin') return scanDarwin(false);
-  if (process.platform === 'linux') return scanLinux();
-  if (process.platform === 'win32') return scanWindows();
-  return null;
+
+  // No location gate off macOS: a scan that produced output was as authorized
+  // as it will ever be, and one that failed tells us nothing about a grant.
+  const scan = process.platform === 'linux'
+    ? await scanLinux()
+    : (process.platform === 'win32' ? await scanWindows() : null);
+  lastAuthorization = scan ? 'authorized' : 'unavailable';
+  return scan;
 }
 
+/** @returns {string} authorization from the most recent scan. */
+function getLastAuthorization() {
+  return lastAuthorization;
+}
+
+/**
+ * Splits the two signals a scan carries.
+ *
+ * `authorization` is the OS grant, read from CLAuthorizationStatus inside the
+ * helper and independent of whatever the Wi-Fi cache happens to hold.
+ * `dataAvailable` is whether that grant actually produced network names.
+ * Deriving the grant from `ssidCount > 0` — as this used to — reported "denied"
+ * for an Ethernet-only machine with the radio off, and sent people to System
+ * Settings to fix a permission that was already granted. It also meant a real
+ * denial and an empty room were indistinguishable to every caller.
+ *
+ * `reason` is the display axis: null when there is nothing to say, otherwise
+ * either an authorization state or a hardware state. Only the authorization
+ * states warrant a trip to System Settings.
+ *
+ * @returns {{hasPermission: boolean, authorization: string, dataAvailable: boolean, ssidCount: number, reason: string|null}}
+ */
 function permissionFromScan(scan) {
-  if (!scan) return { hasPermission: false, authorization: 'unavailable', ssidCount: 0 };
+  if (!scan) {
+    return {
+      hasPermission: false,
+      authorization: 'unavailable',
+      dataAvailable: false,
+      ssidCount: 0,
+      reason: 'unavailable'
+    };
+  }
 
   const ssidCount = (scan.ssids || []).length;
-  if (ssidCount > 0) {
-    return { hasPermission: true, authorization: 'authorized', ssidCount };
+  const dataAvailable = ssidCount > 0;
+
+  // Only macOS gates SSID reads behind Location. Elsewhere a scan that ran at
+  // all was authorized, so there is no grant to report and no prompt to raise.
+  const authorization = process.platform === 'darwin'
+    ? (scan.authorization || 'unknown')
+    : 'authorized';
+  const hasPermission = authorization === 'authorized';
+
+  let reason = null;
+  if (!hasPermission) {
+    reason = authorization;
+  } else if (scan.error === 'no_wifi_interface') {
+    reason = 'noWifi';
+  } else if (!dataAvailable) {
+    reason = 'noNetworks';
   }
 
-  // An empty scan is usually hardware, not permission: Wi-Fi switched off, or
-  // an Ethernet-only machine. Reporting those as a permission problem sends
-  // people to System Settings to fix something that is not broken. Platforms
-  // without a location gate have no authorization to report at all.
-  if (scan.error === 'no_wifi_interface') {
-    return { hasPermission: false, authorization: 'noWifi', ssidCount: 0 };
-  }
-  const authorization = scan.authorization || 'noNetworks';
-  return {
-    hasPermission: false,
-    authorization: authorization === 'authorized' ? 'noNetworks' : authorization,
-    ssidCount
-  };
+  return { hasPermission, authorization, dataAvailable, ssidCount, reason };
 }
 
 /**
@@ -492,7 +540,7 @@ async function collectNetworkFingerprint() {
  * macOS: spawn the helper with `--authorize` so CoreLocation can prompt.
  * Linux and Windows need no permission for a cached scan.
  *
- * @returns {Promise<{hasPermission: boolean, authorization: string, ssidCount: number}>}
+ * @returns {Promise<{hasPermission: boolean, authorization: string, dataAvailable: boolean, ssidCount: number, reason: string|null}>}
  */
 async function requestLocationPermission() {
   darwinScanBlocked = false;
@@ -504,7 +552,7 @@ async function requestLocationPermission() {
 
 /**
  * Whether a scan currently returns anything, without raising a prompt.
- * @returns {Promise<{hasPermission: boolean, authorization: string, ssidCount: number}>}
+ * @returns {Promise<{hasPermission: boolean, authorization: string, dataAvailable: boolean, ssidCount: number, reason: string|null}>}
  */
 async function checkLocationPermission() {
   // The caller is checking because the grant may have just changed in System
@@ -516,5 +564,18 @@ async function checkLocationPermission() {
 module.exports = {
   collectNetworkFingerprint,
   requestLocationPermission,
-  checkLocationPermission
+  checkLocationPermission,
+  getLastAuthorization,
+  __test__: {
+    permissionFromScan,
+    setLastAuthorization(value) {
+      lastAuthorization = value;
+    },
+    setDarwinScanBlocked(value) {
+      darwinScanBlocked = !!value;
+    },
+    isDarwinScanBlocked() {
+      return darwinScanBlocked;
+    }
+  }
 };

@@ -329,6 +329,23 @@ function applyLocationFeatureVisibility() {
   if (card) card.classList.toggle('hidden', !locationFeatureEnabled);
 }
 
+/**
+ * Tells permissions.js the grant is worth checking. It waits for this rather
+ * than checking on the startup sweep: until the flag arrives the main process
+ * has nothing to check and answers `disabled`.
+ *
+ * `capturing` travels in the event instead of being read off the checkbox,
+ * because the flag is resolved several statements before the checkboxes are
+ * synced — a listener reading the DOM would see the previous session's state.
+ * A DOM event rather than a direct call: permissions.js already imports this
+ * module, so the reverse would close a require cycle.
+ */
+function notifyLocationFeatureState(capturing) {
+  document.dispatchEvent(new CustomEvent('location-feature-changed', {
+    detail: { enabled: locationFeatureEnabled, capturing: !!capturing }
+  }));
+}
+
 function isLocationFeatureEnabled() {
   return locationFeatureEnabled;
 }
@@ -623,6 +640,7 @@ function stopSettingsListener(resetManagedState = true) {
   // would otherwise keep scanning on the last-seen value after logout.
   locationFeatureEnabled = false;
   applyLocationFeatureVisibility();
+  notifyLocationFeatureState(false);
   applyManualPausePolicy(null);
   try { ipcRenderer.send('updateLocationFeatureEnabled', false); } catch (_) {}
   try { ipcRenderer.send('apply-managed-app-settings', null); } catch (_) {}
@@ -943,6 +961,8 @@ async function updateSettingsUI(settings) {
   }
   const locationCheckbox = document.getElementById('locationCheckbox');
   if (locationCheckbox) locationCheckbox.checked = inputData.location;
+
+  notifyLocationFeatureState(inputData.location);
 
   applyInputDataManagedLockUI();
   try { recomputeSystemAudioDependency(); } catch (_) {}

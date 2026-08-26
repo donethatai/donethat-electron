@@ -32,6 +32,7 @@ const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/c
 const audioCapture = require('./captureAudio');
 const windowsCapture = require('./captureWindows');
 const networksCapture = require('./captureNetworks');
+const { watchForPermissionReturn } = require('./permissionFocus');
 
 // Variable to track the capture interval
 let screenshotInterval = null;
@@ -39,12 +40,12 @@ let initialCaptureDelayTimer = null;
 let captureIntervalMinutes; // Set in main
 let reauthenticateCallback = null; // Store reauthenticate callback function
 let mainWindowRef = null; // Store mainWindow reference
+let stateManagerRef = null; // Store stateManager reference
 let getIdTokenFunction = null; // Store the getIdToken function reference
 let getClientTelemetryEnabledFunction = null;
 let captureCycleInFlight = false;
 const captureModuleStartedAt = Date.now();
 let microphonePermissionFocusListener = null;
-let locationPermissionFocusListener = null;
 let locationDenialAnswered = false;
 let systemAudioPermissionFocusListener = null;
 const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus';
@@ -83,49 +84,44 @@ function markPermissionFocusOnNextLaunch(reason = 'system-audio-permission') {
 const LOCATION_PERMISSION_RETURN_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
+ * The single funnel every location result passes through, so cached state and
+ * what the renderer was told can never disagree. The other permissions each
+ * update state and send IPC from four or five places; this one does not.
+ *
+ * @param {{hasPermission: boolean, authorization: string, dataAvailable: boolean, ssidCount: number, reason: string|null}} result
+ * @param {string} source
+ */
+function applyLocationPermissionResult(result, source) {
+  stateManagerRef?.updateLocationPermission?.(result.hasPermission, result.authorization);
+
+  if (mainWindowRef && !mainWindowRef.isDestroyed?.()) {
+    try {
+      mainWindowRef.webContents.send('locationPermission', { ...result, source });
+    } catch (_) {}
+  }
+}
+
+/**
  * Rechecks location access when the user comes back from System Settings.
  *
- * Bound to the main window rather than `browser-window-focus`, so focusing the
- * chat overlay does not consume the recheck, and dropped after a timeout so a
- * user who never returns does not leave a listener running all session.
+ * Given a longer leash than the other permissions: the CoreLocation row sits
+ * several panes deep, so a user is more likely to still be looking for it.
  */
 function watchForLocationPermissionReturn(mainWindow, networks) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-
-  if (locationPermissionFocusListener) {
-    locationPermissionFocusListener.dispose();
-  }
-
-  const timeoutId = setTimeout(() => dispose(), LOCATION_PERMISSION_RETURN_TIMEOUT_MS);
-
-  function dispose() {
-    clearTimeout(timeoutId);
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.removeListener('focus', onFocus);
-      mainWindow.removeListener('closed', dispose);
-    }
-    if (locationPermissionFocusListener?.dispose === dispose) {
-      locationPermissionFocusListener = null;
-    }
-  }
-
-  async function onFocus() {
-    dispose();
-    let recheck = { hasPermission: false, authorization: 'unavailable', ssidCount: 0 };
+  watchForPermissionReturn('location', mainWindow, async () => {
+    let recheck = { hasPermission: false, authorization: 'unavailable', dataAvailable: false, ssidCount: 0, reason: 'unavailable' };
     try {
-      recheck = await networks.checkLocationPermission();
+      recheck = await probeLocationPermission('focus-recheck', () => networks.checkLocationPermission());
     } catch (error) {
       log.error('Error rechecking location permission:', error);
     }
     log.info('[networks] location permission recheck:', JSON.stringify(recheck));
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('locationPermission', { ...recheck, source: 'focus-recheck' });
-    }
-  }
+    applyLocationPermissionResult(recheck, 'focus-recheck');
 
-  locationPermissionFocusListener = { dispose };
-  mainWindow.once('focus', onFocus);
-  mainWindow.once('closed', dispose);
+    // A grant settles it. So does a restriction: no amount of returning from
+    // Settings will change an MDM policy, so re-arming would only burn probes.
+    return recheck.hasPermission === true || recheck.authorization === 'restricted';
+  }, { timeoutMs: LOCATION_PERMISSION_RETURN_TIMEOUT_MS });
 }
 
 function isValidImageDataUrl(dataUrl) {
@@ -235,15 +231,24 @@ const failureStreaks = {
   screen: 0,
   windows: 0,
   microphone: 0,
-  systemAudio: 0
+  systemAudio: 0,
+  location: 0
 };
 
 const RUNTIME_ISSUE_THRESHOLDS = {
   screen: 4,
   windows: 6,
   microphone: 4,
-  systemAudio: 4
+  systemAudio: 4,
+  // Higher than the rest: a location grant does not lapse mid-session, so a
+  // streak this long means the grant really is gone rather than a slow helper.
+  location: 6
 };
+
+/** Authorizations that are the user's to fix, as opposed to hardware states. */
+function isLocationDenial(authorization) {
+  return authorization === 'denied' || authorization === 'restricted';
+}
 
 function resetFailureStreak(feature) {
   if (Object.prototype.hasOwnProperty.call(failureStreaks, feature)) {
@@ -371,6 +376,25 @@ async function probePermission(type, source, fn) {
     return result;
   } catch (error) {
     recordPermissionCheck(type, source, 'error', Date.now() - startedAt);
+    throw error;
+  }
+}
+
+/**
+ * Location's own probe wrapper. It answers with a record rather than a boolean,
+ * because the grant and the data that grant produced are separate facts, so it
+ * cannot share `probePermission` — classify on the grant, which is what a
+ * "permission check" measures.
+ */
+async function probeLocationPermission(source, fn) {
+  const startedAt = Date.now();
+  try {
+    const result = await fn();
+    const outcome = result?.hasPermission === true ? 'granted' : 'denied';
+    recordPermissionCheck('location', source, outcome, Date.now() - startedAt);
+    return result;
+  } catch (error) {
+    recordPermissionCheck('location', source, 'error', Date.now() - startedAt);
     throw error;
   }
 }
@@ -528,7 +552,7 @@ function updateInputDataSettings(settings) {
  * @param {Function} getClientTelemetryEnabled Function to get the current telemetry preference
  * @throws {Error} If mainWindow is not provided or capture interval is not set
  */
-function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnabled = () => true) {
+function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnabled = () => true, stateManager = null) {
   if (!mainWindow) {
     throw new Error('Main window must be provided to initialize capture');
   }
@@ -551,6 +575,7 @@ function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnab
 
   // Store mainWindow reference
   mainWindowRef = mainWindow;
+  stateManagerRef = stateManager;
   
   // Initialize audio capture with main window and buffer duration matching the capture interval
   audioCapture.initialize(mainWindow, {
@@ -593,6 +618,25 @@ function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnab
     locationFeatureEnabled = enabled === true;
   });
 
+  // Passive counterpart to `requestLocationPermission`: reads the current grant
+  // without ever raising a prompt, so startup and the recheck button can ask
+  // without ambushing someone who has not opted in yet.
+  ipcMain.handle('checkLocationPermission', async () => {
+    if (!locationFeatureEnabled) {
+      return { hasPermission: false, authorization: 'disabled', dataAvailable: false, ssidCount: 0, reason: 'disabled' };
+    }
+
+    let result = { hasPermission: false, authorization: 'unavailable', dataAvailable: false, ssidCount: 0, reason: 'unavailable' };
+    try {
+      result = await probeLocationPermission('passive-check', () => networksCapture.checkLocationPermission());
+    } catch (error) {
+      log.error('Error checking location permission:', error);
+    }
+
+    stateManagerRef?.updateLocationPermission?.(result.hasPermission, result.authorization);
+    return result;
+  });
+
   // Location permission has to be its own channel: `updateInputDataSettings` is
   // fire-and-forget, and a denial that never surfaces leaves the toggle reading
   // "on" while nothing is ever recorded.
@@ -607,29 +651,29 @@ function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnab
     try {
     if (!locationFeatureEnabled) {
       if (mainWindow) {
-        mainWindow.webContents.send('locationPermission', {
+        applyLocationPermissionResult({
           hasPermission: false,
           authorization: 'disabled',
-          source: 'request'
-        });
+          dataAvailable: false,
+          ssidCount: 0,
+          reason: 'disabled'
+        }, 'request');
       }
       return;
     }
 
-    let result = { hasPermission: false, authorization: 'unavailable', ssidCount: 0 };
+    let result = { hasPermission: false, authorization: 'unavailable', dataAvailable: false, ssidCount: 0, reason: 'unavailable' };
     try {
-      result = await networks.requestLocationPermission();
+      result = await probeLocationPermission('request', () => networks.requestLocationPermission());
     } catch (error) {
       log.error('Error requesting location permission:', error);
     }
 
-    // Logged, not just surfaced: the two halves of this failing look identical
-    // in the UI ("authorized" with zero networks vs. no grant at all).
+    // The payload separates the grant from the data, but the log is still the
+    // only place the two are visible together against a timestamp.
     log.info('[networks] location permission result:', JSON.stringify(result));
 
-    if (mainWindow) {
-      mainWindow.webContents.send('locationPermission', { ...result, source: 'request' });
-    }
+    applyLocationPermissionResult(result, 'request');
 
     if (result.hasPermission) {
       locationDenialAnswered = false;
@@ -817,7 +861,8 @@ async function collectInputData(resetBuffers = true, options = {}) {
     screen: false,
     windows: false,
     microphone: false,
-    systemAudio: false
+    systemAudio: false,
+    location: false
   };
   
   // Get system idle time
@@ -836,6 +881,14 @@ async function collectInputData(resetBuffers = true, options = {}) {
       const fingerprint = await networksCapture.collectNetworkFingerprint();
       if (fingerprint) {
         inputData.location = fingerprint;
+        resetFailureStreak('location');
+      } else if (isLocationDenial(networksCapture.getLastAuthorization())) {
+        // Only a refusal counts as a failure. An empty room, a switched-off
+        // radio, or an Ethernet-only desk also yield no fingerprint, and
+        // flagging those would tell the user to fix a permission that is fine.
+        captureErrors.location = true;
+      } else {
+        resetFailureStreak('location');
       }
     } catch (error) {
       log.warn('Error collecting network fingerprint:', error?.message || error);
@@ -1113,7 +1166,8 @@ async function captureAndSend(idToken) {
       screen: false,
       windows: false,
       microphone: false,
-      systemAudio: false
+      systemAudio: false,
+      location: false
     };
 
     // Capture screenshots only if enabled
@@ -1185,10 +1239,11 @@ async function captureAndSend(idToken) {
     captureErrors.windows = !!moduleErrors.windows;
     captureErrors.microphone = !!moduleErrors.microphone;
     captureErrors.systemAudio = !!moduleErrors.systemAudio;
+    captureErrors.location = !!moduleErrors.location;
 
 
     // Check if any capture errors occurred
-    if (captureErrors.screen || captureErrors.windows || captureErrors.microphone || captureErrors.systemAudio) {
+    if (captureErrors.screen || captureErrors.windows || captureErrors.microphone || captureErrors.systemAudio || captureErrors.location) {
       // Pass the specific errors to the handler
       handleCaptureError(new Error('Capture module error detected'), 'module-specific', captureErrors, false);
     }
@@ -1289,7 +1344,8 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
     screen: 'Screenshare capture',
     windows: 'Window tracking',
     microphone: 'Microphone capture',
-    systemAudio: 'System audio capture'
+    systemAudio: 'System audio capture',
+    location: 'Nearby network detection'
   };
   
   if (captureErrors) {
@@ -1317,6 +1373,12 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
             threshold,
             streak
           };
+
+          // The renderer cannot re-derive this, and denied vs restricted decide
+          // both the wording and whether a Settings button would do anything.
+          if (feature === 'location') {
+            runtimeIssues[feature].authorization = networksCapture.getLastAuthorization();
+          }
           resetFailureStreak(feature);
           shouldNotifyRenderer = true;
 
@@ -1605,5 +1667,9 @@ module.exports = {
   setCaptureInterval,
   initCapture,
 
-  collectInputData
+  collectInputData,
+  __test__: {
+    handleCaptureError,
+    isLocationDenial
+  }
 }; 
