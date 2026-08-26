@@ -46,7 +46,6 @@ let getClientTelemetryEnabledFunction = null;
 let captureCycleInFlight = false;
 const captureModuleStartedAt = Date.now();
 let microphonePermissionFocusListener = null;
-let locationDenialAnswered = false;
 let systemAudioPermissionFocusListener = null;
 const PENDING_PERMISSION_POST_RESTART_FOCUS_KEY = 'pendingPermissionPostRestartFocus';
 
@@ -675,20 +674,10 @@ function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnab
 
     applyLocationPermissionResult(result, 'request');
 
-    if (result.hasPermission) {
-      locationDenialAnswered = false;
-      return;
-    }
+    if (result.hasPermission) return;
+    // Match the other permissions: an explicit ask that comes back denied opens
+    // Settings immediately. `restricted` is MDM and no pane can undo it.
     if (result.authorization !== 'denied') return;
-
-    // The prompt never comes back, so System Settings is the only route left —
-    // but someone who just clicked "Don't Allow" does not want to be dropped
-    // there two seconds later. Show the note first; open Settings only if they
-    // ask for the permission again.
-    if (!locationDenialAnswered) {
-      locationDenialAnswered = true;
-      return;
-    }
 
     if (process.platform === 'darwin') {
       markPermissionFocusOnNextLaunch('location-permission');

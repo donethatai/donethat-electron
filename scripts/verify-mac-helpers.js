@@ -12,9 +12,11 @@ const HELPERS = [
   {
     relativePath: 'wifi-scan.app',
     bundleId: 'com.donethat.app.wifi-scan',
+    executableName: 'DoneThat',
     // CoreWLAN returns no SSIDs without this, and the prompt needs the string.
     entitlements: ['com.apple.security.personal-information.location'],
-    infoPlistKeys: ['NSLocationWhenInUseUsageDescription']
+    infoPlistKeys: ['NSLocationWhenInUseUsageDescription', 'CFBundleIconFile'],
+    requireIcon: true
   }
 ];
 
@@ -105,6 +107,25 @@ export default function verifyMacHelpers(appPath) {
     for (const key of helper.infoPlistKeys || []) {
       if (!plistValue(infoPlist, key)) {
         problems.push(`${helper.relativePath} Info.plist is missing ${key}`);
+      }
+    }
+    if (helper.executableName) {
+      const executable = path.join(target, 'Contents', 'MacOS', helper.executableName);
+      if (!fs.existsSync(executable)) {
+        problems.push(`${helper.relativePath} is missing Contents/MacOS/${helper.executableName}`);
+      }
+      const declaredExec = plistValue(infoPlist, 'CFBundleExecutable');
+      if (declaredExec && declaredExec !== helper.executableName) {
+        problems.push(
+          `${helper.relativePath} CFBundleExecutable is ${declaredExec}, expected ${helper.executableName}`
+        );
+      }
+    }
+    if (helper.requireIcon) {
+      const iconFile = plistValue(infoPlist, 'CFBundleIconFile') || 'AppIcon';
+      const iconBase = iconFile.endsWith('.icns') ? iconFile : `${iconFile}.icns`;
+      if (!fs.existsSync(path.join(target, 'Contents', 'Resources', iconBase))) {
+        problems.push(`${helper.relativePath} is missing Contents/Resources/${iconBase}`);
       }
     }
   }

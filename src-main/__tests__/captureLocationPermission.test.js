@@ -193,13 +193,10 @@ describe('requestLocationPermission', () => {
     expect(stateManager.updateLocationPermission).toHaveBeenCalledWith(true, 'authorized')
   })
 
-  it('holds the first denial back and opens Settings only when asked again', async () => {
+  it('opens System Settings on the first denial, same as the other permissions', async () => {
     // Location Services is a macOS pane; Linux/Windows never open this URL.
     setPlatform('darwin')
     networks.requestLocationPermission.mockResolvedValue(DENIED)
-
-    await requestLocation()
-    expect(mockOpenExternal).not.toHaveBeenCalled()
 
     await requestLocation()
     expect(mockOpenExternal).toHaveBeenCalledWith(

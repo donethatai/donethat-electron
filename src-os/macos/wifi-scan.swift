@@ -7,7 +7,8 @@ import CoreLocation
 // NSApplication + CLLocationManager: a spawn-read-exit with no location
 // session reports notDetermined and returns zero SSIDs, even after a grant
 // from a previous --authorize spawn. The prompt still needs a real .app
-// bundle (see wifi-scan-Info.plist).
+// bundle (see wifi-scan-Info.plist) whose Contents/MacOS binary is named
+// DoneThat — TCC labels Location Services rows after that basename.
 //
 //   (no args)     use an existing grant; no prompt; 3s cap
 //   --authorize   request WhenInUse if needed; 120s cap

@@ -127,8 +127,10 @@ let lastAuthorization = 'unknown';
 // `bin/**/*` is in asarUnpack, so the packaged copy lives under
 // app.asar.unpacked.
 function resolveHelperPath(name) {
+  // Location Services names the TCC row after Contents/MacOS/<exec>, so the
+  // wifi helper's binary is DoneThat even though the .app folder stays wifi-scan.
   const suffixes = name === 'wifi-scan'
-    ? [path.join(`${name}.app`, 'Contents', 'MacOS', name), name]
+    ? [path.join(`${name}.app`, 'Contents', 'MacOS', 'DoneThat'), name]
     : [name];
   const roots = [
     process.resourcesPath ? path.resolve(process.resourcesPath, 'app.asar.unpacked', 'bin') : null,

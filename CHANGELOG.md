@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.3.3
+
+- Open System Settings on the first nearby-network denial, matching the other permissions.
+- Show the location helper as DoneThat with the app icon in macOS Location Services instead of a blank "wifi-scan" row.
+
 ## 2.3.2
 
 - Fix nearby-network permission treating an empty Wi-Fi scan as a denial, and recheck location after returning from System Settings.
