@@ -523,7 +523,7 @@ function getAppShortcutOverview() {
         { keys: keysFor('log-time'), label: 'Log time' },
         {
           keys: getHotkeyLabel(),
-          label: 'Open or close chat',
+          label: 'Open or close Don',
           note: 'Pick your own letter',
           link: { label: 'Settings > App', view: 'app-settings' }
         },
@@ -531,11 +531,11 @@ function getAppShortcutOverview() {
       ]
     },
     {
-      title: 'Chat',
+      title: 'Don',
       items: [
         { keys: 'Enter', label: 'Send message' },
         { keys: 'Shift+Enter', label: 'New line' },
-        { keys: 'Esc', label: 'Close chat' }
+        { keys: 'Esc', label: 'Close Don' }
       ]
     },
     {
