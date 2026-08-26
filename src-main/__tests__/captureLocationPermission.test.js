@@ -119,8 +119,18 @@ async function requestLocation() {
   await mockIpcHandlers.on.get('requestLocationPermission')()
 }
 
+const originalPlatform = process.platform
+
+function setPlatform(value) {
+  Object.defineProperty(process, 'platform', { value, configurable: true })
+}
+
 beforeAll(() => {
   capture.setCaptureInterval(5)
+})
+
+afterEach(() => {
+  setPlatform(originalPlatform)
 })
 
 beforeEach(() => {
@@ -184,6 +194,8 @@ describe('requestLocationPermission', () => {
   })
 
   it('holds the first denial back and opens Settings only when asked again', async () => {
+    // Location Services is a macOS pane; Linux/Windows never open this URL.
+    setPlatform('darwin')
     networks.requestLocationPermission.mockResolvedValue(DENIED)
 
     await requestLocation()
@@ -196,6 +208,7 @@ describe('requestLocationPermission', () => {
   })
 
   it('does not send anyone to Settings over an MDM restriction', async () => {
+    setPlatform('darwin')
     networks.requestLocationPermission.mockResolvedValue({
       ...DENIED,
       authorization: 'restricted',

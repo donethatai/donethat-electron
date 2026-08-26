@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.3.2
+
+- Fix nearby-network permission treating an empty Wi-Fi scan as a denial, and recheck location after returning from System Settings.
+
 ## 2.3.1
 
 - Patch electron-builder macOS signing so Intel CI can unlock the temporary keychain (workaround for electron-builder#10066 until PR #10101 ships).
