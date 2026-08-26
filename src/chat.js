@@ -99,7 +99,7 @@ const EMPTY_CHAT_PROMPTS = Object.freeze([
   'Show who I am following',
   'Search for Christoph',
   'Accept my pending follow requests',
-  'Turn proactive chat off',
+  'Turn proactive Don off',
   'Update my workhours',
   'Search the DoneThat docs',
   'How do goals work in DoneThat?',
@@ -1702,9 +1702,9 @@ window.addEventListener('keydown', (e) => {
 try {
   const closeBtn = document.getElementById('closeOverlayBtn')
   if (closeBtn) {
-    closeBtn.title = 'Close Chat'
-    closeBtn.setAttribute('aria-label', 'Close Chat')
-    closeBtn.setAttribute('data-tooltip', 'Close Chat')
+    closeBtn.title = 'Close'
+    closeBtn.setAttribute('aria-label', 'Close')
+    closeBtn.setAttribute('data-tooltip', 'Close')
   }
 } catch (e) {}
 

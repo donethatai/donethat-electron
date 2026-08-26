@@ -2499,7 +2499,7 @@ function buildAppMenuTemplate() {
     label: 'Help',
     submenu: [
       {
-        label: `Open Chat (${getHotkeyLabel()})`,
+        label: 'Open Don',
         accelerator: getHotkeyAccelerator(),
         click: () => {
           try {
@@ -2576,7 +2576,7 @@ function buildContextMenu() {
     click: () => navigateToView('signup-next')
   },
     {
-      label: `Open Chat (${getHotkeyLabel()})`,
+      label: 'Don',
       enabled: isLoggedIn && hasValidAccess,
       click: () => {
         // Only show overlay if authenticated and has valid access

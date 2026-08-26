@@ -1374,14 +1374,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const openChatBtn = document.getElementById('openChatBtn');
 
   if (openChatBtn) {
-    const isWaylandLinux = window.electronAPI?.platform === 'linux' && !!window.electronAPI?.isWayland;
-    // The button always reads just "Chat"; the hotkey lives in the tooltip and
-    // in the shortcuts overview (Cmd/Ctrl+/) instead of widening the top bar.
-    const applyChatLabel = (label) => {
-      openChatBtn.textContent = 'Chat';
-      openChatBtn.title = label ? `Chat (${label})` : 'Chat';
-    };
-    applyChatLabel(null);
+    // The button reads just "Don"; the hotkey lives in the shortcuts overview
+    // (Cmd/Ctrl+/) instead of widening the top bar or the tooltip.
+    openChatBtn.textContent = 'Don';
+    openChatBtn.title = 'Don';
     
     openChatBtn.addEventListener('click', () => {
       // Only allow chat if authenticated and has valid access
@@ -1393,19 +1389,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       try { ipcRenderer.send('overlay:toggle'); } catch (e) {}
     });
-
-    if (!isWaylandLinux) {
-      // React to hotkey updates from main to refresh label
-      try {
-        ipcRenderer.on('hotkey:updated', (payload) => {
-          applyChatLabel(payload && payload.label ? payload.label : null);
-        });
-        // Also request current label once
-        ipcRenderer.invoke('hotkey:get').then((res) => {
-          applyChatLabel(res && res.success && res.label ? res.label : null);
-        }).catch(() => {});
-      } catch (_) {}
-    }
   }
   const shortcutsOverlayCloseBtn = document.getElementById('shortcutsOverlayCloseBtn');
   if (shortcutsOverlayCloseBtn) {
