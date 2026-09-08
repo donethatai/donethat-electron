@@ -55,6 +55,12 @@ ipcRenderer.on('desktop:log-time', () => {
   postDesktopMessage({ source: 'donethat-desktop', type: 'desktop:log-time' });
 });
 
+// Host -> portal: revalidate cached data in place. Sent when the window comes
+// back after being hidden, in place of the reload that used to happen there.
+ipcRenderer.on('desktop:refresh-data', () => {
+  postDesktopMessage({ source: 'donethat-desktop', type: 'desktop:refresh-data' });
+});
+
 ipcRenderer.on('auth:reauth-result', (_event, payload) => {
   postDesktopMessage({ source: 'donethat-desktop', type: 'auth:reauth-result', payload: payload || {} });
 });

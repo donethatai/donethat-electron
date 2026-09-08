@@ -570,6 +570,26 @@
             </div>
           </div>
 
+          <div class="dt-card dt-settings-card hidden" id="locationCard" data-settings-card>
+            <div class="dt-card-header">
+              <h2 class="dt-card-title">WiFi permissions</h2>
+              <p class="dt-card-description">
+                To categorize your work as "office" or "remote", DoneThat checks your available WiFi networks and categorizes your location based on those.
+              </p>
+            </div>
+            <div class="dt-card-content space-y-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="dt-section-title">Nearby networks</div>
+                  <div class="dt-supporting-text">Network names and your router's ID. <span id="locationMacNote" class="hidden">macOS will ask for location permission because WiFi networks can be used to estimate location.</span></div>
+                  <div id="locationPermissionNote" class="dt-supporting-text hidden mt-2"></div>
+                  <button id="recheckLocationPermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check Location Permission</button>
+                </div>
+                <label class="toggle"><input type="checkbox" id="locationCheckbox"><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+
           <div class="dt-card dt-settings-card" id="microphonePermissionsCard" data-settings-card>
             <div class="dt-card-header">
               <h2 class="dt-card-title">Audio permissions</h2>
@@ -608,26 +628,6 @@
                   <input type="text" value="sudo apt install pulseaudio-utils" readonly class="code-input" onclick="this.select()" />
                 </div>
                 <p class="instruction-text text-xs mt-2">This tool is required for audio session detection on Linux. After installation, restart DoneThat.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="dt-card dt-settings-card hidden" id="locationCard" data-settings-card>
-            <div class="dt-card-header">
-              <h2 class="dt-card-title">WiFi permissions</h2>
-              <p class="dt-card-description">
-                To categorize your work as "office" or "remote", DoneThat checks your available WiFi networks and categorizes your location based on those.
-              </p>
-            </div>
-            <div class="dt-card-content space-y-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="dt-section-title">Nearby networks</div>
-                  <div class="dt-supporting-text">Network names and your router's ID. <span id="locationMacNote" class="hidden">macOS will ask for location permission because WiFi networks can be used to estimate location.</span></div>
-                  <div id="locationPermissionNote" class="dt-supporting-text hidden mt-2"></div>
-                  <button id="recheckLocationPermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check Location Permission</button>
-                </div>
-                <label class="toggle"><input type="checkbox" id="locationCheckbox"><span class="slider"></span></label>
               </div>
             </div>
           </div>

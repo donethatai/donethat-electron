@@ -162,6 +162,7 @@ const validReceiveChannels = [
   'app:window-hidden',
   'app:window-shown',
   'webview:reload',
+  'webview:unload',
   'hotkey:updated',
   'shortcuts:toggle',
   'portal:log-time',

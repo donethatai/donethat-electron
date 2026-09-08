@@ -20,7 +20,7 @@ if (process.platform === 'linux') {
   }
 }
 
-const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor, globalShortcut, session } = require('electron')
+const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor, globalShortcut, session, webContents } = require('electron')
 const path = require('path')
 const crypto = require('crypto')
 const { autoUpdater } = require('electron-updater')
@@ -877,6 +877,12 @@ let lastWebviewReloadAt = 0;
 let mainLogMirrorInstalled = false
 let webContentsLogMirrorInstalled = false
 let processMetricsInterval = null
+// The embedded portal is now kept loaded while the window is hidden, so its
+// process is watched: if it stays above the memory budget across consecutive
+// samples the renderer is told to unload it, and the next open reloads it.
+const PORTAL_MEMORY_BUDGET_MB = Number(process.env.DT_PORTAL_MEMORY_BUDGET_MB || 900)
+const PORTAL_MEMORY_BREACHES_BEFORE_UNLOAD = 3
+let portalMemoryBreaches = 0
 let lastRecordingAdjustAt = 0
 let lastWebviewActivityAt = 0
 
@@ -1041,17 +1047,6 @@ try {
     return message;
   });
 } catch (_) {}
-
-// Utility: hide main window only if app is not active (no focused window)
-function hideMainWindowIfVisible() {
-  try {
-    const hasFocusedWindow = !!BrowserWindow.getFocusedWindow();
-    if (!hasFocusedWindow && mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-      try { mainWindow.webContents.send('app:window-hidden'); } catch (_) {}
-      mainWindow.hide();
-    }
-  } catch (e) {}
-}
 
 function restoreShowAndFocusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1468,6 +1463,63 @@ function scheduleUpdateChecks() {
   }, 1 * 60 * 1000);
 }
 
+/**
+ * OS process id of the embedded portal webview, or null when it is unloaded.
+ *
+ * The portal is a separate <webview> guest, so it never shows up as the main
+ * window's own webContents.
+ */
+function getPortalProcessId() {
+  try {
+    const guest = webContents.getAllWebContents().find((wc) => {
+      try {
+        return !wc.isDestroyed() && wc.getType() === 'webview'
+      } catch (_) {
+        return false
+      }
+    })
+    if (!guest) return null
+    const pid = guest.getOSProcessId()
+    return Number.isFinite(pid) && pid > 0 ? pid : null
+  } catch (_) {
+    return null
+  }
+}
+
+/**
+ * Unload the kept-warm portal if its process stays over the memory budget.
+ *
+ * Keeping the webview loaded across window hides is what makes reopening
+ * instant, but it is only acceptable with a hard ceiling: a run of samples
+ * above the budget hands the memory back, and the next open reloads the page.
+ */
+function enforcePortalMemoryBudget(portal) {
+  if (!portal) {
+    portalMemoryBreaches = 0
+    return
+  }
+
+  if (portal.privateMb <= PORTAL_MEMORY_BUDGET_MB) {
+    portalMemoryBreaches = 0
+    return
+  }
+
+  portalMemoryBreaches += 1
+  if (portalMemoryBreaches < PORTAL_MEMORY_BREACHES_BEFORE_UNLOAD) return
+  portalMemoryBreaches = 0
+
+  // Never pull the page out from under someone who is looking at it.
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) return
+
+  try {
+    mainWindow?.webContents?.send('webview:unload', { reason: 'memory-budget' })
+    recordSignal('portal_unloaded_for_memory', {
+      privateMb: portal.privateMb,
+      budgetMb: PORTAL_MEMORY_BUDGET_MB
+    })
+  } catch (_) {}
+}
+
 function startProcessMetricsSampling() {
   if (processMetricsInterval) {
     clearInterval(processMetricsInterval)
@@ -1478,22 +1530,31 @@ function startProcessMetricsSampling() {
     try {
       const metrics = app.getAppMetrics()
       if (!Array.isArray(metrics) || metrics.length === 0) return
-      const top = metrics
-        .map((item) => {
-          const cpuPercent = Number(item?.cpu?.percentCPUUsage || 0)
-          const privateBytes = Number(item?.memory?.privateBytes || 0)
-          return {
-            pid: item?.pid,
-            type: item?.type || 'unknown',
-            cpuPercent: Number.isFinite(cpuPercent) ? Math.round(cpuPercent * 100) / 100 : 0,
-            privateMb: Number.isFinite(privateBytes) ? Math.round((privateBytes / (1024 * 1024)) * 100) / 100 : 0
-          }
-        })
-        .sort((a, b) => b.cpuPercent - a.cpuPercent)
-        .slice(0, 2)
-      if (top.length === 0) return
-      const hot = top[0]
-      const second = top[1]
+
+      const normalized = metrics.map((item) => {
+        const cpuPercent = Number(item?.cpu?.percentCPUUsage || 0)
+        // Both fields are kilobytes, not bytes - getAppMetrics reports memory in KB.
+        // privateBytes is 0 on Windows, so fall back to the working set there;
+        // reporting only privateBytes made every Windows sample look free.
+        const memoryKb = Number(item?.memory?.privateBytes || 0) ||
+          Number(item?.memory?.workingSetSize || 0)
+        return {
+          pid: item?.pid,
+          type: item?.type || 'unknown',
+          cpuPercent: Number.isFinite(cpuPercent) ? Math.round(cpuPercent * 100) / 100 : 0,
+          privateMb: Number.isFinite(memoryKb) ? Math.round((memoryKb / 1024) * 100) / 100 : 0
+        }
+      })
+
+      const byCpu = [...normalized].sort((a, b) => b.cpuPercent - a.cpuPercent)
+      const hot = byCpu[0]
+      const second = byCpu[1]
+      const totalPrivateMb = Math.round(normalized.reduce((sum, item) => sum + item.privateMb, 0) * 100) / 100
+      const totalCpuPercent = Math.round(normalized.reduce((sum, item) => sum + item.cpuPercent, 0) * 100) / 100
+
+      const portalPid = getPortalProcessId()
+      const portal = portalPid ? normalized.find((item) => item.pid === portalPid) : null
+
       recordSignal('process_metrics_sample', {
         sampleCount: metrics.length,
         hotType: hot?.type || 'unknown',
@@ -1501,8 +1562,16 @@ function startProcessMetricsSampling() {
         hotCpuPercent: hot?.cpuPercent ?? 0,
         hotPrivateMb: hot?.privateMb ?? 0,
         secondType: second?.type || 'none',
-        secondCpuPercent: second?.cpuPercent ?? 0
+        secondCpuPercent: second?.cpuPercent ?? 0,
+        totalPrivateMb,
+        totalCpuPercent,
+        portalLoaded: !!portal,
+        portalPrivateMb: portal?.privateMb ?? 0,
+        portalCpuPercent: portal?.cpuPercent ?? 0,
+        windowVisible: !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible())
       })
+
+      enforcePortalMemoryBudget(portal)
     } catch (_) {}
   }
 
@@ -2231,9 +2300,11 @@ ipcMain.on('overlay:show-if-hidden', (event, opts) => {
     if (!isAuthenticated || !hasValidAccess) return;
     if (!overlayWindow || overlayWindow.isDestroyed()) createOverlayWindow();
     if (!overlayWindow.isVisible()) {
-      returnFocusToMainOnOverlayClose = true; // opened from main app
-      hideMainWindowIfVisible();
-      showOverlayOnCurrentSpace({ ...opts, returnFocusToMainOnClose: true });
+      // Never touch the main window here: if it is open it stays open, if it is
+      // hidden it stays hidden. Only hand focus back to main if it actually has it.
+      const mainIsFocused = !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused());
+      returnFocusToMainOnOverlayClose = mainIsFocused;
+      showOverlayOnCurrentSpace({ ...opts, returnFocusToMainOnClose: mainIsFocused });
     }
   } catch (e) {
     console.error('[MAIN] Error in overlay:show-if-hidden:', e);

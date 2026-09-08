@@ -56,7 +56,37 @@ const PORTAL_AUTH_HANDSHAKE_RETRY_DELAYS_MS = [350, 900, 2200, 5000];
 let portalHandshakeRetryTimers = [];
 let portalSpinnerTimer = null; // delay before showing dashboard spinner
 const PORTAL_RELOAD_COOLDOWN_MS = 10000; // avoid reloads shortly after token delivery
-const PORTAL_DEFAULT_URL = 'https://app.donethat.ai';
+const PORTAL_ORIGIN = 'https://app.donethat.ai';
+// Open the portal directly on the route the dashboard shows. Loading the bare
+// origin cost two extra navigations on every launch: `/` is a client component
+// that waits for Firebase auth before pushing `/feed`, and `/feed` is a
+// server-side redirect to `/summaries`.
+const PORTAL_DEFAULT_URL = `${PORTAL_ORIGIN}/summaries`;
+// The webview is kept loaded for the life of the session. Hiding the window,
+// leaving it hidden, and coming back all reuse the same page - that is the whole
+// point, and it is why there is no idle timer here. The only things that can
+// take it away are signing out and the memory watchdog in the main process,
+// which acts on measured resource use rather than on a clock.
+const PORTAL_STALE_REFRESH_MS = 5 * 60 * 1000;
+// The app usually starts straight into the tray, so the window is hidden when
+// the dashboard first becomes the current view. Waiting for the user to open it
+// before creating the webview means the very first open is the one slow open.
+// Build it in the background instead, after launch has settled.
+const PORTAL_HIDDEN_PRELOAD_DELAY_MS = 4000;
+let portalHiddenPreloadTimer = null;
+let portalFreshAtMs = 0; // last full load or accepted soft refresh
+let portalLoadStartedAtMs = 0; // for load-duration telemetry
+// Identity of the deploy the loaded page came from, and the endpoint that
+// reports the current one. A reload happens when those differ - never on a
+// timer.
+const PORTAL_VERSION_URL = `${PORTAL_ORIGIN}/api/version`;
+const PORTAL_VERSION_CHECK_TIMEOUT_MS = 4000;
+// A tray window is shown many times a day; there is no point asking on every
+// single show whether a deploy landed in the last few seconds.
+const PORTAL_VERSION_CHECK_INTERVAL_MS = 60 * 1000;
+let portalLoadedBuildId = null;
+let lastPortalVersionCheckMs = 0;
+let portalDeployRetryTimer = null;
 /**
  * View names that mean "open this route in the embedded web app" rather than a
  * host screen. Keyed by the names main sends over `navigate` (app shortcuts,
@@ -273,7 +303,7 @@ function startPortalLoadWatchdog(reason) {
  */
 const SETUP_SECTIONS = {
   all: null,
-  permissions: ['requiredPermissionsCard', 'microphonePermissionsCard', 'locationCard'],
+  permissions: ['requiredPermissionsCard', 'locationCard', 'microphonePermissionsCard'],
   llm: ['llmSettingsCard'],
   appconfig: ['appConfigCard'],
   masking: ['appMaskingCard']
@@ -571,20 +601,24 @@ function canReloadPortalNow() {
   return true;
 }
 
+/** @returns {boolean} whether the reload actually happened. */
 function safePortalReload(reason) {
   try {
-    if (!portalView) return;
+    if (!portalView) return false;
     // Only reload once the webview has emitted dom-ready; calling reload too early
     // can throw “WebView must be attached to the DOM and dom-ready emitted”.
-    if (!portalDomReady) return;
-    if (!navigator.onLine) { showWebviewError(); return; }
-    if (!canReloadPortalNow()) { return; }
+    if (!portalDomReady) return false;
+    if (!navigator.onLine) { showWebviewError(); return false; }
+    if (!canReloadPortalNow()) { return false; }
     hideWebviewError();
+    portalLoadStartedAtMs = Date.now();
     portalView.reload();
     emitWebviewActivity('reload', reason || 'safe-reload');
     startPortalLoadWatchdog(reason || 'safe-reload');
+    return true;
   } catch (e) {
     console.error('[Webview] Error in safePortalReload:', e);
+    return false;
   }
 }
 
@@ -729,6 +763,14 @@ function attachPortalViewListeners(view) {
     view.addEventListener('did-finish-load', () => {
       if (!isActivePortalView()) return;
       portalLoadRetries = 0;
+      portalFreshAtMs = Date.now();
+      capturePortalBuildId();
+      if (portalLoadStartedAtMs) {
+        emitTelemetrySignal('portal_load_complete', {
+          durationMs: Date.now() - portalLoadStartedAtMs
+        });
+        portalLoadStartedAtMs = 0;
+      }
       clearPortalLoadWatchdog();
       hidePortalSpinner();
       if (shouldSendGenericPortalToken(pendingPortalBridge)) {
@@ -832,6 +874,7 @@ function createPortalView(reason) {
   portalView = view;
   portalDomReady = false;
   portalLoadRetries = 0;
+  portalLoadStartedAtMs = Date.now();
   resetPortalAuthSyncState();
   attachPortalViewListeners(view);
   portalMount.appendChild(view);
@@ -858,6 +901,11 @@ function destroyPortalView(reason) {
   portalView = null;
   portalDomReady = false;
   portalLoadRetries = 0;
+  portalFreshAtMs = 0;
+  portalLoadStartedAtMs = 0;
+  portalLoadedBuildId = null;
+  lastPortalVersionCheckMs = 0;
+  cancelPortalHiddenPreload();
   resetPortalAuthSyncState();
   clearPortalLoadWatchdog();
   clearPortalHandshakeRetries();
@@ -868,12 +916,173 @@ function destroyPortalView(reason) {
   updatePortalPlaceholderVisibility();
 }
 
+/**
+ * Ask the web app which deploy is currently live.
+ *
+ * @returns {Promise<string|null>} the build id, or null when it cannot be read
+ *   (offline, timed out, or an older deploy without the endpoint). Null always
+ *   means "assume unchanged": a failed check must never cost the user their
+ *   loaded page.
+ */
+async function fetchPortalBuildId() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PORTAL_VERSION_CHECK_TIMEOUT_MS);
+    const response = await fetch(PORTAL_VERSION_URL, {
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const buildId = payload && payload.buildId;
+    return typeof buildId === 'string' && buildId ? buildId : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Record which deploy the page now on screen came from. */
+function capturePortalBuildId() {
+  fetchPortalBuildId().then((buildId) => {
+    if (buildId) portalLoadedBuildId = buildId;
+  });
+}
+
+/**
+ * Bring a kept-warm portal up to date without throwing the page away.
+ *
+ * Asks the web app to revalidate its own caches, which is what the 5-minute
+ * reload used to achieve at the cost of a full reboot of the SPA. The page is
+ * only actually reloaded when the deploy behind it has changed, which is the
+ * one thing a running SPA cannot fix by refetching data.
+ */
+function refreshPortalIfStale(reason) {
+  if (!portalView || !portalDomReady) return;
+  if (!isTrustedPortalView(portalView)) return;
+
+  // Runs on its own: a new deploy is worth picking up even if the data is fresh.
+  reloadPortalIfDeployChanged(reason);
+
+  const ageMs = portalFreshAtMs ? (Date.now() - portalFreshAtMs) : Infinity;
+  if (ageMs < PORTAL_STALE_REFRESH_MS) return;
+
+  try {
+    portalView.send('desktop:refresh-data');
+    portalFreshAtMs = Date.now();
+    emitWebviewActivity('refresh-data', reason || 'stale');
+  } catch (e) {
+    console.error('[PortalLifecycle] soft refresh failed, reloading', e);
+    safePortalReload(reason || 'refresh-fallback');
+  }
+}
+
+/**
+ * Reload the portal if - and only if - the web app has been redeployed.
+ *
+ * This replaces reloading on a timer. A page kept alive for days is fine as
+ * long as it is running the current build; when it is not, no amount of data
+ * refreshing helps, because the code itself is stale.
+ */
+function reloadPortalIfDeployChanged(reason) {
+  if (!navigator.onLine) return;
+
+  const nowMs = Date.now();
+  if (nowMs - lastPortalVersionCheckMs < PORTAL_VERSION_CHECK_INTERVAL_MS) return;
+  lastPortalVersionCheckMs = nowMs;
+
+  fetchPortalBuildId().then((buildId) => {
+    if (!buildId) return;
+    if (!portalLoadedBuildId) {
+      // First successful read: adopt it as the baseline rather than reloading.
+      portalLoadedBuildId = buildId;
+      return;
+    }
+    if (buildId === portalLoadedBuildId) return;
+    if (!portalView || !portalDomReady) return;
+
+    console.info('[PortalLifecycle] new deploy', portalLoadedBuildId, '->', buildId);
+    // The baseline only moves once the page in front of the user really is the
+    // new build. safePortalReload can decline - the post-token auth cooldown is
+    // the common one - and adopting the id anyway would make every later check
+    // agree that a page still running the old build is current, so that deploy
+    // would be missed for the rest of the session.
+    if (safePortalReload((reason || 'deploy') + '-changed')) {
+      portalLoadedBuildId = buildId;
+      return;
+    }
+    schedulePortalDeployRetry(reason);
+  });
+}
+
+/**
+ * Try the pending deploy again once the reload cooldown has passed.
+ *
+ * Without this the retry would wait for the next window-shown or refresh
+ * event, which for a window left open is never.
+ */
+function schedulePortalDeployRetry(reason) {
+  if (portalDeployRetryTimer) return;
+  portalDeployRetryTimer = setTimeout(() => {
+    portalDeployRetryTimer = null;
+    // Let the check run again rather than waiting out the throttle window.
+    lastPortalVersionCheckMs = 0;
+    reloadPortalIfDeployChanged(reason);
+  }, PORTAL_RELOAD_COOLDOWN_MS + 1000);
+}
+
+function cancelPortalHiddenPreload() {
+  if (!portalHiddenPreloadTimer) return;
+  clearTimeout(portalHiddenPreloadTimer);
+  portalHiddenPreloadTimer = null;
+}
+
+/**
+ * Build the portal while the window is still hidden.
+ *
+ * Deliberately delayed: at launch the app is busy starting capture and checking
+ * permissions, and loading the web app on top of that would compete with work
+ * the user is waiting on. A few seconds later the machine is idle and the load
+ * costs nothing the user can see.
+ */
+function schedulePortalHiddenPreload(reason) {
+  if (portalView || portalHiddenPreloadTimer) return;
+
+  portalHiddenPreloadTimer = setTimeout(() => {
+    portalHiddenPreloadTimer = null;
+    // Conditions can have changed during the delay.
+    if (portalView) return;
+    if (getCurrentView() !== 'dashboard') return;
+    if (!isAuthenticated()) return;
+    if (!navigator.onLine) return;
+    createPortalView('hidden-preload-' + (reason || 'startup'));
+  }, PORTAL_HIDDEN_PRELOAD_DELAY_MS);
+}
+
 function ensurePortalActive(reason) {
-  if (!(getCurrentView() === 'dashboard' && isAppWindowVisible === true)) {
+  if (getCurrentView() !== 'dashboard') {
+    // Every other view is an auth screen, so this means signed out - there is
+    // nothing worth keeping warm.
     destroyPortalView(reason || 'portal-inactive');
     return null;
   }
 
+  if (isAppWindowVisible !== true) {
+    // Hiding the window used to destroy the webview, so every reopen paid a
+    // full web-app boot: JS parse, Firebase auth, then ~15 uncached API calls.
+    // It now stays loaded for as long as the session lasts. Only the memory
+    // watchdog in the main process can take it away, and only on measured
+    // resource pressure.
+    if (portalView) return portalView;
+    // Nothing loaded yet and the window is hidden - which is how the app starts
+    // when it launches to the tray. Warm it in the background so the first open
+    // is as fast as every later one.
+    schedulePortalHiddenPreload(reason);
+    updatePortalPlaceholderVisibility();
+    return null;
+  }
+
+  cancelPortalHiddenPreload();
   return portalView || createPortalView(reason || 'ensure-portal-active');
 }
 
@@ -1174,6 +1383,11 @@ async function loadUserSettingsCallback() {
 
 // Function to show webview error message
 function showWebviewError() {
+  // A background preload can fail while the window is hidden. Showing the error
+  // then would mean the user opens the app onto a failure they never saw
+  // happen; `app:window-shown` recovers the portal instead.
+  if (isAppWindowVisible !== true) return;
+
   const dashboardEmbed = document.querySelector('.dashboard-embed');
   // Hide the webview while showing the error overlay
   try {
@@ -1315,13 +1529,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Respond to main process request to reload webview (throttled in main)
   try {
+    ipcRenderer.on('webview:unload', (payload) => {
+      try {
+        const reason = (payload && payload.reason) || 'resource-watchdog';
+        if (!portalView) return;
+        console.warn('[PortalLifecycle] unload requested by main:', reason);
+        destroyPortalView('main-' + reason);
+      } catch (e) { console.error('[Webview] Error unloading on request:', e); }
+    });
+
+    // Main asks for this on window show/focus. It used to be a hard reload,
+    // which threw away a perfectly good page (and its caches) to get fresh
+    // data; ask the web app to revalidate instead and only fall back to a
+    // reload for a very old page.
     ipcRenderer.on('webview:reload', () => {
       try {
         if (getCurrentView && getCurrentView() === 'dashboard' && portalView) {
-          safePortalReload('ipc-reload');
-          schedulePortalKickAfterDashboardNavigation();
+          refreshPortalIfStale('ipc-refresh');
         }
-      } catch (e) { console.error('[Webview] Error reloading on IPC webview:reload:', e); }
+      } catch (e) { console.error('[Webview] Error refreshing on IPC webview:reload:', e); }
     });
   } catch (e) {}
 
@@ -1380,7 +1606,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     hideWebviewError();
     try {
       const view = ensurePortalActive('online');
-      if (view) {
+      // Only reload what the user is actually looking at; a portal kept warm
+      // behind a hidden window is refreshed when the window comes back.
+      if (view && isAppWindowVisible === true) {
         safePortalReload('online');
       }
     } catch (e) { console.error('[Webview] reload on online failed', e); }
@@ -1746,12 +1974,21 @@ ipcRenderer.on('navigate', (viewName) => {
 
 ipcRenderer.on('app:window-hidden', () => {
   isAppWindowVisible = false;
-  destroyPortalView('app-window-hidden');
+  // Nothing to do: the portal stays loaded.
 });
 
 ipcRenderer.on('app:window-shown', () => {
   isAppWindowVisible = true;
   ensurePortalActive('app-window-shown');
+  // A preload that failed while hidden left no visible error, so check now that
+  // the page is actually usable. Only a load that has passed its timeout counts
+  // as stalled: recoverPortalView recreates the webview when dom-ready has not
+  // fired, which would throw away a load that is simply still in flight.
+  if (portalView && !portalDomReady && portalLoadStartedAtMs &&
+      (Date.now() - portalLoadStartedAtMs) > PORTAL_LOAD_TIMEOUT_MS) {
+    recoverPortalView('hidden-preload-recovery');
+  }
+  refreshPortalIfStale('app-window-shown');
   if (getCurrentView() === 'dashboard') {
     schedulePortalKickAfterDashboardNavigation();
   }
