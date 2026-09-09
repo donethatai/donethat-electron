@@ -1,9 +1,19 @@
 const os = require('os')
+const fs = require('fs')
+const path = require('path')
 const { app } = require('electron')
 
 const TELEMETRY_SCHEMA_VERSION = 1
 const MAX_COMPLETED_QUEUE = 24
 const MAX_LOG_ENTRIES_PER_CYCLE = 100
+// Only the tail of the previous session is worth carrying over. A full queue
+// would take two hours to drain at one record per capture cycle, and by then
+// the interesting part - the cycles just before the process died - is stale.
+const MAX_RESTORED_CYCLES = 8
+// The backlog is rewritten in place, so this is a throughput knob, not a cap on
+// how much we keep: one write a minute of a ~200KB file.
+const BACKLOG_WRITE_INTERVAL_MS = 60 * 1000
+const BACKLOG_FILE = 'telemetry-backlog.json'
 const MAX_LOG_MESSAGE_CHARS = 600
 const MAX_LOG_META_LENGTH = 240
 
@@ -12,6 +22,13 @@ let activeCycle = null
 const pendingLogs = []
 const completedQueue = []
 let cycleSeq = 0
+
+const sessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+let backlogPath = null
+let backlogDirty = false
+let backlogWriteTimer = null
+let shutdownRecorded = false
+let backlogTmpSeq = 0
 
 function createAggregate() {
   return {
@@ -132,6 +149,7 @@ function recordLog(level, source, message, meta = null) {
   }
   logs.push(entry)
   trimLogs(logs)
+  markBacklogDirty()
 }
 
 function recordSignal(name, fields = {}) {
@@ -324,12 +342,194 @@ function endCycle(metadata = {}) {
   }
 
   activeCycle = null
+  markBacklogDirty()
   return telemetry
+}
+
+// ---------------------------------------------------------------------------
+// Crash-survivable backlog
+//
+// Completed telemetry rides out on the next capture send, so anything still
+// queued when the process ends is lost - and the cycles right before an
+// unexpected exit are exactly the ones worth reading. The same goes for
+// `pendingLogs`, which holds everything that happened after the last cycle
+// closed. Both are mirrored to disk so the next launch can ship them.
+// ---------------------------------------------------------------------------
+
+function resolveBacklogPath() {
+  if (backlogPath) return backlogPath
+  try {
+    backlogPath = path.join(app.getPath('userData'), BACKLOG_FILE)
+  } catch (_) {
+    // getPath throws before the app is ready; the caller retries next tick.
+    return null
+  }
+  return backlogPath
+}
+
+/** The slice worth keeping: recent completed cycles plus the un-closed tail. */
+function buildBacklogSnapshot(cleanShutdown) {
+  return {
+    schemaVersion: TELEMETRY_SCHEMA_VERSION,
+    sessionId,
+    savedAt: Date.now(),
+    cleanShutdown: !!cleanShutdown,
+    appVersion: getAppVersion(),
+    queue: completedQueue.slice(-MAX_RESTORED_CYCLES),
+    // Logs recorded since the last cycle closed. On a clean run this is a few
+    // heartbeats; after a stall it is the whole record of what went wrong.
+    tailLogs: cloneLogs(activeCycle ? activeCycle.logs : pendingLogs)
+  }
+}
+
+/**
+ * Each write gets its own scratch file. The shutdown flush can land while a
+ * timed write is still in flight, and sharing one temp path let the two
+ * interleave into a file that parsed as nothing.
+ */
+function nextBacklogTmpPath(target) {
+  backlogTmpSeq += 1
+  return `${target}.${process.pid}.${backlogTmpSeq}.tmp`
+}
+
+/** Atomic so a kill mid-write cannot leave an unparseable file behind. */
+function writeBacklogSync(cleanShutdown) {
+  const target = resolveBacklogPath()
+  if (!target) return false
+  const tmp = nextBacklogTmpPath(target)
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(buildBacklogSnapshot(cleanShutdown)))
+    fs.renameSync(tmp, target)
+    backlogDirty = false
+    return true
+  } catch (_) {
+    try { fs.unlinkSync(tmp) } catch (_) {}
+    return false
+  }
+}
+
+/**
+ * The timed write. Synchronous on purpose: publication has to be serialized
+ * against the shutdown flush, and on a single thread that is what `sync` buys.
+ * An async rename could still be queued when `before-quit` runs, land after the
+ * shutdown snapshot, and replace it with an older one - losing the last logs and
+ * relabelling a clean exit as a crash. Checking a flag before the rename does
+ * not help, because the rename itself yields. The cost is one ~200KB write a
+ * minute on the main thread.
+ */
+function writeBacklogTimed() {
+  if (shutdownRecorded) return
+  writeBacklogSync(false)
+}
+
+/**
+ * Marks the on-disk copy stale. Writes are coalesced onto a timer because
+ * `recordLog` runs on every heartbeat and every signal.
+ */
+function markBacklogDirty() {
+  if (shutdownRecorded) return
+  backlogDirty = true
+  if (backlogWriteTimer) return
+  backlogWriteTimer = setTimeout(() => {
+    backlogWriteTimer = null
+    if (backlogDirty) writeBacklogTimed()
+  }, BACKLOG_WRITE_INTERVAL_MS)
+  if (typeof backlogWriteTimer.unref === 'function') backlogWriteTimer.unref()
+}
+
+/**
+ * Loads the previous session's leftovers into the queue so they ship with the
+ * next capture. Call once, after the app is ready.
+ *
+ * @returns {{restored: number, cleanShutdown: boolean|null}} What was recovered.
+ */
+function restorePersistedTelemetry() {
+  const target = resolveBacklogPath()
+  const result = { restored: 0, cleanShutdown: null }
+  if (!target) return result
+
+  let saved = null
+  try {
+    saved = JSON.parse(fs.readFileSync(target, 'utf8'))
+  } catch (_) {
+    // Missing or corrupt: nothing to recover, and nothing to report.
+    return result
+  }
+  // Guard against reading our own file back after a same-session re-init.
+  if (!saved || typeof saved !== 'object' || saved.sessionId === sessionId) return result
+
+  const previous = Array.isArray(saved.queue) ? saved.queue.slice(-MAX_RESTORED_CYCLES) : []
+  const tailLogs = Array.isArray(saved.tailLogs) ? saved.tailLogs : []
+
+  // The tail is not a cycle, but it travels the same way. Shaped like one so
+  // the server keeps logging it without a schema change.
+  if (tailLogs.length > 0) {
+    previous.push({
+      schemaVersion: TELEMETRY_SCHEMA_VERSION,
+      kind: 'session-tail',
+      cycleId: null,
+      cycleStartedAt: tailLogs[0]?.ts ?? null,
+      cycleEndedAt: tailLogs[tailLogs.length - 1]?.ts ?? null,
+      captureCycleDurationMs: 0,
+      dimensions: { appVersion: saved.appVersion || 'unknown', platform: process.platform },
+      phaseDurationsMs: {},
+      counters: {},
+      memoryMb: {},
+      logs: tailLogs,
+      outcome: { status: 'session-tail', authError: false, tokenExpired: false }
+    })
+  }
+
+  for (const entry of previous) {
+    if (!entry || typeof entry !== 'object') continue
+    entry.previousSession = {
+      sessionId: saved.sessionId || 'unknown',
+      savedAt: saved.savedAt || null,
+      // False here is the interesting case: the process did not shut down
+      // through `before-quit`, so it was killed, crashed, or lost power.
+      cleanShutdown: !!saved.cleanShutdown
+    }
+    completedQueue.push(entry)
+    result.restored += 1
+  }
+  while (completedQueue.length > MAX_COMPLETED_QUEUE) completedQueue.shift()
+
+  result.cleanShutdown = !!saved.cleanShutdown
+  try { fs.unlinkSync(target) } catch (_) {}
+
+  if (result.restored > 0) {
+    recordSignal('telemetry_backlog_restored', {
+      records: result.restored,
+      previousSessionId: saved.sessionId || 'unknown',
+      previousCleanShutdown: saved.cleanShutdown ? '1' : '0',
+      previousSavedAt: saved.savedAt || 0,
+      staleSeconds: saved.savedAt ? Math.round((Date.now() - saved.savedAt) / 1000) : -1
+    })
+  }
+  return result
+}
+
+/**
+ * Final synchronous flush. Runs on `before-quit`, which is also what stamps the
+ * backlog as a clean shutdown - a file without that stamp means the process
+ * went away without warning.
+ */
+function flushTelemetryForShutdown() {
+  if (shutdownRecorded) return
+  recordSignal('telemetry_session_shutdown', { sessionId })
+  shutdownRecorded = true
+  if (backlogWriteTimer) {
+    clearTimeout(backlogWriteTimer)
+    backlogWriteTimer = null
+  }
+  writeBacklogSync(true)
 }
 
 function consumeCompletedCycleTelemetry() {
   if (completedQueue.length === 0) return null
-  return completedQueue.shift()
+  const next = completedQueue.shift()
+  markBacklogDirty()
+  return next
 }
 
 function requeueCompletedCycleTelemetry(telemetry) {
@@ -338,6 +538,7 @@ function requeueCompletedCycleTelemetry(telemetry) {
   if (completedQueue.length > MAX_COMPLETED_QUEUE) {
     completedQueue.pop()
   }
+  markBacklogDirty()
 }
 
 module.exports = {
@@ -354,5 +555,11 @@ module.exports = {
   recordActiveWindowProbeTimeout,
   recordCaptureCycleSkippedOverlap,
   recordLocalQuotaCooldownSkip,
-  recordLocalBudgetExceeded
+  recordLocalBudgetExceeded,
+  restorePersistedTelemetry,
+  flushTelemetryForShutdown,
+  __test__: {
+    writeBacklogSync,
+    writeBacklogTimed
+  }
 }

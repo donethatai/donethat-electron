@@ -44,6 +44,16 @@ let stateManagerRef = null; // Store stateManager reference
 let getIdTokenFunction = null; // Store the getIdToken function reference
 let getClientTelemetryEnabledFunction = null;
 let captureCycleInFlight = false;
+// Identifies the cycle that currently owns the in-flight guard. A cycle that is
+// abandoned keeps running - its send may still land - but loses ownership, so
+// its late `finally` cannot clear a newer cycle's guard or end its telemetry.
+let captureCycleGeneration = 0;
+let captureCycleStartedAt = 0;
+// A stalled cycle blocks every later one, so the guard cannot be held forever.
+// Two intervals is well clear of a slow-but-healthy cycle (worst observed
+// legitimate send is ~40s) while capping the damage at two lost ticks.
+const CYCLE_STALL_DEADLINE_INTERVALS = 2;
+const MIN_CYCLE_STALL_DEADLINE_MS = 10 * 60 * 1000;
 const captureModuleStartedAt = Date.now();
 let microphonePermissionFocusListener = null;
 let systemAudioPermissionFocusListener = null;
@@ -1452,12 +1462,33 @@ async function maybeCleanupWindowCache() {
 // Internal function to run a single capture cycle
 async function _runCaptureCycle() {
   if (captureCycleInFlight) {
-    log.warn('_runCaptureCycle: Previous cycle still running; skipping overlap.');
-    recordCaptureCycleSkippedOverlap();
-    return;
+    const stalledMs = Date.now() - captureCycleStartedAt;
+    const deadlineMs = Math.max(
+      CYCLE_STALL_DEADLINE_INTERVALS * (captureIntervalMinutes || 5) * 60 * 1000,
+      MIN_CYCLE_STALL_DEADLINE_MS
+    );
+    if (stalledMs < deadlineMs) {
+      log.warn('_runCaptureCycle: Previous cycle still running; skipping overlap.');
+      recordCaptureCycleSkippedOverlap();
+      return;
+    }
+    // Past the deadline. Abandon the cycle rather than cancel it: whatever it is
+    // waiting on keeps running, and a send that lands late still stores its
+    // capture (writes are keyed by the capture timestamp). What stops is this
+    // cycle's claim on the guard, so tracking resumes instead of staying dead
+    // until the app restarts.
+    log.error(`_runCaptureCycle: Abandoning cycle stalled for ${Math.round(stalledMs / 1000)}s; starting a fresh cycle.`);
+    recordSignal('capture_cycle_abandoned', {
+      stalledSeconds: Math.round(stalledMs / 1000),
+      deadlineSeconds: Math.round(deadlineMs / 1000)
+    });
+    endCycle({ status: 'abandoned' });
+    captureCycleInFlight = false;
   }
 
+  const cycleGeneration = ++captureCycleGeneration;
   captureCycleInFlight = true;
+  captureCycleStartedAt = Date.now();
   beginCycle({ captureIntervalMin: captureIntervalMinutes });
   let cycleStatus = 'success';
   let cycleAuthError = false;
@@ -1541,6 +1572,11 @@ async function _runCaptureCycle() {
     handleCaptureError(error, 'capture-cycle', null, false); 
     cycleStatus = 'error';
   } finally {
+    if (cycleGeneration !== captureCycleGeneration) {
+      // Abandoned earlier; a later cycle owns the guard and the telemetry now.
+      log.warn('_runCaptureCycle: Abandoned cycle finished late; discarding its result.');
+      return;
+    }
     const cycleTelemetry = endCycle({
       status: cycleStatus,
       authError: cycleAuthError,
@@ -1620,6 +1656,9 @@ function stopCaptureInterval() {
     windowStartRetryTimer = null;
   }
   windowStartRetryCount = 0;
+  // Bumping the generation disowns any cycle still in flight, so its late
+  // `finally` cannot resurrect the guard after capturing has been stopped.
+  captureCycleGeneration += 1;
   captureCycleInFlight = false;
   
   // Stop ongoing captures

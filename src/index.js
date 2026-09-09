@@ -81,6 +81,11 @@ let portalHiddenPreloadTimer = null;
 const PORTAL_PROCESS_GONE_MAX_RECREATES = 3;
 const PORTAL_PROCESS_GONE_WINDOW_MS = 60 * 1000;
 let portalProcessGoneCount = 0;
+// Armed once a load completes, cleared if the guest dies before it fires. Only
+// a load that actually stays up clears the crash streak - resetting the moment
+// a load finished made the recreate limit unreachable, because every recreate
+// finishes a load before crashing again.
+let portalProcessGoneResetTimer = null;
 let portalProcessGoneFirstAtMs = 0;
 let portalFreshAtMs = 0; // last full load or accepted soft refresh
 let portalLoadStartedAtMs = 0; // for load-duration telemetry
@@ -804,8 +809,7 @@ function attachPortalViewListeners(view) {
       if (!isActivePortalView()) return;
       portalLoadRetries = 0;
       portalFreshAtMs = Date.now();
-      portalProcessGoneCount = 0;
-      portalProcessGoneFirstAtMs = 0;
+      armPortalProcessGoneReset();
       capturePortalBuildId();
       if (portalLoadStartedAtMs) {
         emitTelemetrySignal('portal_load_complete', {
@@ -930,6 +934,23 @@ function createPortalView(reason) {
   }
 
   return view;
+}
+
+/** A guest that survives a full crash window has recovered; forget the streak. */
+function armPortalProcessGoneReset() {
+  clearPortalProcessGoneReset();
+  portalProcessGoneResetTimer = setTimeout(() => {
+    portalProcessGoneResetTimer = null;
+    portalProcessGoneCount = 0;
+    portalProcessGoneFirstAtMs = 0;
+  }, PORTAL_PROCESS_GONE_WINDOW_MS);
+}
+
+function clearPortalProcessGoneReset() {
+  if (portalProcessGoneResetTimer) {
+    clearTimeout(portalProcessGoneResetTimer);
+    portalProcessGoneResetTimer = null;
+  }
 }
 
 function destroyPortalView(reason) {
@@ -1119,6 +1140,8 @@ function isPortalAlive() {
  * the user gets the error state with its reload button.
  */
 function handlePortalProcessGone(reason) {
+  // The guest died before it proved itself, so the pending reset is void.
+  clearPortalProcessGoneReset();
   const nowMs = Date.now();
   if (!portalProcessGoneFirstAtMs ||
       (nowMs - portalProcessGoneFirstAtMs) > PORTAL_PROCESS_GONE_WINDOW_MS) {

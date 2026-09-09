@@ -84,7 +84,7 @@ const {
 } = require('./src-main/capture')
 const { initState } = require('./src-main/main-state')
 const { getScreenSources } = require('./src-main/screenCaptureSemaphore')
-const { recordLog, recordSignal } = require('./src-main/telemetry')
+const { recordLog, recordSignal, restorePersistedTelemetry, flushTelemetryForShutdown } = require('./src-main/telemetry')
 const linuxAutostart = require('./src-main/linuxAutostart')
 
 const SENTRY_CHILD_PROCESS_EVENT_REASONS = new Set(['abnormal-exit', 'launch-failed', 'integrity-failure'])
@@ -480,8 +480,10 @@ function registerGlobalShortcut() {
     } else {
       lastRegisteredAccelerator = accel;
     }
+    return ok;
   } catch (e) {
     log.error('Error registering global shortcut:', e);
+    return false;
   }
 }
 
@@ -492,10 +494,10 @@ function registerLogTimeGlobalShortcut() {
       lastRegisteredLogTimeAccelerator = null;
     }
     if (isWaylandLinuxSession()) {
-      return;
+      return true;
     }
     const accel = getLogTimeHotkeyAccelerator();
-    if (!accel) return; // Unset by default.
+    if (!accel) return true; // Unset by default: nothing to claim, not a failure.
     const ok = globalShortcut.register(accel, () => {
       try { triggerLogTime(); } catch (e) {}
     });
@@ -504,8 +506,10 @@ function registerLogTimeGlobalShortcut() {
     } else {
       lastRegisteredLogTimeAccelerator = accel;
     }
+    return ok;
   } catch (e) {
     log.error('Error registering log time global shortcut:', e);
+    return false;
   }
 }
 
@@ -1813,6 +1817,18 @@ function setupAutoStart() {
 
 app.whenReady().then(async () => {
   recordStartupPhase('when_ready_entered')
+  // Pull in anything the previous process could not send. Do this before the
+  // first capture cycle so the backlog starts draining immediately, and early
+  // enough that an unclean shutdown is visible in this session's first upload.
+  try {
+    const recovered = restorePersistedTelemetry()
+    if (recovered.restored > 0) {
+      log.info(`[telemetry] Recovered ${recovered.restored} record(s) from the previous session `
+        + `(cleanShutdown=${recovered.cleanShutdown})`)
+    }
+  } catch (error) {
+    log.warn('[telemetry] Backlog restore failed:', error?.message || error)
+  }
   session.fromPartition('persist:donethat').setDisplayMediaRequestHandler(async (request, callback) => {
     let responded = false
     const respond = (payload) => {
@@ -1874,20 +1890,27 @@ app.whenReady().then(async () => {
       }
       HOTKEY_SUFFIX = clean.slice(-1).toUpperCase();
       try { overlayStore?.set('hotkeySuffix', HOTKEY_SUFFIX); } catch (_) {}
-      registerGlobalShortcut();
-      // The Don hotkey wins if the user moves it onto the log time letter.
+      // The Don hotkey wins if the user moves it onto the log time letter - but
+      // the loser has to let go first. Registering while Log time still holds
+      // the accelerator fails, and the subsequent unregister then leaves the
+      // key bound to nothing at all.
       if (LOG_TIME_HOTKEY_SUFFIX && LOG_TIME_HOTKEY_SUFFIX === HOTKEY_SUFFIX) {
         LOG_TIME_HOTKEY_SUFFIX = '';
         try { overlayStore?.set('logTimeHotkeySuffix', ''); } catch (_) {}
+        registerLogTimeGlobalShortcut();
         try {
           mainWindow?.webContents?.send('log-time-hotkey:updated', {
             success: true, suffix: '', accelerator: null, label: ''
           });
         } catch (_) {}
       }
+      const registered = registerGlobalShortcut();
       registerLogTimeGlobalShortcut();
       // Refresh menus so accelerators/labels update
       refreshMenus();
+      if (!registered) {
+        return { success: false, error: `Could not register ${getHotkeyLabel()}. It may be taken by another app.` };
+      }
       const payloadOut = { success: true, suffix: HOTKEY_SUFFIX, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel() };
       try { mainWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
       return payloadOut;
@@ -1922,7 +1945,9 @@ app.whenReady().then(async () => {
       }
       LOG_TIME_HOTKEY_SUFFIX = suffix;
       try { overlayStore?.set('logTimeHotkeySuffix', LOG_TIME_HOTKEY_SUFFIX); } catch (_) {}
-      registerLogTimeGlobalShortcut();
+      if (!registerLogTimeGlobalShortcut()) {
+        return { success: false, error: `Could not register ${getLogTimeHotkeyLabel()}. It may be taken by another app.` };
+      }
       const payloadOut = {
         success: true,
         suffix: LOG_TIME_HOTKEY_SUFFIX,
@@ -2496,6 +2521,15 @@ ipcMain.on('overlay:move-by', (event, payload) => {
 app.on('before-quit', () => {
   // Flag that we're actually quitting, not just closing windows
   app.isQuitting = true;
+
+  // Persist queued telemetry and stamp the backlog as a clean exit. A backlog
+  // that comes back without that stamp is how the next session learns this one
+  // was killed rather than quit.
+  try {
+    flushTelemetryForShutdown();
+  } catch (error) {
+    log.warn('[telemetry] Shutdown flush failed:', error?.message || error);
+  }
 
   // Clean up resources
   if (screenshotInterval) {
