@@ -2,7 +2,7 @@
   <img src="resources/logomark.svg" width="300" alt="DoneThat" />
 </p>
 
-<h1 align="center">Double your productivity, without more work.</h1>
+<h1 align="center">The AI tracker for makers</h1>
 
 <p align="center">
   <a href="https://donethat.ai">Website</a> · <a href="https://donethat.ai/download">Download</a> · <a href="SUPPORT.md">Support</a>
