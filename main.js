@@ -3000,6 +3000,19 @@ function createWindow() {
       return true;
     });
 
+    // Waking from sleep is the case that exposed this: macOS can kill the
+    // embedded webview's renderer while the machine is asleep, and the app now
+    // keeps that webview instead of rebuilding it on the next show, so nothing
+    // noticed it was dead. The renderer checks and rebuilds if needed.
+    try {
+      powerMonitor.on('resume', () => {
+        try { mainWindow?.webContents?.send('app:power-resume'); } catch (_) {}
+      });
+      powerMonitor.on('unlock-screen', () => {
+        try { mainWindow?.webContents?.send('app:power-resume'); } catch (_) {}
+      });
+    } catch (_) {}
+
     // Ensure Dock icon is visible whenever the main window is shown (macOS)
     mainWindow.on('show', () => {
       try { mainWindow.webContents.send('app:window-shown'); } catch (_) {}

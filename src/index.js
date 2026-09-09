@@ -74,6 +74,14 @@ const PORTAL_STALE_REFRESH_MS = 5 * 60 * 1000;
 // Build it in the background instead, after launch has settled.
 const PORTAL_HIDDEN_PRELOAD_DELAY_MS = 4000;
 let portalHiddenPreloadTimer = null;
+// A guest whose renderer process dies leaves the <webview> element behind as a
+// blank frame. Nothing used to notice, because hiding the window destroyed the
+// webview anyway and showing it built a fresh one - keeping it loaded removed
+// that accidental recovery, so the death has to be handled explicitly.
+const PORTAL_PROCESS_GONE_MAX_RECREATES = 3;
+const PORTAL_PROCESS_GONE_WINDOW_MS = 60 * 1000;
+let portalProcessGoneCount = 0;
+let portalProcessGoneFirstAtMs = 0;
 let portalFreshAtMs = 0; // last full load or accepted soft refresh
 let portalLoadStartedAtMs = 0; // for load-duration telemetry
 // Identity of the deploy the loaded page came from, and the endpoint that
@@ -605,6 +613,12 @@ function canReloadPortalNow() {
 function safePortalReload(reason) {
   try {
     if (!portalView) return false;
+    // Reloading a dead guest does nothing and logs a Mojo validation error;
+    // the page has to be rebuilt instead.
+    if (!isPortalAlive()) {
+      handlePortalProcessGone(reason || 'reload-found-dead');
+      return false;
+    }
     // Only reload once the webview has emitted dom-ready; calling reload too early
     // can throw “WebView must be attached to the DOM and dom-ready emitted”.
     if (!portalDomReady) return false;
@@ -687,6 +701,32 @@ function attachPortalViewListeners(view) {
     });
   } catch (_) {}
 
+  // `render-process-gone` is the modern event; `crashed` is its deprecated
+  // predecessor. Both are registered so this works across Electron versions,
+  // and the recreate is bounded, so a double-fire cannot loop.
+  try {
+    view.addEventListener('render-process-gone', (event) => {
+      if (!isActivePortalView()) return;
+      // Electron surfaces this as `details` on the DOM event in some versions
+      // and flattened onto the event in others. The reason is the whole point
+      // of the log line - it says whether the OS reclaimed the process ("oom",
+      // "killed") or the page fell over ("crashed").
+      const details = (event && event.details) || event || {};
+      const reason = details.reason || 'render-process-gone';
+      const exitCode = details.exitCode;
+      handlePortalProcessGone(
+        exitCode === undefined ? reason : `${reason}(exit:${exitCode})`
+      );
+    });
+  } catch (_) {}
+
+  try {
+    view.addEventListener('crashed', () => {
+      if (!isActivePortalView()) return;
+      handlePortalProcessGone('crashed');
+    });
+  } catch (_) {}
+
   view.addEventListener('did-fail-load', (event) => {
     if (!isActivePortalView()) return;
     console.error('[Webview] Failed to load:', event);
@@ -764,6 +804,8 @@ function attachPortalViewListeners(view) {
       if (!isActivePortalView()) return;
       portalLoadRetries = 0;
       portalFreshAtMs = Date.now();
+      portalProcessGoneCount = 0;
+      portalProcessGoneFirstAtMs = 0;
       capturePortalBuildId();
       if (portalLoadStartedAtMs) {
         emitTelemetrySignal('portal_load_complete', {
@@ -959,6 +1001,12 @@ function capturePortalBuildId() {
  */
 function refreshPortalIfStale(reason) {
   if (!portalView || !portalDomReady) return;
+  // Reached from the main process on focus, where nothing has checked the guest
+  // is still there. Without this the death is only noticed when `send` throws.
+  if (!isPortalAlive()) {
+    handlePortalProcessGone(reason || 'refresh-found-dead');
+    return;
+  }
   if (!isTrustedPortalView(portalView)) return;
 
   // Runs on its own: a new deploy is worth picking up even if the data is fresh.
@@ -1029,6 +1077,93 @@ function schedulePortalDeployRetry(reason) {
     lastPortalVersionCheckMs = 0;
     reloadPortalIfDeployChanged(reason);
   }, PORTAL_RELOAD_COOLDOWN_MS + 1000);
+}
+
+/**
+ * Whether the portal's guest process is still alive.
+ *
+ * A crashed guest keeps the element and its listeners, so `portalView` being
+ * set proves nothing. Calling into a dead WebContents is what produced the
+ * "Terminating render process for bad Mojo message" errors: the reload was
+ * being sent to a process that no longer existed.
+ *
+ * @returns {boolean} false only when the guest is known to be gone
+ */
+function isPortalAlive() {
+  const view = portalView;
+  if (!view) return false;
+
+  try {
+    if (typeof view.isCrashed === 'function' && view.isCrashed()) return false;
+  } catch (_) {
+    return false;
+  }
+
+  // Before dom-ready the guest legitimately has no id yet; that is loading,
+  // not death.
+  if (!portalDomReady) return true;
+
+  try {
+    view.getWebContentsId();
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Rebuild the portal after its guest process has died.
+ *
+ * Bounded, because a page that crashes on load would otherwise be recreated in
+ * a tight loop. After a few failures in quick succession it is left down and
+ * the user gets the error state with its reload button.
+ */
+function handlePortalProcessGone(reason) {
+  const nowMs = Date.now();
+  if (!portalProcessGoneFirstAtMs ||
+      (nowMs - portalProcessGoneFirstAtMs) > PORTAL_PROCESS_GONE_WINDOW_MS) {
+    portalProcessGoneFirstAtMs = nowMs;
+    portalProcessGoneCount = 0;
+  }
+  portalProcessGoneCount += 1;
+
+  console.warn('[PortalLifecycle] guest process gone:', reason,
+    'recreate', portalProcessGoneCount, 'of', PORTAL_PROCESS_GONE_MAX_RECREATES);
+  emitWebviewActivity('process-gone', reason || 'unknown');
+
+  destroyPortalView('process-gone-' + (reason || 'unknown'));
+
+  if (portalProcessGoneCount > PORTAL_PROCESS_GONE_MAX_RECREATES) {
+    console.error('[PortalLifecycle] giving up after repeated guest crashes');
+    showWebviewError();
+    return;
+  }
+
+  if (getCurrentView() !== 'dashboard') return;
+
+  // Only rebuild what someone is actually looking at. If the OS reclaimed this
+  // process under memory pressure - which is the likely reason a hidden guest
+  // dies overnight - immediately building another one just takes the memory
+  // straight back for a page nobody has open, and makes the app a target for
+  // being reclaimed again. A dead hidden portal stays dead; opening the window
+  // builds a fresh one.
+  if (isAppWindowVisible === true) {
+    ensurePortalActive('process-gone-recreate');
+  }
+}
+
+/**
+ * Check the portal is still usable, and clear it out if not.
+ *
+ * Called on window show and on wake from sleep: a guest killed while the app
+ * was asleep or in the background reports nothing, so it has to be asked. While
+ * the window is hidden this only tidies up the dead element - the rebuild waits
+ * until someone opens the window.
+ */
+function verifyPortalHealth(reason) {
+  if (!portalView) return;
+  if (isPortalAlive()) return;
+  handlePortalProcessGone(reason || 'health-check');
 }
 
 function cancelPortalHiddenPreload() {
@@ -1161,6 +1296,13 @@ function recoverPortalView(reason, options = {}) {
   if (!view) return null;
 
   hideWebviewError();
+
+  // The manual reload button is what someone reaches for after a crash, so it
+  // must handle the crashed case rather than calling into a dead process.
+  if (!isPortalAlive()) {
+    handlePortalProcessGone(reason || 'recover-found-dead');
+    return portalView;
+  }
 
   // If the guest failed before dom-ready, a plain reload can be a no-op.
   // Recreate the webview so user-triggered recovery always has an effect.
@@ -1972,6 +2114,12 @@ ipcRenderer.on('navigate', (viewName) => {
   navigateToView(viewName);
 });
 
+// Wake from sleep / screen unlock: the guest may have been killed while we were
+// out. Nothing reports that, so ask.
+ipcRenderer.on('app:power-resume', () => {
+  verifyPortalHealth('power-resume');
+});
+
 ipcRenderer.on('app:window-hidden', () => {
   isAppWindowVisible = false;
   // Nothing to do: the portal stays loaded.
@@ -1979,6 +2127,9 @@ ipcRenderer.on('app:window-hidden', () => {
 
 ipcRenderer.on('app:window-shown', () => {
   isAppWindowVisible = true;
+  // Before anything else: a guest killed while the window was hidden or the
+  // machine asleep looks exactly like a loaded portal from here.
+  verifyPortalHealth('app-window-shown');
   ensurePortalActive('app-window-shown');
   // A preload that failed while hidden left no visible error, so check now that
   // the page is actually usable. Only a load that has passed its timeout counts

@@ -163,6 +163,7 @@ const validReceiveChannels = [
   'app:window-shown',
   'webview:reload',
   'webview:unload',
+  'app:power-resume',
   'hotkey:updated',
   'shortcuts:toggle',
   'portal:log-time',
