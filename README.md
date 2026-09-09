@@ -16,13 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=p1gual1TV58">
-    <img src="https://i.ytimg.com/vi/p1gual1TV58/maxresdefault.jpg" alt="DoneThat walkthrough" width="720" />
-  </a>
-</p>
-
-<p align="center">
-  <em>See a <a href="https://donethat.ai/p/christoph">real-time profile</a> or watch the <a href="https://donethat.ai/features">full feature walkthrough</a>.</em>
+  <em>See a <a href="https://donethat.ai/p/christoph">real-time profile</a>.</em>
 </p>
 
 ---
