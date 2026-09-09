@@ -650,46 +650,47 @@ h6,
   color: var(--dt-color-text-default);
 }
 
-/* Unified Notification Banner Styles */
-.banner-notification {
-  @apply fixed top-0 left-0 right-0 z-50;
-  background-color: var(--dt-color-brand-primary);
-  color: var(--dt-color-text-default);
-  height: 48px;
-  min-height: 48px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  box-sizing: border-box;
-  font-size: var(--dt-font-size-xs);
+/* Shared inline banner (in-flow, directly under the top bar).
+   Used by both the notification banner (notify.js) and the dashboard capture
+   warning, so the two cannot visually drift apart again. */
+.dt-inline-banner {
+  margin: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid #D1D5DB;
+  border-radius: var(--dt-radius-lg);
+  background-color: #F3F4F6;
+  color: #374151;
+  font-size: var(--dt-font-size-sm);
   font-weight: var(--dt-font-weight-regular);
-  border-bottom: 1px solid var(--dt-color-border-accent);
-  transition: transform var(--dt-motion-duration-base) var(--dt-motion-easing-standard), opacity var(--dt-motion-duration-base) var(--dt-motion-easing-standard);
-  transform: translateY(0);
+  line-height: 1.25rem;
+  box-sizing: border-box;
+  flex: 0 0 auto;
 }
 
-.banner-notification.hidden {
-  transform: translateY(-100%);
-  opacity: 0;
+/* Unified Notification Banner Styles */
+.banner-notification {
+  display: flex;
+  align-items: center;
 }
 
 .banner-content {
-  @apply flex justify-between items-center w-full px-4;
+  @apply flex justify-between items-center w-full gap-3;
 }
 
-/* Style for the warning icon only - even larger now */
+/* Keep the alert icon on the text line rather than blowing it up. */
 .banner-content > svg:first-child,
 .banner-content > span:first-child > svg,
 .banner-content > *:first-child > svg {
-  width: 2rem !important;
-  height: 2rem !important;
+  width: 1rem !important;
+  height: 1rem !important;
+  flex: 0 0 auto;
 }
 
 .banner-close {
   @apply ml-3;
-  background-color: rgba(255, 255, 255, 0.42);
-  color: var(--dt-color-text-default);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  background-color: transparent;
+  color: var(--dt-color-text-muted);
+  border: 1px solid #D1D5DB;
   transition:
     background-color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard),
     border-color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard);
@@ -706,11 +707,12 @@ h6,
   overflow: hidden;
   padding: 0;
   box-sizing: border-box;
+  flex: 0 0 auto;
 }
 
 .banner-close:hover {
-  background-color: rgba(255, 255, 255, 0.58);
-  border-color: rgba(255, 255, 255, 0.52);
+  background-color: rgba(0, 0, 0, 0.06);
+  border-color: #9CA3AF;
 }
 
 /* Ensure hidden class works on all elements with !important to override other styles */
