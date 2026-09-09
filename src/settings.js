@@ -476,6 +476,7 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupOpenAICompatibleListeners();
   // Set up hotkey configuration UI
   setupHotkeyConfiguration();
+  setupLogTimeHotkeyConfiguration();
   // Set up test local processing button
   setupTestLocalProcessing();
 
@@ -1535,6 +1536,88 @@ function setupHotkeyConfiguration() {
       }
     } catch (error) {
       console.error('Failed to set hotkey:', error);
+    }
+  });
+}
+
+// --- Log time hotkey configuration ---
+// Unset by default; an empty field means no global hotkey is registered.
+function setupLogTimeHotkeyConfiguration() {
+  const input = document.getElementById('logTimeHotkeyLetterInput');
+  const cmdCap = document.getElementById('logTimeHotkeyCmdCap');
+  const shiftCap = document.getElementById('logTimeHotkeyShiftCap');
+  const errorEl = document.getElementById('logTimeHotkeyError');
+  const waylandNote = document.getElementById('waylandLogTimeHotkeyNote');
+  if (!input || !cmdCap || !shiftCap) return;
+  const isWayland = isWaylandLinuxSession();
+
+  try { cmdCap.textContent = (window.electronAPI.platform === 'darwin' ? 'Cmd' : 'Ctrl'); } catch (_) {}
+
+  const showError = (message) => {
+    if (!errorEl) return;
+    if (message) {
+      errorEl.textContent = message;
+      errorEl.classList.remove('hidden');
+    } else {
+      errorEl.textContent = '';
+      errorEl.classList.add('hidden');
+    }
+  };
+
+  if (isWayland) {
+    input.disabled = true;
+    input.classList.add('text-gray-400', 'cursor-not-allowed');
+    input.classList.remove('text-gray-900', 'focus:ring-2', 'focus:ring-indigo-400');
+    input.title = 'Global hotkeys are unavailable on Wayland sessions.';
+    if (waylandNote) waylandNote.classList.remove('hidden');
+    return;
+  }
+
+  ipcRenderer.invoke('log-time-hotkey:get').then((res) => {
+    if (res && res.success) {
+      try { input.value = res.suffix || ''; } catch (_) {}
+    }
+  }).catch(() => {});
+
+  // Main clears this when the Don hotkey takes over the same letter.
+  try {
+    ipcRenderer.on('log-time-hotkey:updated', (payload) => {
+      if (payload && payload.success) input.value = payload.suffix || '';
+    });
+  } catch (_) {}
+
+  input.addEventListener('input', (e) => {
+    showError('');
+    let v = String(e.target.value || '').toUpperCase();
+    const m = v.match(/[A-Z]/g);
+    v = m ? m[m.length - 1] : '';
+    e.target.value = v;
+  });
+
+  input.addEventListener('blur', async (e) => {
+    const v = String(e.target.value || '').toUpperCase();
+    if (v && !/^[A-Z]$/.test(v)) {
+      try {
+        const res = await ipcRenderer.invoke('log-time-hotkey:get');
+        if (res && res.success) input.value = res.suffix || '';
+      } catch (_) {}
+      return;
+    }
+    try {
+      const res = await ipcRenderer.invoke('log-time-hotkey:set', { suffix: v });
+      if (res && res.success) {
+        showError('');
+        input.value = res.suffix || '';
+        logAnalyticsEvent('log_time_hotkey_updated', { suffix: res.suffix || '' });
+      } else {
+        showError((res && res.error) || 'Could not set that hotkey.');
+        try {
+          const current = await ipcRenderer.invoke('log-time-hotkey:get');
+          if (current && current.success) input.value = current.suffix || '';
+        } catch (_) {}
+      }
+    } catch (error) {
+      console.error('Failed to set log time hotkey:', error);
     }
   });
 }

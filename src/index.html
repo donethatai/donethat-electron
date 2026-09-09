@@ -760,6 +760,27 @@
                 </div>
               </div>
 
+              <!-- Log time hotkey Section -->
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="dt-section-title">Log time hotkey</div>
+                  <div class="dt-supporting-text">Opens log time from anywhere. Always uses Cmd/Ctrl + Shift. Choose a letter (A–Z), or leave empty to disable.</div>
+                  <div id="waylandLogTimeHotkeyNote" class="dt-supporting-text hidden mt-1">
+                    On some Wayland systems, global hotkeys are unavailable.
+                  </div>
+                  <div id="logTimeHotkeyError" class="dt-supporting-text hidden mt-1 text-red-500"></div>
+                </div>
+                <div class="flex items-center gap-1 mt-6" title="Log time hotkey">
+                  <span id="logTimeHotkeyCmdCap" class="dt-hotkey-cap" aria-disabled="true" title="Fixed modifier">Ctrl</span>
+                  <span class="text-gray-300 select-none">+</span>
+                  <span id="logTimeHotkeyShiftCap" class="dt-hotkey-cap" aria-disabled="true" title="Fixed modifier">Shift</span>
+                  <span class="text-gray-300 select-none">+</span>
+                  <span class="dt-hotkey-input-shell" title="Click to change final letter">
+                    <input type="text" id="logTimeHotkeyLetterInput" maxlength="1" class="dt-hotkey-input hotkey-letter-input" placeholder="—" aria-label="Log time hotkey letter" />
+                  </span>
+                </div>
+              </div>
+
               <!-- Logs Section -->
               <div id="saveCaptureDataSection">
                 <div class="flex items-center justify-between mb-2">

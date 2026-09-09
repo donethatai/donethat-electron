@@ -403,11 +403,33 @@ function isTrustedPortalOrigin(url) {
 
 // Global hotkey configuration (suffix only, final character)
 let HOTKEY_SUFFIX = 'D' // default
+// Optional global hotkey for logging time. Empty means unset, which is the
+// default: the feature is opt-in from Settings > App.
+let LOG_TIME_HOTKEY_SUFFIX = ''
 let lastRegisteredAccelerator = null;
+let lastRegisteredLogTimeAccelerator = null;
+
+/** @returns {string} a single A-Z character, or '' when the input is not one. */
+function normalizeHotkeySuffix(raw) {
+  const clean = String(raw || '').trim().slice(-1).toUpperCase();
+  return /^[A-Z]$/.test(clean) ? clean : '';
+}
 
 function getHotkeyAccelerator() {
   const suffix = String(HOTKEY_SUFFIX || 'D').trim().slice(-1).toUpperCase();
   return `CommandOrControl+Shift+${suffix}`;
+}
+
+/** @returns {string|null} null when no log time hotkey is configured. */
+function getLogTimeHotkeyAccelerator() {
+  const suffix = normalizeHotkeySuffix(LOG_TIME_HOTKEY_SUFFIX);
+  return suffix ? `CommandOrControl+Shift+${suffix}` : null;
+}
+
+/** @returns {string} '' when no log time hotkey is configured. */
+function getLogTimeHotkeyLabel() {
+  const suffix = normalizeHotkeySuffix(LOG_TIME_HOTKEY_SUFFIX);
+  return suffix ? `${getHotkeyLabelPrefix()}+Shift+${suffix}` : '';
 }
 
 function getHotkeyLabelPrefix() {
@@ -461,6 +483,42 @@ function registerGlobalShortcut() {
   } catch (e) {
     log.error('Error registering global shortcut:', e);
   }
+}
+
+function registerLogTimeGlobalShortcut() {
+  try {
+    if (lastRegisteredLogTimeAccelerator) {
+      try { globalShortcut.unregister(lastRegisteredLogTimeAccelerator); } catch (_) {}
+      lastRegisteredLogTimeAccelerator = null;
+    }
+    if (isWaylandLinuxSession()) {
+      return;
+    }
+    const accel = getLogTimeHotkeyAccelerator();
+    if (!accel) return; // Unset by default.
+    const ok = globalShortcut.register(accel, () => {
+      try { triggerLogTime(); } catch (e) {}
+    });
+    if (!ok) {
+      log.warn('Failed to register global shortcut for Log time with', accel);
+    } else {
+      lastRegisteredLogTimeAccelerator = accel;
+    }
+  } catch (e) {
+    log.error('Error registering log time global shortcut:', e);
+  }
+}
+
+/**
+ * Opens the embedded web app's log time entry, from the in-app shortcut or the
+ * optional global hotkey.
+ */
+function triggerLogTime() {
+  if (!stateManager?.isAuthenticated() || !stateManager?.hasValidAccess()) return;
+  returnFocusToMainOnOverlayClose = false;
+  hideOverlayWindow();
+  restoreShowAndFocusMainWindow();
+  try { mainWindow?.webContents.send('portal:log-time'); } catch (e) {}
 }
 
 /**
@@ -522,6 +580,12 @@ function getAppShortcutOverview() {
       items: [
         { keys: keysFor('log-time'), label: 'Log time' },
         {
+          keys: getLogTimeHotkeyLabel() || 'Not set',
+          label: 'Log time from anywhere',
+          note: 'Pick your own letter',
+          link: { label: 'Settings > App', view: 'app-settings' }
+        },
+        {
           keys: getHotkeyLabel(),
           label: 'Open or close Don',
           note: 'Pick your own letter',
@@ -570,6 +634,7 @@ function runAppShortcut(input) {
   // The chat hotkey is user-configurable onto the same Cmd+Shift+<letter> shape.
   // Leave it to the global shortcut rather than shadowing the user's choice.
   if (shortcut.shift && key === String(HOTKEY_SUFFIX || '').toLowerCase()) return false;
+  if (shortcut.shift && LOG_TIME_HOTKEY_SUFFIX && key === String(LOG_TIME_HOTKEY_SUFFIX).toLowerCase()) return false;
 
   if (shortcut.id === 'shortcuts') {
     toggleShortcutsOverview();
@@ -584,8 +649,7 @@ function runAppShortcut(input) {
   hideOverlayWindow();
 
   if (shortcut.action === 'log-time') {
-    restoreShowAndFocusMainWindow();
-    try { mainWindow?.webContents.send('portal:log-time'); } catch (e) {}
+    triggerLogTime();
     return true;
   }
 
@@ -1811,10 +1875,61 @@ app.whenReady().then(async () => {
       HOTKEY_SUFFIX = clean.slice(-1).toUpperCase();
       try { overlayStore?.set('hotkeySuffix', HOTKEY_SUFFIX); } catch (_) {}
       registerGlobalShortcut();
+      // The Don hotkey wins if the user moves it onto the log time letter.
+      if (LOG_TIME_HOTKEY_SUFFIX && LOG_TIME_HOTKEY_SUFFIX === HOTKEY_SUFFIX) {
+        LOG_TIME_HOTKEY_SUFFIX = '';
+        try { overlayStore?.set('logTimeHotkeySuffix', ''); } catch (_) {}
+        try {
+          mainWindow?.webContents?.send('log-time-hotkey:updated', {
+            success: true, suffix: '', accelerator: null, label: ''
+          });
+        } catch (_) {}
+      }
+      registerLogTimeGlobalShortcut();
       // Refresh menus so accelerators/labels update
       refreshMenus();
       const payloadOut = { success: true, suffix: HOTKEY_SUFFIX, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel() };
       try { mainWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
+      return payloadOut;
+    } catch (e) {
+      return { success: false, error: String(e && e.message || e) };
+    }
+  });
+
+  ipcMain.handle('log-time-hotkey:get', async () => {
+    try {
+      return {
+        success: true,
+        suffix: normalizeHotkeySuffix(LOG_TIME_HOTKEY_SUFFIX),
+        accelerator: getLogTimeHotkeyAccelerator(),
+        label: getLogTimeHotkeyLabel()
+      };
+    } catch (e) {
+      return { success: false, error: String(e && e.message || e) };
+    }
+  });
+
+  // An empty suffix clears the hotkey, which is also the default state.
+  ipcMain.handle('log-time-hotkey:set', async (_event, payload) => {
+    try {
+      const raw = String((payload && payload.suffix) || '').trim();
+      const suffix = raw ? normalizeHotkeySuffix(raw) : '';
+      if (raw && !suffix) {
+        return { success: false, error: 'Suffix must be a single A-Z character.' };
+      }
+      if (suffix && suffix === String(HOTKEY_SUFFIX || '').toUpperCase()) {
+        return { success: false, error: 'That letter is already used by the Open Don hotkey.' };
+      }
+      LOG_TIME_HOTKEY_SUFFIX = suffix;
+      try { overlayStore?.set('logTimeHotkeySuffix', LOG_TIME_HOTKEY_SUFFIX); } catch (_) {}
+      registerLogTimeGlobalShortcut();
+      const payloadOut = {
+        success: true,
+        suffix: LOG_TIME_HOTKEY_SUFFIX,
+        accelerator: getLogTimeHotkeyAccelerator(),
+        label: getLogTimeHotkeyLabel()
+      };
+      try { mainWindow?.webContents?.send('log-time-hotkey:updated', payloadOut); } catch (_) {}
       return payloadOut;
     } catch (e) {
       return { success: false, error: String(e && e.message || e) };
@@ -1920,6 +2035,12 @@ app.whenReady().then(async () => {
       const persistedSuffix = overlayStore.get('hotkeySuffix');
       if (typeof persistedSuffix === 'string' && persistedSuffix.length > 0) {
         HOTKEY_SUFFIX = String(persistedSuffix).trim().slice(-1).toUpperCase();
+      }
+
+      // Unset unless the user picked a letter.
+      const persistedLogTimeSuffix = overlayStore.get('logTimeHotkeySuffix');
+      if (typeof persistedLogTimeSuffix === 'string') {
+        LOG_TIME_HOTKEY_SUFFIX = normalizeHotkeySuffix(persistedLogTimeSuffix);
       }
 
       savedOverlayPosition = overlayStore.get('overlayPosition') || null;
@@ -2084,6 +2205,7 @@ app.whenReady().then(async () => {
 
   // Register global shortcut for Open Chat (configurable suffix)
   try { registerGlobalShortcut(); } catch (e) { log.error('Error registering global shortcut:', e); }
+  try { registerLogTimeGlobalShortcut(); } catch (e) { log.error('Error registering log time global shortcut:', e); }
 
   // Add daily auth check
   scheduleDailyAuthCheck();
