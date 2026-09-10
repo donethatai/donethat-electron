@@ -19,6 +19,13 @@ function updateOverlayVisualMode() {
   root.classList.toggle('fallback-overlay', !isMacPlatform && !isLiquidGlass)
 }
 
+// Driven by the overlay window's own show/hide in the main process.
+let overlayIsVisible = false
+ipcRenderer.on('overlay:visibility', (payload) => {
+  overlayIsVisible = !!(payload && payload.visible)
+  setMascotPlaying(overlayIsVisible)
+})
+
 ipcRenderer.on('liquid-glass-active', () => {
   document.documentElement.classList.add('liquid-glass-active')
   updateOverlayVisualMode()
@@ -510,6 +517,27 @@ function computeMascotMood() {
   return MASCOT_MOODS.IDLE
 }
 
+// Rive keeps its own rAF loop, and this window is deliberately unthrottled, so
+// a hidden overlay would otherwise animate forever - paid for in the GPU
+// process, which has to composite a transparent always-on-top window to do it.
+let mascotPlaying = true
+
+function setMascotPlaying(shouldPlay) {
+  if (!mascotRive || mascotPlaying === shouldPlay) return
+  mascotPlaying = shouldPlay
+  try {
+    if (shouldPlay) {
+      mascotRive.play(MASCOT_STATE_MACHINE_NAME)
+    } else {
+      mascotRive.pause(MASCOT_STATE_MACHINE_NAME)
+    }
+  } catch (_) {
+    // An older runtime without the state-machine argument still honours the
+    // bare call, and a failure here only costs the saving, never correctness.
+    try { shouldPlay ? mascotRive.play() : mascotRive.pause() } catch (_) {}
+  }
+}
+
 function syncMascotState() {
   const mood = mascotMoodOverride ?? computeMascotMood()
   setMascotMood(mood)
@@ -530,6 +558,7 @@ function getLatestAssistantMessage() {
 }
 
 function playMascotOpenSequence() {
+  setMascotPlaying(true)
   const sequenceToken = ++mascotOpenSequenceToken
   const latestAssistantMessage = getLatestAssistantMessage()
   const replayMood = latestAssistantMessage ? getAssistantMoodForMessage(latestAssistantMessage) : null
@@ -594,6 +623,10 @@ function initMascot() {
       resizeMascotCanvas()
       setMascotFallbackVisible(false)
       syncMascotState()
+      // The overlay is created hidden, so honour the last reported state rather
+      // than letting `autoplay: true` stand.
+      mascotPlaying = true
+      setMascotPlaying(overlayIsVisible)
     },
     onLoadError: () => {
       mascotRive = null

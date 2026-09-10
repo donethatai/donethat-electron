@@ -2388,6 +2388,12 @@ function hideOverlayWithoutFocusingMain() {
 function hideOverlayWindow() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
   try { overlayWindow.hide() } catch (e) {}
+  // Second half of the Space workaround from 5a54fc6 - do not delete it on its
+  // own. Showing the panel binds it to the Space it already belongs to, which
+  // makes macOS switch Desktops; turning all-workspaces on first binds it to
+  // the active Space instead, and this turns it back off. The original did both
+  // in one breath (true -> show -> false); the revert now waits until hide, so
+  // the panel stays all-workspaces for as long as it is visible.
   if (process.platform === 'darwin') {
     try { overlayWindow.setVisibleOnAllWorkspaces(false) } catch (e) {}
   }
@@ -3336,6 +3342,25 @@ function createOverlayWindow() {
       }
     });
 
+    // The mascot is a Rive state machine with `autoplay: true`, and this window
+    // deliberately runs unthrottled (see backgroundThrottling above), so nothing
+    // stops it animating while the overlay sits hidden - which keeps the GPU
+    // process compositing a transparent always-on-top window nobody can see.
+    // Drive it from the window's own show/hide rather than `visibilitychange`,
+    // which is exactly what occlusion makes unreliable here.
+    const sendOverlayVisibility = (visible) => {
+      try {
+        overlayWindow?.webContents?.send('overlay:visibility', { visible });
+      } catch (_) {}
+    };
+    overlayWindow.on('show', () => sendOverlayVisibility(true));
+    overlayWindow.on('hide', () => sendOverlayVisibility(false));
+    // The window is created with `show: false`, so the mascot would otherwise
+    // autoplay from load until the first time the overlay is opened.
+    overlayWindow.webContents.once('did-finish-load', () => {
+      sendOverlayVisibility(!!overlayWindow?.isVisible?.());
+    });
+
     overlayWindow.on('blur', () => {
       try { overlayWindow.setAlwaysOnTop(true) } catch (e) {}
     })
@@ -3431,6 +3456,9 @@ function showOverlayOnCurrentSpace(opts = {}) {
     }
     positionOverlayWindow();
     if (process.platform === 'darwin') {
+      // First half of the Space workaround from 5a54fc6; hideOverlayWindow()
+      // reverts it. Without this, show() pulls macOS back to the Space the panel
+      // was last on instead of revealing it on the current one.
       try { overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (e) {}
       try { 
         if (noFocus) {

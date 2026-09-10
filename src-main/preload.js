@@ -163,6 +163,7 @@ const validReceiveChannels = [
   // Webview / hotkey / updates
   'app:window-hidden',
   'app:window-shown',
+  'overlay:visibility',
   'webview:reload',
   'webview:unload',
   'app:power-resume',
