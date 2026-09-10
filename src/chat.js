@@ -520,13 +520,25 @@ function computeMascotMood() {
 // Rive keeps its own rAF loop, and this window is deliberately unthrottled, so
 // a hidden overlay would otherwise animate forever - paid for in the GPU
 // process, which has to composite a transparent always-on-top window to do it.
+//
+// The wanted state is kept separately from the applied one because it can be
+// decided before there is anything to apply it to: the overlay is created
+// hidden, and `onLoad` can run before `mascotRive` has been assigned from the
+// constructor. Dropping the request in that window left the mascot running for
+// the whole session unless the user happened to open the chat once.
+let mascotShouldPlay = false
 let mascotPlaying = true
 
 function setMascotPlaying(shouldPlay) {
-  if (!mascotRive || mascotPlaying === shouldPlay) return
-  mascotPlaying = shouldPlay
+  mascotShouldPlay = shouldPlay
+  applyMascotPlayback()
+}
+
+function applyMascotPlayback() {
+  if (!mascotRive || mascotPlaying === mascotShouldPlay) return
+  mascotPlaying = mascotShouldPlay
   try {
-    if (shouldPlay) {
+    if (mascotShouldPlay) {
       mascotRive.play(MASCOT_STATE_MACHINE_NAME)
     } else {
       mascotRive.pause(MASCOT_STATE_MACHINE_NAME)
@@ -534,7 +546,7 @@ function setMascotPlaying(shouldPlay) {
   } catch (_) {
     // An older runtime without the state-machine argument still honours the
     // bare call, and a failure here only costs the saving, never correctness.
-    try { shouldPlay ? mascotRive.play() : mascotRive.pause() } catch (_) {}
+    try { mascotShouldPlay ? mascotRive.play() : mascotRive.pause() } catch (_) {}
   }
 }
 
@@ -623,13 +635,13 @@ function initMascot() {
       resizeMascotCanvas()
       setMascotFallbackVisible(false)
       syncMascotState()
-      // The overlay is created hidden, so honour the last reported state rather
-      // than letting `autoplay: true` stand.
+      // `autoplay: true` means it is running right now, whatever we last wanted.
       mascotPlaying = true
-      setMascotPlaying(overlayIsVisible)
+      applyMascotPlayback()
     },
     onLoadError: () => {
       mascotRive = null
+      mascotPlaying = true
       mascotInputs = {
         focusLevel: null,
         lidsmove: null,
@@ -638,6 +650,10 @@ function initMascot() {
       setMascotFallbackVisible(true)
     }
   })
+
+  // `onLoad` may already have run synchronously above, before this assignment
+  // existed to apply anything to. Re-apply now that it does.
+  applyMascotPlayback()
 }
 
 function createRowForMessage(message) {
