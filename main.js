@@ -1343,8 +1343,19 @@ function shouldSuppressDesktopNotification(payload) {
 
 // Configure autoUpdater
 function setupAutoUpdater() {
-  // Use the centralized logger
-  autoUpdater.logger = log
+  // Use the centralized logger, minus the two routine lines every hourly check
+  // writes ("Checking for update" / "... is not available"), which buried
+  // everything else in the log file.
+  const ROUTINE_UPDATER_INFO = /^(Checking for update|Update for version .* is not available)/
+  autoUpdater.logger = {
+    info: (msg, ...rest) => {
+      if (typeof msg === 'string' && ROUTINE_UPDATER_INFO.test(msg)) return
+      log.info(msg, ...rest)
+    },
+    warn: (...args) => log.warn(...args),
+    error: (...args) => log.error(...args),
+    debug: (...args) => log.debug(...args)
+  }
   // Add configuration for GitHub provider
   autoUpdater.allowDowngrade = false // No difference here becauase for me channel=arch
   autoUpdater.allowPrerelease = false // Terrible naming, actually means "don't update to latest/stable releases"

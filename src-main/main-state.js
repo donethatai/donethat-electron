@@ -238,6 +238,12 @@ function _validateState() {
       if (lastKnownSystemTimezone !== null && currentTz !== lastKnownSystemTimezone) {
         log.info('System timezone changed, rescheduling work-hours', { from: lastKnownSystemTimezone, to: currentTz });
         lastKnownSystemTimezone = currentTz;
+        // `Intl` picks up the new zone, but `Date` local time in this process
+        // does not: V8 keeps its cached zone until told otherwise, so every
+        // work-hours check kept running on the old zone until a restart.
+        // Assigning TZ makes Node reset that cache. Must run before the
+        // reschedule below so it computes on the new zone.
+        process.env.TZ = currentTz;
         _scheduleNextWorkEndCheck();
       } else if (lastKnownSystemTimezone === null) {
         lastKnownSystemTimezone = currentTz;

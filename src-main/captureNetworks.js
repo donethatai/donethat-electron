@@ -194,14 +194,6 @@ async function scanDarwin(requestAuthorization = false) {
   // transient helper failure must stay scannable — treating those as blocked
   // turned one bad spawn into a session-long outage.
   darwinScanBlocked = authorization === 'denied' || authorization === 'restricted';
-  if (!requestAuthorization) {
-    log.info('[networks] scan result:', JSON.stringify({
-      authorization,
-      ssidCount: ssids.length,
-      connected: typeof parsed.connectedSsid === 'string'
-    }));
-  }
-
   return {
     connectedSsid: typeof parsed.connectedSsid === 'string' ? parsed.connectedSsid : null,
     ssids,
