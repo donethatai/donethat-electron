@@ -708,6 +708,7 @@ let notificationIconPath = path.join(
 // State module and variables
 let stateManager = null
 let tray = null
+let trayIsRecording = null // last recording flag passed to updateTrayIcon; feeds the tray menu status line
 let trayMenu = null // retain popped-up tray menu so GC can't reclaim it while open
 let mainWindow = null
 
@@ -774,8 +775,8 @@ function onMenuClosed() {
 // Build and pop up a fresh tray menu. Only one can be open at a time, so a boolean
 // flag (not a counter) can't accumulate; a late close from a superseded menu is
 // ignored because we only clear the flag for the menu that is still current.
-function openTrayMenu() {
-  const menu = buildContextMenu()
+function openTrayMenu({ trayHint = false, position } = {}) {
+  const menu = buildContextMenu({ trayHint })
   trayMenu = menu // retain ref so GC can't reclaim it while open
   trayMenuOpen = true
   menu.once('menu-will-close', () => {
@@ -783,7 +784,50 @@ function openTrayMenu() {
     trayMenuOpen = false
     onMenuClosed()
   })
-  tray.popUpContextMenu(menu)
+  // Windows silently skips the popup when the app can't take the foreground, so
+  // only count the hint as shown once the menu actually opens.
+  if (trayHint) {
+    menu.once('menu-will-show', () => {
+      try { overlayStore?.set(TRAY_HINT_SHOWN_KEY, true) } catch (_) {}
+    })
+  }
+  // Electron throws if the position argument is passed but undefined.
+  if (position) {
+    tray.popUpContextMenu(menu, position)
+  } else {
+    tray.popUpContextMenu(menu)
+  }
+}
+
+const TRAY_HINT_SHOWN_KEY = 'trayHintShown'
+const TRAY_HINT_DELAY_MS = 300
+
+// The first time the window is closed into the tray, pop the tray menu open once
+// so the user sees where the app went. AppIndicator on Linux can't pop it up.
+function maybeShowTrayHint() {
+  if (process.platform === 'linux') return
+  if (!overlayStore || overlayStore.get(TRAY_HINT_SHOWN_KEY)) return
+  setTimeout(() => {
+    if (app.isQuitting || overlayStore.get(TRAY_HINT_SHOWN_KEY)) return
+    if (!tray || tray.isDestroyed()) return
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return
+    const position = getTrayHintPosition()
+    if (process.platform === 'win32' && !position) return
+    try {
+      openTrayMenu({ trayHint: true, position })
+    } catch (e) {
+      log.warn('Tray hint menu failed:', e?.message || e)
+    }
+  }, TRAY_HINT_DELAY_MS)
+}
+
+// Windows opens a tray menu at the cursor, which after closing the window is on
+// the close button, so anchor it to the icon. macOS anchors to the icon itself.
+function getTrayHintPosition() {
+  if (process.platform !== 'win32') return undefined
+  const bounds = tray.getBounds()
+  if (!bounds || !bounds.width || !bounds.height) return undefined
+  return { x: Math.round(bounds.x + bounds.width / 2), y: bounds.y }
 }
 let overlayWindow = null
 let screenshotInterval = null
@@ -2637,16 +2681,8 @@ app.on('before-quit', () => {
 
 ////// TRAY /////
 
-// Function to update the tray icon based on recording state
-function updateTrayIcon(isActuallyRecording) {
-  // Safety check - ensure tray exists before trying to update it
-  if (!tray) {
-    return
-  }
-
-  let iconPath;
-  let tooltip;
-
+// Single source for the tray icon, its tooltip, and the status line at the top of the tray menu.
+function getTrayStatus(isActuallyRecording) {
   const loggedIn = stateManager?.isAuthenticated() ?? false;
   const isPaused = stateManager?.isPaused() ?? false;
   const hasScreenPermission = stateManager?.hasScreenCapturePermission() ?? false;
@@ -2654,33 +2690,29 @@ function updateTrayIcon(isActuallyRecording) {
   const hasValidAccess = stateManager?.hasValidAccess() ?? false;
   const isSystemIdle = stateManager?.isSystemIdle() ?? false;
 
-  if (isActuallyRecording && !isSystemIdle) {
-    iconPath = trayIconRecordingPath;
-    tooltip = 'DoneThat - Recording';
-  } else if (isSystemIdle && loggedIn && hasValidAccess) {
-    // Show idle state when screen locked or system suspended (but still recording in background)
-    iconPath = trayIconPausedPath;
-    tooltip = 'DoneThat - System Idle';
-  } else if (!hasScreenPermission) {
-    iconPath = trayIconPausedPath;
-    tooltip = 'DoneThat - No Screen Capture Permission';
-  } else if (!hasWindowsPermission) {
-    iconPath = trayIconPausedPath;
-    tooltip = 'DoneThat - No Windows Permission';
-  } else if (!loggedIn) {
-    iconPath = trayIconPausedPath;
-    tooltip = 'DoneThat - Not Logged In';
-  } else if (!hasValidAccess) {
-    iconPath = trayIconPausedPath;
-    tooltip = 'DoneThat - Account Inactive';
-  } else if (isPaused) {
-    iconPath = trayIconPausedPath;
-    tooltip = 'DoneThat - Paused';
-  } else {
-    // Default fallback
-    iconPath = trayIconPausedPath;
-    tooltip = 'DoneThat - Error';
+  if (isActuallyRecording && !isSystemIdle) return { recording: true, label: 'Recording' };
+  // Screen locked or system suspended (but still recording in background)
+  if (isSystemIdle && loggedIn && hasValidAccess) return { recording: false, label: 'System Idle' };
+  if (!hasScreenPermission) return { recording: false, label: 'No Screen Capture Permission' };
+  if (!loggedIn) return { recording: false, label: 'Not Logged In' };
+  if (!hasValidAccess) return { recording: false, label: 'Account Inactive' };
+  if (isPaused) return { recording: false, label: 'Paused' };
+  // Doesn't block recording, so it must not hide the states above
+  if (!hasWindowsPermission) return { recording: false, label: 'No Active Applications Permission' };
+  // Should be recording, but capture isn't running (usually briefly)
+  return { recording: false, label: 'Not Recording' };
+}
+
+// Function to update the tray icon based on recording state
+function updateTrayIcon(isActuallyRecording) {
+  // Safety check - ensure tray exists before trying to update it
+  if (!tray) {
+    return
   }
+
+  trayIsRecording = isActuallyRecording;
+  const status = getTrayStatus(isActuallyRecording);
+  const iconPath = status.recording ? trayIconRecordingPath : trayIconPausedPath;
 
   // Load and set the appropriate icon
   let icon = nativeImage.createFromPath(iconPath)
@@ -2702,7 +2734,7 @@ function updateTrayIcon(isActuallyRecording) {
     tray.setContextMenu(contextMenu)
   }
 
-  tray.setToolTip(tooltip)
+  tray.setToolTip(`DoneThat - ${status.label}`)
 }
 
 // Function to navigate to a specific view
@@ -2875,7 +2907,7 @@ function rebuildApplicationMenu() {
 
 // Build the tray context menu from current stateManager flags. Rebuilt fresh on
 // every open, so it is always current; it does not touch the application menu.
-function buildContextMenu() {
+function buildContextMenu({ trayHint = false } = {}) {
   const isLoggedIn = stateManager?.isAuthenticated() ?? false;
   const isPaused = stateManager?.isPaused() ?? false;
   const hasPermission = stateManager?.hasScreenCapturePermission() ?? false;
@@ -2884,6 +2916,18 @@ function buildContextMenu() {
 
   // Start with basic template
   const template = []
+
+  if (trayHint) {
+    template.push({ label: 'DoneThat keeps running here', enabled: false })
+  }
+  // Recompute rather than reuse the icon's label: some state changes (e.g. the
+  // startup windows permission check) don't go through updateTrayIcon.
+  if (trayIsRecording !== null) {
+    template.push({ label: getTrayStatus(trayIsRecording).label, enabled: false })
+  }
+  if (template.length) {
+    template.push({ type: 'separator' })
+  }
 
   // Add "Open App" as the first option for all platforms
   template.push({
@@ -3240,6 +3284,7 @@ function createWindow() {
         } else {
           try { mainWindow.setSkipTaskbar(true); } catch (e) {}
         }
+        maybeShowTrayHint();
         return false;
       }
       return true;

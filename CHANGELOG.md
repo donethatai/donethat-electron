@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+## 2.4.4
+
 - Make Google sign-in open the browser faster with visible progress, and let you cancel or reopen a pending sign-in.
 - Fix the dashboard showing a blank error page after waking from sleep, and drop the extra loading spinner once the dashboard starts loading.
 - Add a "Manage subscription" button to the inactive-subscription banner that opens the subscription settings.
+- Show the current status at the top of the tray menu, and open the tray menu once the first time you close the window on macOS and Windows, to show where DoneThat keeps running.
 
 ## 2.3.3
 
