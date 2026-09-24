@@ -941,6 +941,13 @@ h6,
   vertical-align: middle;
 }
 
+/* Spinner inside a secondary button */
+.spinner-inline {
+  @apply w-5 h-5 border-2 rounded-full animate-spin inline-block;
+  border-color: var(--dt-color-brand-primary-soft);
+  border-top-color: var(--dt-color-brand-primary-hover);
+}
+
 /* Spinner overlay */
 .spinner-overlay {
   @apply absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10;

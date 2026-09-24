@@ -7,7 +7,7 @@ const ipcRenderer = window.electronAPI;
 const { auth } = require('./firebase.js');
 
 const { initializeSettings, loadUserSettings, isLocationFeatureEnabled } = require('./settings.js');
-const { initializeAuth } = require('./auth.js');
+const { initializeAuth, prefetchGoogleSignInUrl } = require('./auth.js');
 const { initializeDashboard, resetSummaryState } = require('./dashboard.js');
 const { initializePermissions } = require('./permissions.js');
 const { initializeAnalytics, trackPageView } = require('./analytics.js');
@@ -1481,6 +1481,8 @@ function navigateToView(viewName) {
   if (document.activeElement) document.activeElement.blur();
 
   updateCurrentView(viewName);
+
+  if (viewName === 'signin') prefetchGoogleSignInUrl();
 
   if (viewName === 'dashboard') {
     if (portalPath) navigatePortalTo(portalPath, 'navigate-to-portal-path');

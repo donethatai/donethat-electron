@@ -133,6 +133,8 @@ const validInvokeChannels = [
 
   // Auth server
   'auth:google-signin',
+  'auth:google-signin-prefetch',
+  'auth:google-signin-cancel',
   'auth:google-reauth'
 ];
 

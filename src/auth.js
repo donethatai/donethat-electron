@@ -15,7 +15,7 @@ const ipcRenderer = window.electronAPI;
 // Import auth instance from firebase.js and analytics functions directly
 const { auth, authPersistenceReady } = require('./firebase.js');
 const { logAnalyticsEvent, setAnalyticsUserProperties } = require('./analytics.js');
-const { updateAuthState } = require('./app-state.js');
+const { updateAuthState, isAuthenticated, getCurrentView } = require('./app-state.js');
 const { resetSummaryState } = require('./dashboard.js');
 // Centralized in-app banner
 const { showBanner, hideBanner } = require('./notify.js');
@@ -29,6 +29,20 @@ const signInForm = document.getElementById("signInForm");
 const signUpForm = document.getElementById("signUpForm");
 const resetForm = document.getElementById("resetForm");
 const googleSignInBtn = document.getElementById("googleSignInBtn");
+const googleSignInLabel = document.getElementById("googleSignInLabel");
+const googleSignInIcon = document.getElementById("googleSignInIcon");
+const googleSignInSpinner = document.getElementById("googleSignInSpinner");
+const googleSignInPending = document.getElementById("googleSignInPending");
+const googleSignInHint = document.getElementById("googleSignInHint");
+const googleSignInReopen = document.getElementById("googleSignInReopen");
+const googleSignInCancel = document.getElementById("googleSignInCancel");
+
+const GOOGLE_SIGN_IN_LABELS = {
+  idle: 'Sign in with Google',
+  opening: 'Opening browser…',
+  waiting: 'Waiting for Google…'
+};
+let googleSignInState = 'idle';
 
 const showSignUp = document.getElementById("showSignUp");
 const backToSignIn = document.getElementById("backToSignIn");
@@ -281,7 +295,9 @@ onAuthStateChanged(auth, async (user) => {
       retryCount = 0;
       // Hide any error notifications
       hideModal();
-      
+      // Signed in another way (e.g. email) while a Google browser sign-in was pending
+      cancelGoogleSignIn();
+
       // Check if email is verified
       if (!user.emailVerified) {
         try {
@@ -640,72 +656,95 @@ signInForm.addEventListener("submit", (e) => {
   wirePasswordToggle('toggleSignInPasswordBtn', 'signInPassword');
   wirePasswordToggle('toggleSignUpPasswordBtn', 'signUpPassword');
 
-  // Handle Google Sign In/Up (single button for both)
-  googleSignInBtn.addEventListener("click", async (e) => {
-    e.preventDefault();
-    
+  function setGoogleSignInState(state) {
+    googleSignInState = state;
+    const isBusy = state !== 'idle';
+    googleSignInBtn.disabled = isBusy;
+    googleSignInLabel.textContent = GOOGLE_SIGN_IN_LABELS[state];
+    googleSignInIcon.classList.toggle('hidden', isBusy);
+    googleSignInSpinner.classList.toggle('hidden', !isBusy);
+    googleSignInPending.classList.toggle('hidden', !isBusy);
+    googleSignInHint.classList.toggle('hidden', state !== 'waiting');
+    googleSignInReopen.classList.toggle('hidden', state !== 'waiting');
+  }
+
+  function failGoogleSignIn(message) {
+    setGoogleSignInState('idle');
+    showBanner(message, { title: 'Google Sign In', sticky: true });
+  }
+
+  async function openGoogleSignIn() {
+    setGoogleSignInState('opening');
+    let result;
     try {
-      showSpinner();
-      try { googleSignInBtn.disabled = true; } catch (_) {}
-      ipcRenderer.invoke('auth:google-signin', { requestCalendar: false })
-        .then((result) => {
-          if (!result || result.success === false) {
-            console.error('Google Sign In main-process error:', result && result.error);
-            showBanner(`Failed to start Google Sign In: ${result && result.error ? result.error : 'Unknown error'}`, { title: 'Google Sign In', sticky: true });
-            hideSpinner();
-            try { googleSignInBtn.disabled = false; } catch (_) {}
-            return;
-          }
-          const url = result.url;
-          if (url) {
-            window.electronAPI.invoke('open-external', url).then((res) => {
-              if (!res || res.success === false) {
-                console.error('open-external failed:', res && res.error);
-                showBanner('Failed to open browser for Google Sign In.', { title: 'Google Sign In', sticky: true });
-                hideSpinner();
-                try { googleSignInBtn.disabled = false; } catch (_) {}
-              }
-            }).catch((err) => {
-              console.error('open-external threw error:', err);
-              showBanner('Failed to open browser for Google Sign In.', { title: 'Google Sign In', sticky: true });
-              hideSpinner();
-              try { googleSignInBtn.disabled = false; } catch (_) {}
-            });
-          } else {
-            console.error('No URL returned from Google Sign In start');
-            showBanner('No URL returned from Google Sign In function.', { title: 'Google Sign In', sticky: true });
-            hideSpinner();
-            try { googleSignInBtn.disabled = false; } catch (_) {}
-          }
-        })
-        .catch((error) => {
-          console.error('Google Sign In error:', error);
-          logAnalyticsEvent('google_sign_in_error', {
-            error_code: error.code,
-            error_message: error.message
-          });
-          showBanner(`Failed to start Google Sign In: ${error.message}`, { title: 'Google Sign In', sticky: true });
-          hideSpinner();
-          try { googleSignInBtn.disabled = false; } catch (_) {}
-        });
+      result = await ipcRenderer.invoke('auth:google-signin', { requestCalendar: false });
     } catch (error) {
-      console.error('Google Sign In setup error:', error);
-      showBanner(`Failed to setup Google Sign In: ${error.message}`, { title: 'Google Sign In', sticky: true });
-      hideSpinner();
-      try { googleSignInBtn.disabled = false; } catch (_) {}
-      // Stop the auth server on setup error
-      try { ipcRenderer.invoke('auth:stop-server'); } catch (_) {}
+      console.error('Google Sign In error:', error);
+      logAnalyticsEvent('google_sign_in_error', {
+        error_code: error.code,
+        error_message: error.message
+      });
+      failGoogleSignIn(`Failed to start Google Sign In: ${error.message}`);
+      return;
     }
+    if (googleSignInState !== 'opening') return;
+    if (!result || result.success === false || !result.url) {
+      const reason = result && result.error ? result.error : 'Unknown error';
+      console.error('Google Sign In main-process error:', reason);
+      failGoogleSignIn(`Failed to start Google Sign In: ${reason}`);
+      return;
+    }
+
+    const opened = await window.electronAPI.invoke('open-external', result.url)
+      .catch((error) => ({ success: false, error: error.message }));
+    if (googleSignInState !== 'opening') return;
+    if (!opened || opened.success === false) {
+      console.error('open-external failed:', opened && opened.error);
+      failGoogleSignIn('Failed to open browser for Google Sign In.');
+      return;
+    }
+    setGoogleSignInState('waiting');
+  }
+
+  function cancelGoogleSignIn() {
+    if (googleSignInState === 'idle') return Promise.resolve();
+    setGoogleSignInState('idle');
+    logAnalyticsEvent('google_sign_in_cancelled');
+    return ipcRenderer.invoke('auth:google-signin-cancel').catch(() => {});
+  }
+
+  function prefetchGoogleSignInUrl() {
+    if (googleSignInState !== 'idle' || isAuthenticated() || getCurrentView() !== 'signin') return;
+    ipcRenderer.invoke('auth:google-signin-prefetch').catch(() => {});
+  }
+
+  window.addEventListener('focus', prefetchGoogleSignInUrl);
+
+  // Handle Google Sign In/Up (single button for both)
+  googleSignInBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    openGoogleSignIn();
+  });
+
+  googleSignInReopen.addEventListener("click", (e) => {
+    e.preventDefault();
+    openGoogleSignIn();
+  });
+
+  googleSignInCancel.addEventListener("click", (e) => {
+    e.preventDefault();
+    cancelGoogleSignIn().then(prefetchGoogleSignInUrl);
   });
 
   // Handle custom token from main process
   ipcRenderer.on('firebase-custom-token', (token) => {
     ipcRenderer.send('focus-app-window');
+    setGoogleSignInState('idle');
+    showSpinner();
     signInWithCustomToken(auth, token)
       .then((userCredential) => {
         logAnalyticsEvent('google_sign_in_success');
         hideSpinner();
-        try { googleSignInBtn.disabled = false; } catch (_) {}
       })
       .catch((error) => {
         if (error.code === 'auth/multi-factor-auth-required') {
@@ -719,9 +758,8 @@ signInForm.addEventListener("submit", (e) => {
         showBanner('Failed to complete Google Sign In. Please try again.', { title: 'Google Sign In', sticky: true });
         console.error("Firebase custom token sign-in error:", error);
         hideSpinner();
-        try { googleSignInBtn.disabled = false; } catch (_) {}
         // Stop the auth server on error too
-        ipcRenderer.invoke('auth:stop-server');
+        ipcRenderer.invoke('auth:google-signin-cancel');
       });
   });
   
@@ -772,4 +810,4 @@ signInForm.addEventListener("submit", (e) => {
     }
   }
 
-  export { initializeAuth, userIdToken, refreshAuthToken, performFullLogout };
+  export { initializeAuth, userIdToken, refreshAuthToken, performFullLogout, prefetchGoogleSignInUrl };

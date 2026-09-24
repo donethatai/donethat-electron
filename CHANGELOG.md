@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Make Google sign-in open the browser faster with visible progress, and let you cancel or reopen a pending sign-in.
+
 ## 2.3.3
 
 - Open System Settings on the first nearby-network denial, matching the other permissions.

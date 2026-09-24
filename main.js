@@ -827,6 +827,11 @@ let returnFocusToMainOnOverlayClose = false;
 let authServer = null;
 const AUTH_CALLBACK_TTL_MS = 10 * 60 * 1000;
 const pendingAuthCallbacks = new Map();
+// The sign-in screen prefetches its Google URL so the click opens the browser
+// immediately. Reuse stays well inside the callback TTL so the user still has
+// minutes left to finish in the browser.
+const SHELL_GOOGLE_SIGNIN_REUSE_MS = 5 * 60 * 1000;
+let shellGoogleSignIn = null;
 
 function createAuthCallback(flow, requestCalendar = false) {
   const desktopState = crypto.randomBytes(32).toString('base64url');
@@ -937,6 +942,47 @@ function stopAuthServer() {
     authServer = null;
   }
   pendingAuthCallbacks.clear();
+  shellGoogleSignIn = null;
+}
+
+function extractGoogleSignInUrl(data) {
+  return data && (data.authUrl || data.url || (data.data && data.data.url));
+}
+
+async function fetchGoogleSignInUrl({ desktopState, requestCalendar = false, idToken = null }) {
+  const startedAt = Date.now();
+  const port = await startAuthServer();
+  const serverReadyAt = Date.now();
+  const redirectUrl = buildAuthRedirectUrl(port, desktopState);
+  const data = await getGoogleSignInUrl({ port, redirectUrl, requestCalendar, idToken });
+  log.info('[auth] Google sign-in URL fetched', {
+    authServerMs: serverReadyAt - startedAt,
+    signInStartMs: Date.now() - serverReadyAt
+  });
+  return extractGoogleSignInUrl(data);
+}
+
+function isShellGoogleSignInReusable() {
+  return !!shellGoogleSignIn
+    && pendingAuthCallbacks.has(shellGoogleSignIn.desktopState)
+    && Date.now() - shellGoogleSignIn.createdAt < SHELL_GOOGLE_SIGNIN_REUSE_MS;
+}
+
+// Returns the in-flight or cached shell sign-in URL, fetching a fresh one when
+// none is reusable. Stale entries are left to expire so a browser tab opened
+// from them can still complete.
+function prepareShellGoogleSignIn() {
+  if (isShellGoogleSignInReusable()) {
+    return { promise: shellGoogleSignIn.promise, reused: true };
+  }
+  const desktopState = createAuthCallback('signin');
+  const request = { desktopState, createdAt: Date.now(), promise: null };
+  request.promise = fetchGoogleSignInUrl({ desktopState }).catch((error) => {
+    if (shellGoogleSignIn === request) shellGoogleSignIn = null;
+    throw error;
+  });
+  shellGoogleSignIn = request;
+  return { promise: request.promise, reused: false };
 }
 
 // Track last time we reloaded the embedded webview to avoid excessive reloads
@@ -2019,24 +2065,44 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('auth:google-signin', async (_event, payload) => {
     try {
-      const port = await startAuthServer();
       const requestCalendar = !!(payload && payload.requestCalendar);
       const fromPortal = !!(payload && payload.fromPortal);
+      if (!requestCalendar && !fromPortal) {
+        const requestedAt = Date.now();
+        const { promise, reused } = prepareShellGoogleSignIn();
+        const url = await promise;
+        log.info('[auth] Google sign-in URL ready', { reused, waitMs: Date.now() - requestedAt });
+        return url ? { success: true, url } : { success: false, error: 'No URL in response' };
+      }
       const idToken = requestCalendar ? stateManager?.getIdToken?.() ?? null : null;
       if (requestCalendar && !idToken) {
         return { success: false, error: 'Missing authenticated session for calendar linking' };
       }
       const flow = fromPortal ? 'portal-signin' : 'signin';
       const desktopState = createAuthCallback(flow, requestCalendar);
-      const redirectUrl = buildAuthRedirectUrl(port, desktopState);
-      const data = await getGoogleSignInUrl({ port, redirectUrl, requestCalendar, idToken });
-      const url = data && (data.authUrl || data.url || (data.data && data.data.url));
+      const url = await fetchGoogleSignInUrl({ desktopState, requestCalendar, idToken });
       if (url && fromPortal) markPortalSigninPending(requestCalendar);
       return url ? { success: true, url } : { success: false, error: 'No URL in response' };
     } catch (error) {
       log.error('Failed to get desktop Google Sign In URL from main:', error);
       return { success: false, error: error.message || String(error) };
     }
+  });
+
+  ipcMain.handle('auth:google-signin-prefetch', async () => {
+    try {
+      await prepareShellGoogleSignIn().promise;
+      return { success: true };
+    } catch (error) {
+      log.warn('Failed to prefetch Google Sign In URL:', error?.message || error);
+      return { success: false };
+    }
+  });
+
+  ipcMain.handle('auth:google-signin-cancel', () => {
+    log.info('[auth] Google sign-in cancelled');
+    stopAuthServer();
+    return { success: true };
   });
 
   ipcMain.handle('auth:google-reauth', async (_event, payload) => {
