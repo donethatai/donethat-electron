@@ -1353,6 +1353,11 @@ function dispatchNotificationAction(action) {
     return;
   }
 
+  if (channel === 'overlay:open-main' && typeof payload === 'string') {
+    navigateToView(payload);
+    return;
+  }
+
   log.warn('Unknown desktop notification action channel:', channel);
 }
 
@@ -3019,7 +3024,8 @@ function checkAndAdjustRecording(source = 'unknown') {
             id: 'subscription-inactive',
             title: 'Subscription Required',
             message: 'Your subscription is inactive. Recording is paused until you renew.',
-            sticky: true
+            sticky: true,
+            action: { label: 'Manage subscription', channel: 'overlay:open-main', payload: 'subscription' }
           });
           hasShownInactiveBanner = true;
         }

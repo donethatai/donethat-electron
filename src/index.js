@@ -112,6 +112,7 @@ let portalDeployRetryTimer = null;
 const PORTAL_VIEW_PATHS = {
   'don-settings': '/settings/don',
   'portal-settings': '/settings',
+  subscription: '/settings/subscription',
   home: '/summaries',
   calendar: '/calendar',
   tasks: '/tasks',
