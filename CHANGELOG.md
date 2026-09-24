@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.4.5
+
+- Move CI and release builds to Node 24 to fix the Windows ARM64 build on runners with Visual Studio 2026.
+
 ## 2.4.4
 
 - Make Google sign-in open the browser faster with visible progress, and let you cancel or reopen a pending sign-in.
