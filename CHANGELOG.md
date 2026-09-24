@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Make Google sign-in open the browser faster with visible progress, and let you cancel or reopen a pending sign-in.
+- Fix the dashboard showing a blank error page after waking from sleep, and drop the extra loading spinner once the dashboard starts loading.
 
 ## 2.3.3
 

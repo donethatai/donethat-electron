@@ -89,6 +89,10 @@ let portalProcessGoneResetTimer = null;
 let portalProcessGoneFirstAtMs = 0;
 let portalFreshAtMs = 0; // last full load or accepted soft refresh
 let portalLoadStartedAtMs = 0; // for load-duration telemetry
+// A failed main-frame load leaves the guest on an error page with dom-ready long
+// since fired, so nothing else treats it as broken. Waking from sleep is the
+// usual cause: the page navigates before the network is back.
+let portalLoadFailed = false;
 // Identity of the deploy the loaded page came from, and the endpoint that
 // reports the current one. A reload happens when those differ - never on a
 // timer.
@@ -735,6 +739,7 @@ function attachPortalViewListeners(view) {
   view.addEventListener('did-fail-load', (event) => {
     if (!isActivePortalView()) return;
     console.error('[Webview] Failed to load:', event);
+    if (event?.isMainFrame) portalLoadFailed = true;
     showWebviewError();
     clearPortalLoadWatchdog();
     hidePortalSpinner();
@@ -745,6 +750,7 @@ function attachPortalViewListeners(view) {
       if (!isActivePortalView()) return;
       if (event?.errorCode === -3) return;
       console.error('[Webview] Provisional load failed:', event);
+      if (event?.isMainFrame) portalLoadFailed = true;
       showWebviewError();
       clearPortalLoadWatchdog();
       hidePortalSpinner();
@@ -838,6 +844,8 @@ function attachPortalViewListeners(view) {
         return;
       }
       emitWebviewActivity('did-navigate', 'guest');
+      portalLoadFailed = false;
+      hidePortalSpinner();
       nudgePortalAuthToken();
     });
   } catch (e) {}
@@ -921,6 +929,7 @@ function createPortalView(reason) {
   portalDomReady = false;
   portalLoadRetries = 0;
   portalLoadStartedAtMs = Date.now();
+  portalLoadFailed = false;
   resetPortalAuthSyncState();
   attachPortalViewListeners(view);
   portalMount.appendChild(view);
@@ -966,6 +975,7 @@ function destroyPortalView(reason) {
   portalLoadRetries = 0;
   portalFreshAtMs = 0;
   portalLoadStartedAtMs = 0;
+  portalLoadFailed = false;
   portalLoadedBuildId = null;
   lastPortalVersionCheckMs = 0;
   cancelPortalHiddenPreload();
@@ -1305,6 +1315,21 @@ function navigatePortalTo(path, reason) {
   } catch (e) {
     console.error('[PortalLifecycle] navigate failed', reason, e);
   }
+}
+
+/**
+ * Retry a main-frame load that failed, typically while the window was hidden.
+ *
+ * Goes through recoverPortalView rather than safePortalReload: the token
+ * cooldown there exists to not interrupt a sign-in, and an error page has none
+ * in progress - on wake it would just decline the retry.
+ *
+ * @returns {boolean} whether a retry was started
+ */
+function recoverFailedPortalLoad(reason) {
+  if (!portalView || !portalLoadFailed || !navigator.onLine) return false;
+  recoverPortalView(reason);
+  return true;
 }
 
 function recoverPortalView(reason, options = {}) {
@@ -1775,7 +1800,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const view = ensurePortalActive('online');
       // Only reload what the user is actually looking at; a portal kept warm
       // behind a hidden window is refreshed when the window comes back.
-      if (view && isAppWindowVisible === true) {
+      if (view && isAppWindowVisible === true && !recoverFailedPortalLoad('online-failed-load')) {
         safePortalReload('online');
       }
     } catch (e) { console.error('[Webview] reload on online failed', e); }
@@ -2163,8 +2188,9 @@ ipcRenderer.on('app:window-shown', () => {
   if (portalView && !portalDomReady && portalLoadStartedAtMs &&
       (Date.now() - portalLoadStartedAtMs) > PORTAL_LOAD_TIMEOUT_MS) {
     recoverPortalView('hidden-preload-recovery');
+  } else if (!recoverFailedPortalLoad('failed-load-on-show')) {
+    refreshPortalIfStale('app-window-shown');
   }
-  refreshPortalIfStale('app-window-shown');
   if (getCurrentView() === 'dashboard') {
     schedulePortalKickAfterDashboardNavigation();
   }
