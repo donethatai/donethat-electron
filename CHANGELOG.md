@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Every pull request now needs a passing "AI review" check (Codex) before it can be merged.
+
 ## 2.4.5
 
 - Move CI and release builds to Node 24 to fix the Windows ARM64 build on runners with Visual Studio 2026.
