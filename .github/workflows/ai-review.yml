@@ -1,15 +1,21 @@
 # Required "AI review" status: passes once Codex (ChatGPT Codex Connector, automatic reviews)
-# has reviewed the pull request's latest commit. Codex leaves a review on that commit when it
-# has findings, and a 👍 on the pull request when it has none. Reactions don't trigger
-# workflows, so the run started by each push polls for up to 20 minutes. Findings block the
-# merge through the ruleset rule that every review conversation must be resolved first.
-# A 👍 has no commit, so it counts when it is newer than the push. If an older Codex review
-# (👀 from before the push) was still running when this run started, its 👍 could land after
-# the push, so then the 👍 only counts after this run saw a new 👀. A 👀 in the same second
-# as the push is ambiguous and treated as older on purpose: the check may then wait, but it
-# never passes a push Codex didn't review. Known gap: an older review that ends between the
-# push and this run's first check can pass the push. Avoid pushing while Codex is still
-# reviewing (👀). When it stays pending: comment "@codex review" and re-run the check.
+# has reviewed the pull request's latest commit. Findings block the merge through the ruleset
+# rule that every review conversation must be resolved first.
+#
+# Rule: this check never passes a commit Codex didn't review. When in doubt it waits;
+# waiting is fixed by commenting "@codex review" and re-running the check. Suggestions that
+# would pass more often at the cost of that rule are declined on purpose.
+#
+# How it knows:
+# - Findings: Codex posts a review whose text names the reviewed commit ("Reviewed commit").
+#   Only a review naming this head counts. Codex replies to comments are reviews too, but
+#   don't name a commit, so they don't count.
+# - No findings: Codex shows 👀 while reviewing, then replaces it with 👍. A 👍 has no commit,
+#   so it only counts after this run saw a 👀 created after the push (or after the base
+#   branch changed). The run checks every 10 seconds, so a review is hard to miss. A 👀 from
+#   an older review that is still running doesn't count; don't push while Codex is reviewing.
+# Reactions don't trigger workflows, so the run started by each push polls for 20 minutes.
+#
 # pull_request_target runs this file as it is on the base branch, so a pull request can't
 # change its own gate, and pull requests from forks get a token that can post the status.
 # It never checks out or runs pull request code; keep it that way.
@@ -19,7 +25,7 @@ name: AI review
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: read
@@ -29,6 +35,8 @@ permissions:
 
 jobs:
   gate:
+    # "edited" matters only when the base branch changed: that needs a fresh review.
+    if: github.event.action != 'edited' || github.event.changes.base != null
     # A newer push replaces the waiting run of the previous one.
     concurrency:
       group: ai-review-${{ github.event.pull_request.number }}
@@ -43,10 +51,12 @@ jobs:
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request.number;
             const head = context.payload.pull_request.head.sha;
-            const pushedAt = Date.parse(context.payload.pull_request.updated_at);
-            let reviewStartedAt; // when this run saw Codex's 👀 for a review started after the push
-            let olderReviewRunning; // an 👀 from before the push was there at this run's first check
+            const since = Date.parse(context.payload.pull_request.updated_at); // push or base change
+            let reviewStartedAt; // when this run saw a 👀 created after `since`
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+            // The commit a Codex review says it reviewed, e.g. "**Reviewed commit:** `66ac51fd30`".
+            const reviewedCommit = body => (/Reviewed commit:\**\s*`([0-9a-f]{7,40})`/.exec(body || '') || [])[1];
 
             async function evaluate() {
               const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
@@ -54,19 +64,16 @@ jobs:
               if (pr.head.sha !== head) return { state: 'done', description: 'A newer push has its own run.' };
               const reviews = await github.paginate(github.rest.pulls.listReviews,
                 { owner, repo, pull_number: number, per_page: 100 });
-              if (reviews.some(r => r.user.login === CODEX && r.commit_id === head)) {
+              if (reviews.some(r => r.user.login === CODEX && r.commit_id === head
+                  && Date.parse(r.submitted_at) > since && head.startsWith(reviewedCommit(r.body) || '-'))) {
                 return { state: 'success', description: `Codex reviewed ${head.slice(0, 7)}. Resolve its comments before merging.` };
               }
               const reactions = (await github.paginate(github.rest.reactions.listForIssue,
                 { owner, repo, issue_number: number, per_page: 100 })).filter(r => r.user.login === CODEX);
               const eyes = reactions.find(r => r.content === 'eyes');
-              if (olderReviewRunning === undefined) {
-                olderReviewRunning = !!eyes && Date.parse(eyes.created_at) <= pushedAt;
-              }
-              if (eyes && Date.parse(eyes.created_at) > pushedAt) reviewStartedAt = Date.parse(eyes.created_at);
-              const cleanSince = reviewStartedAt ?? pushedAt;
-              if (!eyes && (reviewStartedAt || !olderReviewRunning)
-                  && reactions.some(r => r.content === '+1' && Date.parse(r.created_at) > cleanSince)) {
+              if (eyes && Date.parse(eyes.created_at) > since) reviewStartedAt = Date.parse(eyes.created_at);
+              if (!eyes && reviewStartedAt
+                  && reactions.some(r => r.content === '+1' && Date.parse(r.created_at) > reviewStartedAt)) {
                 return { state: 'success', description: `Codex reviewed ${head.slice(0, 7)} with no findings.` };
               }
               return { state: 'pending', description: pr.draft
@@ -91,5 +98,5 @@ jobs:
               if (Date.now() > deadline) {
                 return core.warning('No Codex review after 20 minutes. Comment "@codex review", then re-run this check.');
               }
-              await sleep(30 * 1000);
+              await sleep(10 * 1000);
             }
