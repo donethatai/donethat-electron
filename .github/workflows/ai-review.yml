@@ -4,11 +4,12 @@
 # workflows, so the run started by each push polls for up to 20 minutes. Findings block the
 # merge through the ruleset rule that every review conversation must be resolved first.
 # A 👍 has no commit, so it counts when it is newer than the push. If an older Codex review
-# (👀 from before the push; the same second counts as new) was still running when this run
-# started, its 👍 could land after the push, so then the 👍 only counts after this run saw a
-# new 👀. Known gap: an older review that ends between the push and this run's first check can
-# pass the push. Avoid pushing while Codex is still reviewing (👀). When unsure it stays
-# pending: comment "@codex review" and re-run the check.
+# (👀 from before the push) was still running when this run started, its 👍 could land after
+# the push, so then the 👍 only counts after this run saw a new 👀. A 👀 in the same second
+# as the push is ambiguous and treated as older on purpose: the check may then wait, but it
+# never passes a push Codex didn't review. Known gap: an older review that ends between the
+# push and this run's first check can pass the push. Avoid pushing while Codex is still
+# reviewing (👀). When it stays pending: comment "@codex review" and re-run the check.
 # pull_request_target runs this file as it is on the base branch, so a pull request can't
 # change its own gate, and pull requests from forks get a token that can post the status.
 # It never checks out or runs pull request code; keep it that way.
@@ -60,9 +61,9 @@ jobs:
                 { owner, repo, issue_number: number, per_page: 100 })).filter(r => r.user.login === CODEX);
               const eyes = reactions.find(r => r.content === 'eyes');
               if (olderReviewRunning === undefined) {
-                olderReviewRunning = !!eyes && Date.parse(eyes.created_at) < pushedAt;
+                olderReviewRunning = !!eyes && Date.parse(eyes.created_at) <= pushedAt;
               }
-              if (eyes && Date.parse(eyes.created_at) >= pushedAt) reviewStartedAt = Date.parse(eyes.created_at);
+              if (eyes && Date.parse(eyes.created_at) > pushedAt) reviewStartedAt = Date.parse(eyes.created_at);
               const cleanSince = reviewStartedAt ?? pushedAt;
               if (!eyes && (reviewStartedAt || !olderReviewRunning)
                   && reactions.some(r => r.content === '+1' && Date.parse(r.created_at) > cleanSince)) {
