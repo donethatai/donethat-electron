@@ -3,15 +3,20 @@
 # has findings, and a 👍 on the pull request when it has none. Reactions don't trigger
 # workflows, so the run started by each push polls for up to 20 minutes. Findings block the
 # merge through the ruleset rule that every review conversation must be resolved first.
-# A 👍 has no commit, so it only counts after this run saw Codex start a review (👀) after
-# the push. When unsure it stays pending: comment "@codex review" and re-run the check.
-# Known gap: a clean review of the previous commit that ends after the next push's review
-# started can pass that push. Avoid pushing while Codex is still reviewing (👀).
+# A 👍 has no commit, so it counts when it is newer than the push. If an older Codex review
+# (👀 from before the push) was still running when this run started, its 👍 could land after
+# the push, so then the 👍 only counts after this run saw a new 👀. Known gap: an older review
+# that ends between the push and this run's first check can pass the push. Avoid pushing
+# while Codex is still reviewing (👀). When unsure it stays pending: comment "@codex review"
+# and re-run the check.
+# pull_request_target runs this file as it is on the base branch, so a pull request can't
+# change its own gate, and pull requests from forks get a token that can post the status.
+# It never checks out or runs pull request code; keep it that way.
 # The same file lives in every donethatai repo; keep the copies identical.
 name: AI review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -38,6 +43,7 @@ jobs:
             const head = context.payload.pull_request.head.sha;
             const pushedAt = Date.parse(context.payload.pull_request.updated_at);
             let reviewStartedAt; // when this run saw Codex's 👀 for a review started after the push
+            let olderReviewRunning; // an 👀 from before the push was there at this run's first check
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
             async function evaluate() {
@@ -52,9 +58,13 @@ jobs:
               const reactions = (await github.paginate(github.rest.reactions.listForIssue,
                 { owner, repo, issue_number: number, per_page: 100 })).filter(r => r.user.login === CODEX);
               const eyes = reactions.find(r => r.content === 'eyes');
+              if (olderReviewRunning === undefined) {
+                olderReviewRunning = !!eyes && Date.parse(eyes.created_at) <= pushedAt;
+              }
               if (eyes && Date.parse(eyes.created_at) > pushedAt) reviewStartedAt = Date.parse(eyes.created_at);
-              if (!eyes && reviewStartedAt
-                  && reactions.some(r => r.content === '+1' && Date.parse(r.created_at) > reviewStartedAt)) {
+              const cleanSince = reviewStartedAt ?? pushedAt;
+              if (!eyes && (reviewStartedAt || !olderReviewRunning)
+                  && reactions.some(r => r.content === '+1' && Date.parse(r.created_at) > cleanSince)) {
                 return { state: 'success', description: `Codex reviewed ${head.slice(0, 7)} with no findings.` };
               }
               return { state: 'pending', description: pr.draft
