@@ -157,3 +157,16 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - Overlay: position persisted per display; shown only when authenticated and with valid access.
 - Autostart: set on macOS/Windows at app ready; not supported on Linux.
 - Daily auth check: at 10:00 local time, opens app and prompts if logged out.
+
+## Code Review Rules
+
+Codex reviews every pull request. Treat these as P1 or higher:
+
+- Screenshots or audio written to disk outside the opt-in capture dump (`src-main/captureDump.js`), logged, or kept or uploaded beyond what the current capture cycle needs.
+- Capture data (screenshots, audio, window titles, Wi-Fi names) sent to a host not listed in `docs/DATA_FLOW.md`, raw captures sent to DoneThat on the local-processing path, or Sentry `attachScreenshot` / `sendDefaultPii` turned on.
+- A secret, key, token or password in the code, a log line or a committed `.env`. The Firebase web config in `firebase-config.js` (see `SECURITY.md`) and the Sentry DSN are public client identifiers, not secrets.
+- API keys, auth tokens or other sensitive settings stored in `electron-store` without `encryptData` (`src-main/encryption.js`, Electron `safeStorage`).
+- Broader OS access: new entitlements in `resources/entitlements.mac.plist` or usage descriptions in `build.mac.extendInfo`, new prompts for screen, microphone, system audio, accessibility or location, a raised Windows `requestedExecutionLevel`, a capture input not gated by a user toggle, or weaker Electron hardening (`nodeIntegration`, `contextIsolation`, `sandbox`, `webSecurity`).
+- Any change to signing, notarization, release or auto-update: `.github/workflows/build.yml`, `scripts/notarize.js`, `scripts/azure-sign-windows.js`, `scripts/ensure-release-tag.js`, `patches/`, the `build` block in `package.json`, `dev-app-update.yml`, or `autoUpdater` settings in `main.js`. Check `docs/RELEASE_INTEGRITY.md` still matches.
+- Unpinned dependencies: `package.json` changed without `package-lock.json`, `electron` or `electron-builder` moved off an exact version (`patches/` targets electron-builder 26.15.3), or an added or bumped GitHub Action not pinned to a commit SHA.
+- The pull request description leaves out what changed, how it was tested, or the risk.
