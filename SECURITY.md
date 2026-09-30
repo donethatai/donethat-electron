@@ -6,7 +6,7 @@ We use Aikido to monitor dependency and repository security issues as part of on
 
 Firebase web API keys in `firebase-config.js` are public client identifiers, not secrets. Protect Firebase/GCP access with API key restrictions, Firebase Auth, Firestore/Storage rules, callable-function auth checks, and regular console-side rule reviews rather than by hiding the web key in the desktop bundle.
 
-Please report security vulnerabilities privately to [support@donethat.ai](mailto:support@donethat.ai).
+Please report security vulnerabilities privately to [christoph@donethat.ai](mailto:christoph@donethat.ai).
 
 Include:
 - impact summary
