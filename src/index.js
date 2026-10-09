@@ -116,7 +116,9 @@ const PORTAL_VIEW_PATHS = {
   home: '/summaries',
   calendar: '/calendar',
   tasks: '/tasks',
-  feed: '/social',
+  groups: '/groups',
+  // The feed became groups. Kept for anything that still asks for the feed view.
+  feed: '/groups',
   stats: '/stats',
   'app-settings': '/settings/app-config'
 };
