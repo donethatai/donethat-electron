@@ -116,7 +116,9 @@ const PORTAL_VIEW_PATHS = {
   home: '/summaries',
   calendar: '/calendar',
   tasks: '/tasks',
-  feed: '/social',
+  groups: '/groups',
+  // The feed became groups; older menus and deep links still ask for it.
+  feed: '/groups',
   stats: '/stats',
   'app-settings': '/settings/app-config'
 };
