@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rename the "Feed" shortcut and menu entry to "Groups" (still Cmd/Ctrl+Shift+F); it opens your groups.
 - Every pull request now needs a passing "AI review" check (Codex) before it can be merged.
 
 ## 2.4.5

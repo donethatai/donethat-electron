@@ -549,7 +549,8 @@ const APP_SHORTCUTS = [
   { id: 'home', key: 'h', shift: true, label: 'Home', view: 'home' },
   { id: 'calendar', key: 'c', shift: true, label: 'Calendar', view: 'calendar' },
   { id: 'tasks', key: 't', shift: true, label: 'Tasks', view: 'tasks' },
-  { id: 'feed', key: 'f', shift: true, label: 'Feed', view: 'feed' },
+  // Groups replaced the feed. Same key, so the old shortcut still works.
+  { id: 'groups', key: 'f', shift: true, label: 'Groups', view: 'groups' },
   { id: 'stats', key: 's', shift: true, label: 'Stats', view: 'stats' }
 ];
 
