@@ -1538,18 +1538,23 @@ async function loadUserSettingsCallback() {
       return; // Exit if no result (user not logged in)
     }
     
-    // Use the status directly from settings - backend should send the correct status
-    const userStatus = result.data?.status || 'inactive';
+    // Use the status directly from settings - backend should send the correct status.
+    // A brand-new account has no status for ~1-3s until the backend assigns its
+    // trial; keep the current status then instead of flashing the paused banner.
+    // The backend still rejects uploads from accounts without access.
+    const userStatus = result.data?.status;
 
     // Update all relevant state
-    updateUserStatus(userStatus);
+    if (userStatus) updateUserStatus(userStatus);
     updateStoreScreenshots(result.data?.storeScreenshots || false);
     updateDateCreated(result.data?.analytics?.createdAt);
 
     // Send user status to main process (via secure preload bridge)
-    try {
-      ipcRenderer.send('updateUserStatus', userStatus);
-    } catch (_) {}
+    if (userStatus) {
+      try {
+        ipcRenderer.send('updateUserStatus', userStatus);
+      } catch (_) {}
+    }
     
     // Fetch initial pause state from main process
     let initialIsPaused = false;

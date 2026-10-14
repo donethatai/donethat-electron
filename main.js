@@ -3067,10 +3067,12 @@ function checkAndAdjustRecording(source = 'unknown') {
         if (mainWindow) {
           mainWindow.webContents.send('request-notification', {
             id: 'subscription-inactive',
-            title: 'Subscription Required',
-            message: 'Your subscription is inactive. Recording is paused until you renew.',
+            // Shown to new card-up-front signups, expired trials and lapsed or
+            // past-due subscriptions alike, so the copy must not assume any one.
+            title: 'Recording paused',
+            message: 'Recording is paused until your subscription is active.',
             sticky: true,
-            action: { label: 'Manage subscription', channel: 'overlay:open-main', payload: 'subscription' }
+            action: { label: 'Open subscription', channel: 'overlay:open-main', payload: 'subscription' }
           });
           hasShownInactiveBanner = true;
         }
