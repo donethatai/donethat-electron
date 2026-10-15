@@ -44,6 +44,8 @@ const recentChatsContainer = document.getElementById('recentChatsContainer')
 const chatNotice = document.getElementById('chatNotice')
 const reportIssueBtn = document.getElementById('reportIssueBtn')
 const donSettingsBtn = document.getElementById('donSettingsBtn')
+const donHotkeyHint = document.getElementById('donHotkeyHint')
+const donHotkeyHintText = document.getElementById('donHotkeyHintText')
 const overlayRoot = document.getElementById('overlayRoot')
 const overlayCard = document.querySelector('.overlay-card')
 const inputRow = document.querySelector('.input-row')
@@ -385,6 +387,66 @@ function hasPendingUserMessage() {
 
 function hasWaitingForReplyState() {
   return hasPendingUserMessage() || isLoadingChat
+}
+
+let overlayFocused = document.hasFocus()
+
+/**
+ * Sends Don has not answered yet, keyed by a per-send clientId. `serverId` is the message id
+ * the send call returns. Optimistic messages are matched to their echo by text, so two
+ * identical sends would both vanish on the first echo; this tracks each send on its own.
+ */
+const outstandingSends = new Map()
+
+/**
+ * Drops sends whose message the backend has finished: it moves each user message from `queued`
+ * through `processing` to `sent` (after the reply is written) or `error`. A send older than the
+ * inactivity window is treated as abandoned.
+ */
+function settleOutstandingSends() {
+  const now = Date.now()
+  for (const [clientId, send] of outstandingSends) {
+    if (now - send.sentAt >= INACTIVITY_RESET_MS) {
+      outstandingSends.delete(clientId)
+      continue
+    }
+    if (!send.serverId) continue
+    const echo = messages.find((message) => message && message.id === send.serverId)
+    if (echo && echo.status !== 'queued' && echo.status !== 'processing') {
+      outstandingSends.delete(clientId)
+    }
+  }
+}
+
+/**
+ * Typing a draft or waiting on a reply in the focused overlay. The main window skips
+ * proactive chats meanwhile, since switching to one replaces the conversation and the draft.
+ */
+function isComposing() {
+  if (!overlayFocused) return false
+  if (input0 && input0.value.trim()) return true
+  return hasWaitingForReplyState() || outstandingSends.size > 0
+}
+
+let lastSentComposing = null
+let outstandingExpiryTimer = null
+function syncComposingState() {
+  settleOutstandingSends()
+  // Re-check once the oldest send counts as abandoned: no render, input or focus event has to
+  // happen by then, and the main window would otherwise keep skipping proactive chats.
+  if (outstandingExpiryTimer) {
+    try { clearTimeout(outstandingExpiryTimer) } catch (_) {}
+    outstandingExpiryTimer = null
+  }
+  if (outstandingSends.size > 0) {
+    const oldest = Math.min(...[...outstandingSends.values()].map((send) => send.sentAt))
+    outstandingExpiryTimer = setTimeout(syncComposingState, Math.max(0, oldest + INACTIVITY_RESET_MS - Date.now()) + 50)
+  }
+
+  const composing = isComposing()
+  if (composing === lastSentComposing) return
+  lastSentComposing = composing
+  try { ipcRenderer.send('chat:composing', composing) } catch (_) {}
 }
 
 function getWaitingMood() {
@@ -1195,6 +1257,7 @@ function renderChat() {
   updateRecentChatsVisibility()
   syncMascotPlacement()
   syncMascotState()
+  syncComposingState()
 
   // Event delegation for chat links - handled once at container level
 
@@ -1274,6 +1337,7 @@ function resetChatForNewConversation() {
   resetAssistantAnimationState()
   messages = []
   pendingMessages = []
+  outstandingSends.clear()
   includeScreenOnNextMessage = false
   updateIncludeScreenBtn()
   renderChat()
@@ -1325,6 +1389,8 @@ async function addMessageFromInput() {
     id: 'pending-' + Date.now()
   }
   pendingMessages.push(pendingMessage)
+  const clientId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  outstandingSends.set(clientId, { serverId: null, sentAt: Date.now() })
   renderChat()
 
   // Clear input after rendering to ensure stable height calculation
@@ -1332,11 +1398,14 @@ async function addMessageFromInput() {
   input0.style.height = MIN_INPUT_HEIGHT + 'px'
 
   // Send to main window for processing
-  ipcRenderer.invoke('chat:send-message', { 
-    text, 
-    images: images
+  ipcRenderer.invoke('chat:send-message', {
+    text,
+    images: images,
+    clientId
   }).then((result) => {
     if (!result.success) {
+      outstandingSends.delete(clientId)
+      syncComposingState()
       // Update pending message to show error
       const pendingIndex = pendingMessages.findIndex(m => m.id === pendingMessage.id)
       if (pendingIndex >= 0) {
@@ -1381,6 +1450,7 @@ input0.addEventListener('keydown', (e) => {
 input0.addEventListener('input', () => {
   breakMascotIdleOverride()
   updateInputPlaceholder()
+  syncComposingState()
 })
 
 // Screenshot button functionality
@@ -1477,6 +1547,7 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
     const hasOptimisticUser = pendingMessages.some(m => m.status === 'pending' && m.role === 'user')
     if (!hasOptimisticUser) {
       pendingMessages = []
+      outstandingSends.clear()
       // Clear input field when a new chat is opened from system-side
       input0.value = ''
       input0.style.height = MIN_INPUT_HEIGHT + 'px'
@@ -1490,6 +1561,7 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
     const hasAnyAssistant = newMessages.some(m => m && m.role === 'assistant')
     if (hasAnyAssistant && !hasAnyUser) {
       pendingMessages = []
+      outstandingSends.clear()
       input0.value = ''
       input0.style.height = MIN_INPUT_HEIGHT + 'px'
     }
@@ -1566,6 +1638,13 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
 })
 
 ipcRenderer.on('chat:message-update', (result) => {
+  const send = result && result.clientId ? outstandingSends.get(result.clientId) : null
+  if (send) {
+    // Without a message id the send cannot be followed to its reply
+    if (result.success && result.messageId) send.serverId = result.messageId
+    else outstandingSends.delete(result.clientId)
+    syncComposingState()
+  }
   if (!result.success) {
     // Mark any pending message as error, but do not remove optimistic UI yet
     const pendingMessage = pendingMessages.find(m => m.status === 'pending')
@@ -1737,6 +1816,17 @@ window.addEventListener('focus', () => {
     }
   } catch (e) {}
 })
+
+// Name the Open Don hotkey in the notice row, only while it is actually registered: another app
+// may hold the accelerator, and Wayland sessions register no global shortcut at all.
+function showDonHotkeyHint(res) {
+  if (!donHotkeyHint || !donHotkeyHintText) return
+  const label = res && res.success && res.registered ? res.label : ''
+  donHotkeyHintText.textContent = label ? `${label} to open/close` : ''
+  donHotkeyHint.hidden = !label
+}
+ipcRenderer.invoke('hotkey:get').then(showDonHotkeyHint).catch(() => {})
+ipcRenderer.on('hotkey:updated', showDonHotkeyHint)
 
 // Handle ESC key to close overlay
 window.addEventListener('keydown', (e) => {
@@ -1914,6 +2004,8 @@ async function loadChatById(chatId) {
   
   breakMascotIdleOverride()
   activeWaitingMood = null
+  // Opening another chat ends any wait in this one; isLoadingChat covers the load itself
+  outstandingSends.clear()
   isLoadingChat = true
   updateRecentChatsVisibility()
   syncMascotState()
@@ -2076,6 +2168,15 @@ if (overlayRoot) {
 
 window.addEventListener('resize', () => {
   resizeMascotCanvas()
+})
+
+window.addEventListener('focus', () => {
+  overlayFocused = true
+  syncComposingState()
+})
+window.addEventListener('blur', () => {
+  overlayFocused = false
+  syncComposingState()
 })
 
 document.addEventListener('visibilitychange', () => {

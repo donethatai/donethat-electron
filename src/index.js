@@ -119,7 +119,9 @@ const PORTAL_VIEW_PATHS = {
   groups: '/groups',
   // The feed became groups. Kept for anything that still asks for the feed view.
   feed: '/groups',
-  stats: '/stats',
+  insights: '/insights',
+  // Stats became insights. Kept for anything that still asks for the stats view.
+  stats: '/insights',
   'app-settings': '/settings/app-config'
 };
 // Path the portal should open on next create; consumed by createPortalView so a

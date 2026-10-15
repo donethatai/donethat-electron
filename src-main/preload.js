@@ -48,6 +48,7 @@ const validSendChannels = [
   'chat:recent-chats-updated',
   'chat:message-result',
   'chat:load-chat-result',
+  'chat:composing',
   'feedback:open-with-chat-history',
 
   // Overlay / windows
@@ -159,6 +160,7 @@ const validReceiveChannels = [
   'chat:reset-state',
   'chat:get-recent-chats',
   'chat:load-chat',
+  'chat:overlay-composing',
   'liquid-glass-active',
   'feedback:open',
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Rename the "Stats" shortcut and menu entry to "Insights" (still Cmd/Ctrl+Shift+S); it opens Insights.
+- A proactive message from Don no longer replaces the chat while you are typing in it or waiting for a reply; it stays in your recent chats.
+- The chat's notice row shows the hotkey that opens and closes Don.
 - Rename the "Feed" shortcut and menu entry to "Groups" (still Cmd/Ctrl+Shift+F); it opens your groups.
 - Every pull request now needs a passing "AI review" check (Codex) before it can be merged.
 - The release workflow grants write and Azure sign-in permissions only to the jobs that tag and sign a release, and checkouts no longer keep the GitHub token on disk: only the upload step that pushes the release tag gets it.
