@@ -1818,10 +1818,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const openChatBtn = document.getElementById('openChatBtn');
 
   if (openChatBtn) {
-    // The button reads just "Don"; the hotkey lives in the shortcuts overview
-    // (Cmd/Ctrl+/) instead of widening the top bar or the tooltip.
-    openChatBtn.textContent = 'Don';
-    openChatBtn.title = 'Don';
+    // A bare "Don" read as a typo for "Done" next to Finish Day. The hotkey lives
+    // in the shortcuts overview (Cmd/Ctrl+/) instead of widening the top bar or the tooltip.
+    openChatBtn.textContent = 'Ask Don';
+    openChatBtn.title = 'Chat with Don, your AI coach';
     
     openChatBtn.addEventListener('click', () => {
       // Only allow chat if authenticated and has valid access
