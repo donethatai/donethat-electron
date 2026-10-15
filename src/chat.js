@@ -396,13 +396,17 @@ let overlayFocused = document.hasFocus()
  * through `processing` to `sent` (after the reply is written) or `error`, so overlapping sends
  * are each tracked. One older than the inactivity window is treated as abandoned.
  */
-function hasUnansweredMessage() {
+function getUnansweredMessages() {
   const now = Date.now()
-  return messages.some((message) =>
+  return messages.filter((message) =>
     message && message.role === 'user' &&
     (message.status === 'queued' || message.status === 'processing') &&
     !(Number.isFinite(message.ts) && now - message.ts >= INACTIVITY_RESET_MS)
   )
+}
+
+function hasUnansweredMessage() {
+  return getUnansweredMessages().length > 0
 }
 
 /**
@@ -417,7 +421,21 @@ function isComposing() {
 }
 
 let lastSentComposing = null
+let unansweredExpiryTimer = null
 function syncComposingState() {
+  // Re-check once the oldest unanswered message counts as abandoned: no render, input or focus
+  // event has to happen by then, and the main window would otherwise keep skipping proactive chats.
+  if (unansweredExpiryTimer) {
+    try { clearTimeout(unansweredExpiryTimer) } catch (_) {}
+    unansweredExpiryTimer = null
+  }
+  const expiries = getUnansweredMessages()
+    .filter((message) => Number.isFinite(message.ts))
+    .map((message) => message.ts + INACTIVITY_RESET_MS)
+  if (expiries.length > 0) {
+    unansweredExpiryTimer = setTimeout(syncComposingState, Math.max(0, Math.min(...expiries) - Date.now()) + 50)
+  }
+
   const composing = isComposing()
   if (composing === lastSentComposing) return
   lastSentComposing = composing
