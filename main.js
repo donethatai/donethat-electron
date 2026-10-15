@@ -551,7 +551,8 @@ const APP_SHORTCUTS = [
   { id: 'tasks', key: 't', shift: true, label: 'Tasks', view: 'tasks' },
   // Groups replaced the feed. Same key, so the old shortcut still works.
   { id: 'groups', key: 'f', shift: true, label: 'Groups', view: 'groups' },
-  { id: 'stats', key: 's', shift: true, label: 'Stats', view: 'stats' }
+  // Insights replaced Stats. Same key, so the old shortcut still works.
+  { id: 'insights', key: 's', shift: true, label: 'Insights', view: 'insights' }
 ];
 
 function getAppShortcutLabel(shortcut) {
@@ -2020,6 +2021,8 @@ app.whenReady().then(async () => {
       }
       const payloadOut = { success: true, suffix: HOTKEY_SUFFIX, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel() };
       try { mainWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
+      // The chat overlay names the hotkey in its notice row
+      try { overlayWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
       return payloadOut;
     } catch (e) {
       return { success: false, error: String(e && e.message || e) };
@@ -2404,6 +2407,13 @@ ipcMain.handle('overlay:get-state', () => {
   ipcMain.on('chat:set-messages', (event, messages) => {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.webContents.send('chat:receive-messages', messages)
+    }
+  })
+
+  // The main window holds proactive chats back while the overlay is composing
+  ipcMain.on('chat:composing', (event, composing) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('chat:overlay-composing', !!composing)
     }
   })
 
@@ -3505,6 +3515,8 @@ function createOverlayWindow() {
       }
       overlayResizeAnchorBottom = null
       overlayWindow = null
+      // A closed overlay cannot report that it stopped composing
+      try { mainWindow?.webContents?.send('chat:overlay-composing', false) } catch (_) {}
     })
 
     // Enable context menus (copy/paste) for overlay window

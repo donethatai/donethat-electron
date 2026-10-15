@@ -43,7 +43,9 @@ const state = {
   stopChatListener: null,
   stopMessageListener: null,
   chatIpcInitialized: false,
-  recentChats: []
+  recentChats: [],
+  // True while the focused chat overlay holds a draft or waits for a reply.
+  overlayComposing: false
 };
 
 // Helper to parse Firestore Timestamp createdAt to millis; ignore other types
@@ -379,6 +381,12 @@ function startChatListeners() {
     const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
     
     if (newChatId !== state.currentChatId && chatCreatedAt > oneMinuteAgo) {
+      // A proactive chat would replace the conversation and wipe the draft the
+      // user is typing. Leave it in recent chats instead.
+      if (chatData?.initiatedBy === 'assistant' && state.overlayComposing) {
+        console.log('[CHAT] Skipping proactive chat while the user is typing:', newChatId);
+        return;
+      }
       state.currentChatId = newChatId;
       // Clear chat window first, then subscribe. Overlay visibility is handled
       // by chat renderer only after messages arrive, without stealing focus.
@@ -426,6 +434,10 @@ function setupChatIpcBridge() {
       console.error('[CHAT] Error sending message:', error);
       try { ipcRenderer.send('chat:message-result', { success: false, error: error.message }); } catch (_) {}
     }
+  });
+
+  ipcRenderer.on('chat:overlay-composing', (composing) => {
+    state.overlayComposing = !!composing;
   });
 
   // Handle chat reset from overlay

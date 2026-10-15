@@ -27,7 +27,9 @@ describe('preload send channel allowlist', () => {
   const allowed = readAllowedSendChannels();
 
   test.each([
-    'src/settings.js'
+    'src/settings.js',
+    'src/chat.js',
+    'src/app-state.js'
   ])('every channel %s sends on is allowlisted', (relativePath) => {
     const missing = readSentChannels(relativePath).filter((c) => !allowed.has(c));
     expect(missing).toEqual([]);

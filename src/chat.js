@@ -44,6 +44,8 @@ const recentChatsContainer = document.getElementById('recentChatsContainer')
 const chatNotice = document.getElementById('chatNotice')
 const reportIssueBtn = document.getElementById('reportIssueBtn')
 const donSettingsBtn = document.getElementById('donSettingsBtn')
+const donHotkeyHint = document.getElementById('donHotkeyHint')
+const donHotkeyHintText = document.getElementById('donHotkeyHintText')
 const overlayRoot = document.getElementById('overlayRoot')
 const overlayCard = document.querySelector('.overlay-card')
 const inputRow = document.querySelector('.input-row')
@@ -385,6 +387,26 @@ function hasPendingUserMessage() {
 
 function hasWaitingForReplyState() {
   return hasPendingUserMessage() || isLoadingChat
+}
+
+let overlayFocused = document.hasFocus()
+
+/**
+ * Typing a draft or waiting on a reply in the focused overlay. The main window skips
+ * proactive chats meanwhile, since switching to one replaces the conversation and the draft.
+ */
+function isComposing() {
+  if (!overlayFocused) return false
+  if (input0 && input0.value.trim()) return true
+  return hasWaitingForReplyState() || pendingMessages.some((message) => message && message.typing)
+}
+
+let lastSentComposing = null
+function syncComposingState() {
+  const composing = isComposing()
+  if (composing === lastSentComposing) return
+  lastSentComposing = composing
+  try { ipcRenderer.send('chat:composing', composing) } catch (_) {}
 }
 
 function getWaitingMood() {
@@ -1195,6 +1217,7 @@ function renderChat() {
   updateRecentChatsVisibility()
   syncMascotPlacement()
   syncMascotState()
+  syncComposingState()
 
   // Event delegation for chat links - handled once at container level
 
@@ -1381,6 +1404,7 @@ input0.addEventListener('keydown', (e) => {
 input0.addEventListener('input', () => {
   breakMascotIdleOverride()
   updateInputPlaceholder()
+  syncComposingState()
 })
 
 // Screenshot button functionality
@@ -1738,6 +1762,17 @@ window.addEventListener('focus', () => {
   } catch (e) {}
 })
 
+// Name the Open Don hotkey in the notice row. Wayland sessions register no global shortcut.
+const hasGlobalHotkey = !(window.electronAPI?.platform === 'linux' && window.electronAPI?.isWayland)
+function showDonHotkeyHint(res) {
+  if (!donHotkeyHint || !donHotkeyHintText) return
+  const label = res && res.success && hasGlobalHotkey ? res.label : ''
+  donHotkeyHintText.textContent = label ? `${label} to open/close` : ''
+  donHotkeyHint.hidden = !label
+}
+ipcRenderer.invoke('hotkey:get').then(showDonHotkeyHint).catch(() => {})
+ipcRenderer.on('hotkey:updated', showDonHotkeyHint)
+
 // Handle ESC key to close overlay
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
@@ -2076,6 +2111,15 @@ if (overlayRoot) {
 
 window.addEventListener('resize', () => {
   resizeMascotCanvas()
+})
+
+window.addEventListener('focus', () => {
+  overlayFocused = true
+  syncComposingState()
+})
+window.addEventListener('blur', () => {
+  overlayFocused = false
+  syncComposingState()
 })
 
 document.addEventListener('visibilitychange', () => {
