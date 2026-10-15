@@ -4,6 +4,7 @@
 
 - Rename the "Feed" shortcut and menu entry to "Groups" (still Cmd/Ctrl+Shift+F); it opens your groups.
 - Every pull request now needs a passing "AI review" check (Codex) before it can be merged.
+- The release workflow grants write and Azure sign-in permissions only to the jobs that tag and sign a release, and checkouts no longer keep the GitHub token on disk: only the upload step that pushes the release tag gets it.
 
 ## 2.4.5
 
