@@ -413,8 +413,10 @@ function setupChatIpcBridge() {
 
   // Handle chat message processing from overlay
   ipcRenderer.on('chat:process-message', async (messageData) => {
+    // Lets the overlay match each result to its own send when several overlap
+    const clientId = messageData?.clientId;
     if (!auth?.currentUser) {
-      try { ipcRenderer.send('chat:message-result', { success: false, error: 'Not authenticated' }); } catch (_) {}
+      try { ipcRenderer.send('chat:message-result', { success: false, error: 'Not authenticated', clientId }); } catch (_) {}
       return;
     }
     try {
@@ -429,10 +431,10 @@ function setupChatIpcBridge() {
         state.currentChatId = result.data.chatId;
         try { subscribeToMessages(state.currentChatId); } catch (e) { console.error('[CHAT] Failed to subscribe after new chat create:', e); }
       }
-      ipcRenderer.send('chat:message-result', { success: true, data: result.data, messageId: result.data?.messageId });
+      ipcRenderer.send('chat:message-result', { success: true, data: result.data, messageId: result.data?.messageId, clientId });
     } catch (error) {
       console.error('[CHAT] Error sending message:', error);
-      try { ipcRenderer.send('chat:message-result', { success: false, error: error.message }); } catch (_) {}
+      try { ipcRenderer.send('chat:message-result', { success: false, error: error.message, clientId }); } catch (_) {}
     }
   });
 

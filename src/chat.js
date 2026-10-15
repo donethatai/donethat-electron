@@ -392,21 +392,30 @@ function hasWaitingForReplyState() {
 let overlayFocused = document.hasFocus()
 
 /**
- * A sent message Don has not answered yet. The backend moves each user message from `queued`
- * through `processing` to `sent` (after the reply is written) or `error`, so overlapping sends
- * are each tracked. One older than the inactivity window is treated as abandoned.
+ * Sends Don has not answered yet, keyed by a per-send clientId. `serverId` is the message id
+ * the send call returns. Optimistic messages are matched to their echo by text, so two
+ * identical sends would both vanish on the first echo; this tracks each send on its own.
  */
-function getUnansweredMessages() {
-  const now = Date.now()
-  return messages.filter((message) =>
-    message && message.role === 'user' &&
-    (message.status === 'queued' || message.status === 'processing') &&
-    !(Number.isFinite(message.ts) && now - message.ts >= INACTIVITY_RESET_MS)
-  )
-}
+const outstandingSends = new Map()
 
-function hasUnansweredMessage() {
-  return getUnansweredMessages().length > 0
+/**
+ * Drops sends whose message the backend has finished: it moves each user message from `queued`
+ * through `processing` to `sent` (after the reply is written) or `error`. A send older than the
+ * inactivity window is treated as abandoned.
+ */
+function settleOutstandingSends() {
+  const now = Date.now()
+  for (const [clientId, send] of outstandingSends) {
+    if (now - send.sentAt >= INACTIVITY_RESET_MS) {
+      outstandingSends.delete(clientId)
+      continue
+    }
+    if (!send.serverId) continue
+    const echo = messages.find((message) => message && message.id === send.serverId)
+    if (echo && echo.status !== 'queued' && echo.status !== 'processing') {
+      outstandingSends.delete(clientId)
+    }
+  }
 }
 
 /**
@@ -416,24 +425,22 @@ function hasUnansweredMessage() {
 function isComposing() {
   if (!overlayFocused) return false
   if (input0 && input0.value.trim()) return true
-  // Optimistic messages cover the time before Firestore echoes them
-  return hasWaitingForReplyState() || hasUnansweredMessage()
+  return hasWaitingForReplyState() || outstandingSends.size > 0
 }
 
 let lastSentComposing = null
-let unansweredExpiryTimer = null
+let outstandingExpiryTimer = null
 function syncComposingState() {
-  // Re-check once the oldest unanswered message counts as abandoned: no render, input or focus
-  // event has to happen by then, and the main window would otherwise keep skipping proactive chats.
-  if (unansweredExpiryTimer) {
-    try { clearTimeout(unansweredExpiryTimer) } catch (_) {}
-    unansweredExpiryTimer = null
+  settleOutstandingSends()
+  // Re-check once the oldest send counts as abandoned: no render, input or focus event has to
+  // happen by then, and the main window would otherwise keep skipping proactive chats.
+  if (outstandingExpiryTimer) {
+    try { clearTimeout(outstandingExpiryTimer) } catch (_) {}
+    outstandingExpiryTimer = null
   }
-  const expiries = getUnansweredMessages()
-    .filter((message) => Number.isFinite(message.ts))
-    .map((message) => message.ts + INACTIVITY_RESET_MS)
-  if (expiries.length > 0) {
-    unansweredExpiryTimer = setTimeout(syncComposingState, Math.max(0, Math.min(...expiries) - Date.now()) + 50)
+  if (outstandingSends.size > 0) {
+    const oldest = Math.min(...[...outstandingSends.values()].map((send) => send.sentAt))
+    outstandingExpiryTimer = setTimeout(syncComposingState, Math.max(0, oldest + INACTIVITY_RESET_MS - Date.now()) + 50)
   }
 
   const composing = isComposing()
@@ -1330,6 +1337,7 @@ function resetChatForNewConversation() {
   resetAssistantAnimationState()
   messages = []
   pendingMessages = []
+  outstandingSends.clear()
   includeScreenOnNextMessage = false
   updateIncludeScreenBtn()
   renderChat()
@@ -1381,6 +1389,8 @@ async function addMessageFromInput() {
     id: 'pending-' + Date.now()
   }
   pendingMessages.push(pendingMessage)
+  const clientId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  outstandingSends.set(clientId, { serverId: null, sentAt: Date.now() })
   renderChat()
 
   // Clear input after rendering to ensure stable height calculation
@@ -1388,11 +1398,14 @@ async function addMessageFromInput() {
   input0.style.height = MIN_INPUT_HEIGHT + 'px'
 
   // Send to main window for processing
-  ipcRenderer.invoke('chat:send-message', { 
-    text, 
-    images: images
+  ipcRenderer.invoke('chat:send-message', {
+    text,
+    images: images,
+    clientId
   }).then((result) => {
     if (!result.success) {
+      outstandingSends.delete(clientId)
+      syncComposingState()
       // Update pending message to show error
       const pendingIndex = pendingMessages.findIndex(m => m.id === pendingMessage.id)
       if (pendingIndex >= 0) {
@@ -1534,6 +1547,7 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
     const hasOptimisticUser = pendingMessages.some(m => m.status === 'pending' && m.role === 'user')
     if (!hasOptimisticUser) {
       pendingMessages = []
+      outstandingSends.clear()
       // Clear input field when a new chat is opened from system-side
       input0.value = ''
       input0.style.height = MIN_INPUT_HEIGHT + 'px'
@@ -1547,6 +1561,7 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
     const hasAnyAssistant = newMessages.some(m => m && m.role === 'assistant')
     if (hasAnyAssistant && !hasAnyUser) {
       pendingMessages = []
+      outstandingSends.clear()
       input0.value = ''
       input0.style.height = MIN_INPUT_HEIGHT + 'px'
     }
@@ -1623,6 +1638,13 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
 })
 
 ipcRenderer.on('chat:message-update', (result) => {
+  const send = result && result.clientId ? outstandingSends.get(result.clientId) : null
+  if (send) {
+    // Without a message id the send cannot be followed to its reply
+    if (result.success && result.messageId) send.serverId = result.messageId
+    else outstandingSends.delete(result.clientId)
+    syncComposingState()
+  }
   if (!result.success) {
     // Mark any pending message as error, but do not remove optimistic UI yet
     const pendingMessage = pendingMessages.find(m => m.status === 'pending')
@@ -1982,6 +2004,8 @@ async function loadChatById(chatId) {
   
   breakMascotIdleOverride()
   activeWaitingMood = null
+  // Opening another chat ends any wait in this one; isLoadingChat covers the load itself
+  outstandingSends.clear()
   isLoadingChat = true
   updateRecentChatsVisibility()
   syncMascotState()
