@@ -390,6 +390,11 @@ function hasWaitingForReplyState() {
 }
 
 let overlayFocused = document.hasFocus()
+/**
+ * From send until Don's reply or an error. Tracked on its own because the optimistic message
+ * goes once Firestore echoes it, which can be before the delayed typing indicator appears.
+ */
+let awaitingReply = false
 
 /**
  * Typing a draft or waiting on a reply in the focused overlay. The main window skips
@@ -398,7 +403,7 @@ let overlayFocused = document.hasFocus()
 function isComposing() {
   if (!overlayFocused) return false
   if (input0 && input0.value.trim()) return true
-  return hasWaitingForReplyState() || pendingMessages.some((message) => message && message.typing)
+  return awaitingReply || hasWaitingForReplyState()
 }
 
 let lastSentComposing = null
@@ -1297,6 +1302,7 @@ function resetChatForNewConversation() {
   resetAssistantAnimationState()
   messages = []
   pendingMessages = []
+  awaitingReply = false
   includeScreenOnNextMessage = false
   updateIncludeScreenBtn()
   renderChat()
@@ -1348,6 +1354,7 @@ async function addMessageFromInput() {
     id: 'pending-' + Date.now()
   }
   pendingMessages.push(pendingMessage)
+  awaitingReply = true
   renderChat()
 
   // Clear input after rendering to ensure stable height calculation
@@ -1360,6 +1367,7 @@ async function addMessageFromInput() {
     images: images
   }).then((result) => {
     if (!result.success) {
+      awaitingReply = false
       // Update pending message to show error
       const pendingIndex = pendingMessages.findIndex(m => m.id === pendingMessage.id)
       if (pendingIndex >= 0) {
@@ -1367,6 +1375,7 @@ async function addMessageFromInput() {
         pendingMessages[pendingIndex].text = 'Failed to send: ' + (result.error || 'Unknown error')
         renderChat()
       }
+      syncComposingState()
       showMascotErrorState()
     }
   })
@@ -1501,6 +1510,7 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
     const hasOptimisticUser = pendingMessages.some(m => m.status === 'pending' && m.role === 'user')
     if (!hasOptimisticUser) {
       pendingMessages = []
+      awaitingReply = false
       // Clear input field when a new chat is opened from system-side
       input0.value = ''
       input0.style.height = MIN_INPUT_HEIGHT + 'px'
@@ -1514,6 +1524,7 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
     const hasAnyAssistant = newMessages.some(m => m && m.role === 'assistant')
     if (hasAnyAssistant && !hasAnyUser) {
       pendingMessages = []
+      awaitingReply = false
       input0.value = ''
       input0.style.height = MIN_INPUT_HEIGHT + 'px'
     }
@@ -1556,6 +1567,9 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
       pendingMessages.splice(idx, 1)
     }
     if (typingTimer) { try { clearTimeout(typingTimer) } catch (e) {} typingTimer = null }
+    // A snapshot from before the echo has no new user message yet, so an older reply would
+    // still count as "after the last user message" while the optimistic one is pending.
+    if (!hasPendingUserMessage()) awaitingReply = false
   }
 
   renderChat()
@@ -1591,6 +1605,7 @@ ipcRenderer.on('chat:receive-messages', (newMessages) => {
 
 ipcRenderer.on('chat:message-update', (result) => {
   if (!result.success) {
+    awaitingReply = false
     // Mark any pending message as error, but do not remove optimistic UI yet
     const pendingMessage = pendingMessages.find(m => m.status === 'pending')
     if (pendingMessage) {
@@ -1598,6 +1613,7 @@ ipcRenderer.on('chat:message-update', (result) => {
       pendingMessage.text = 'Failed to send: ' + (result.error || 'Unknown error')
       renderChat()
     }
+    syncComposingState()
     showMascotErrorState()
   }
   // On success, keep optimistic message until Firestore snapshot includes the new message
@@ -1949,6 +1965,8 @@ async function loadChatById(chatId) {
   
   breakMascotIdleOverride()
   activeWaitingMood = null
+  // Opening another chat ends the wait; isLoadingChat covers the load itself
+  awaitingReply = false
   isLoadingChat = true
   updateRecentChatsVisibility()
   syncMascotState()
