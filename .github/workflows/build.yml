@@ -7,11 +7,15 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
   build:
+    # contents: write pushes the release tag (scripts/ensure-release-tag.js);
+    # id-token: write is the Azure OIDC login for Windows signing.
+    permissions:
+      contents: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +46,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Mask secrets
         shell: bash
@@ -163,8 +168,17 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          RELEASE_TAG_TOKEN: ${{ github.token }}
           CI: true
-        run: npm run ${{ matrix.command }} 
+        run: |
+          # Checkout keeps no credentials, so only this step can push the release tag
+          $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x-access-token:$env:RELEASE_TAG_TOKEN"))
+          Write-Host "::add-mask::$basic"
+          Remove-Item Env:RELEASE_TAG_TOKEN
+          $env:GIT_CONFIG_COUNT = '1'
+          $env:GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader'
+          $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
+          npm run ${{ matrix.command }}
 
       - name: Upload Sentry source maps
         if: matrix.platform == 'mac' && matrix.arch == 'arm64'
@@ -179,6 +193,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -226,11 +241,16 @@ jobs:
   publish_win_arm64_signed:
     runs-on: windows-latest
     needs: build_win_arm64_unpacked
+    # Same as build: release tag push and Azure OIDC signing.
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Mask secrets
         shell: bash
@@ -337,5 +357,14 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          RELEASE_TAG_TOKEN: ${{ github.token }}
           CI: true
-        run: npm run upload:win:arm64:prepackaged
+        run: |
+          # Checkout keeps no credentials, so only this step can push the release tag
+          $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("x-access-token:$env:RELEASE_TAG_TOKEN"))
+          Write-Host "::add-mask::$basic"
+          Remove-Item Env:RELEASE_TAG_TOKEN
+          $env:GIT_CONFIG_COUNT = '1'
+          $env:GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader'
+          $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
+          npm run upload:win:arm64:prepackaged
