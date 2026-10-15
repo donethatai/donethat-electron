@@ -1762,11 +1762,11 @@ window.addEventListener('focus', () => {
   } catch (e) {}
 })
 
-// Name the Open Don hotkey in the notice row. Wayland sessions register no global shortcut.
-const hasGlobalHotkey = !(window.electronAPI?.platform === 'linux' && window.electronAPI?.isWayland)
+// Name the Open Don hotkey in the notice row, only while it is actually registered: another app
+// may hold the accelerator, and Wayland sessions register no global shortcut at all.
 function showDonHotkeyHint(res) {
   if (!donHotkeyHint || !donHotkeyHintText) return
-  const label = res && res.success && hasGlobalHotkey ? res.label : ''
+  const label = res && res.success && res.registered ? res.label : ''
   donHotkeyHintText.textContent = label ? `${label} to open/close` : ''
   donHotkeyHint.hidden = !label
 }

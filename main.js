@@ -441,6 +441,15 @@ function getHotkeyLabel() {
   return `${getHotkeyLabelPrefix()}+Shift+${suffix}`;
 }
 
+/** False when another app holds the accelerator, and on Wayland, which registers none. */
+function isHotkeyRegistered() {
+  try {
+    return globalShortcut.isRegistered(getHotkeyAccelerator());
+  } catch (_) {
+    return false;
+  }
+}
+
 function isWaylandLinuxSession() {
   if (process.platform !== 'linux') return false;
   return !!(process.env.WAYLAND_DISPLAY || (process.env.XDG_SESSION_TYPE && process.env.XDG_SESSION_TYPE.toLowerCase() === 'wayland'));
@@ -1983,7 +1992,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('hotkey:get', async () => {
     try {
       const suffix = String(HOTKEY_SUFFIX || 'D').trim().slice(-1).toUpperCase();
-      return { success: true, suffix, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel() };
+      return { success: true, suffix, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel(), registered: isHotkeyRegistered() };
     } catch (e) {
       return { success: false, error: String(e && e.message || e) };
     }
@@ -2016,13 +2025,14 @@ app.whenReady().then(async () => {
       registerLogTimeGlobalShortcut();
       // Refresh menus so accelerators/labels update
       refreshMenus();
+      const payloadOut = { success: true, suffix: HOTKEY_SUFFIX, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel(), registered: isHotkeyRegistered() };
+      // The chat overlay names the hotkey in its notice row, so it must also
+      // hear about a failed registration, which leaves no hotkey at all
+      try { overlayWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
       if (!registered) {
         return { success: false, error: `Could not register ${getHotkeyLabel()}. It may be taken by another app.` };
       }
-      const payloadOut = { success: true, suffix: HOTKEY_SUFFIX, accelerator: getHotkeyAccelerator(), label: getHotkeyLabel() };
       try { mainWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
-      // The chat overlay names the hotkey in its notice row
-      try { overlayWindow?.webContents?.send('hotkey:updated', payloadOut); } catch (_) {}
       return payloadOut;
     } catch (e) {
       return { success: false, error: String(e && e.message || e) };
