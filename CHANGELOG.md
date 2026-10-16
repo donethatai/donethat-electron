@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.4.7
+
+- Move the Insights shortcut to Cmd/Ctrl+Shift+I and drop the Groups shortcut.
+- Rename the tray menu's "Don" entry to "Ask Don".
+
 ## 2.4.6
 
 - Rename the "Stats" shortcut and menu entry to "Insights" (still Cmd/Ctrl+Shift+S); it opens Insights.

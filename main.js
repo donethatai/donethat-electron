@@ -558,10 +558,7 @@ const APP_SHORTCUTS = [
   { id: 'home', key: 'h', shift: true, label: 'Home', view: 'home' },
   { id: 'calendar', key: 'c', shift: true, label: 'Calendar', view: 'calendar' },
   { id: 'tasks', key: 't', shift: true, label: 'Tasks', view: 'tasks' },
-  // Groups replaced the feed. Same key, so the old shortcut still works.
-  { id: 'groups', key: 'f', shift: true, label: 'Groups', view: 'groups' },
-  // Insights replaced Stats. Same key, so the old shortcut still works.
-  { id: 'insights', key: 's', shift: true, label: 'Insights', view: 'insights' }
+  { id: 'insights', key: 'i', shift: true, label: 'Insights', view: 'insights' }
 ];
 
 function getAppShortcutLabel(shortcut) {
@@ -2956,7 +2953,7 @@ function buildContextMenu({ trayHint = false } = {}) {
     click: () => navigateToView('signup-next')
   },
     {
-      label: 'Don',
+      label: 'Ask Don',
       enabled: isLoggedIn && hasValidAccess,
       click: () => {
         // Only show overlay if authenticated and has valid access
