@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.4.6
+
 - Rename the "Stats" shortcut and menu entry to "Insights" (still Cmd/Ctrl+Shift+S); it opens Insights.
 - A proactive message from Don no longer replaces the chat while you are typing in it or waiting for a reply; it stays in your recent chats.
 - The chat's notice row shows the hotkey that opens and closes Don.
