@@ -1,6 +1,6 @@
 {
   "name": "donethat",
-  "version": "2.4.7",
+  "version": "2.4.8",
   "description": "DoneThat",
   "main": "main.js",
   "scripts": {
@@ -62,7 +62,7 @@
     "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "dotenv-cli": "^11.0.0",
-    "electron": "43.6.0",
+    "electron": "43.8.1",
     "electron-builder": "26.15.3",
     "electron-notarize": "^1.2.2",
     "jest": "^30.4.2",

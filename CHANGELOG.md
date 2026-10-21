@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.4.8
+
+- Update Electron to 43.8.1 to stop trusting the compromised eMudhra intermediate CA certificates.
+
 ## 2.4.7
 
 - Move the Insights shortcut to Cmd/Ctrl+Shift+I and drop the Groups shortcut.
