@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2.4.9
+
 - Release uploads use a one-hour GitHub App token limited to the releases repository instead of a personal access token.
 
 ## 2.4.8
