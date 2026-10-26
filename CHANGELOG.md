@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Release uploads use a one-hour GitHub App token limited to the releases repository instead of a personal access token.
+
 ## 2.4.8
 
 - Update Electron to 43.8.1 to stop trusting the compromised eMudhra intermediate CA certificates.

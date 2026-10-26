@@ -5,7 +5,7 @@ This document explains how DoneThat Desktop maps published binaries back to sour
 ## Source-To-Binary Mapping
 
 - The canonical source repository is `donethatai/donethat-electron`.
-- Published binaries and update assets are uploaded to `donethatai/donethat-releases`.
+- Published binaries and update assets are uploaded to `donethatai/donethat-releases`. Each release job gets a one-hour token from the organization's release GitHub App, limited to Contents on that repository. No personal access token is used.
 - Release uploads run `npm run release:prepare` before `electron-builder --publish always`.
 - `release:prepare` runs `scripts/ensure-release-tag.js`, which:
   - reads the version from `package.json`

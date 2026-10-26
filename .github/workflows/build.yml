@@ -51,7 +51,6 @@ jobs:
       - name: Mask secrets
         shell: bash
         run: |
-          echo "::add-mask::${{ secrets.GH_PAT }}"
           echo "::add-mask::${{ secrets.APP_STORE_CONNECT_KEY_ID }}"
           echo "::add-mask::${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}"
           echo "::add-mask::${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}"
@@ -164,10 +163,22 @@ jobs:
           "AZURE_SIGN_METADATA=$metadata" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "$signtoolDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
+      # One-hour token from the release GitHub App, limited to uploading to donethat-releases.
+      # Created just before the build so it outlives it (a release job takes about 20 minutes).
+      - name: Create release upload token
+        id: release-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: donethatai
+          repositories: donethat-releases
+          permission-contents: write
+
       - name: Build and upload
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG_TOKEN: ${{ github.token }}
           CI: true
         run: |
@@ -251,11 +262,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Mask secrets
-        shell: bash
-        run: |
-          echo "::add-mask::${{ secrets.GH_PAT }}"
 
       - name: Ensure release runs from main
         shell: bash
@@ -353,10 +359,20 @@ jobs:
 
           node scripts/azure-sign-windows.js $signTargets
 
+      - name: Create release upload token
+        id: release-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: donethatai
+          repositories: donethat-releases
+          permission-contents: write
+
       - name: Build and upload signed Windows ARM64 installer
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG_TOKEN: ${{ github.token }}
           CI: true
         run: |
