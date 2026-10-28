@@ -147,6 +147,12 @@
 
 }
 
+/* The dark logo stays hidden until the dark theme shows it (below). Two classes, so it wins
+   over `.auth-logo { display: block }` further down. */
+.auth-logo.auth-logo--dark {
+  display: none;
+}
+
 /*
  * Dark theme. `nativeTheme.themeSource` (src-main/theme.js) follows the
  * portal's Settings > Appearance, and it is what this media query reports, so
@@ -195,9 +201,15 @@
     --color-green-500: #34D399;
   }
 
-  /* The black line-art logomark turns to light ink on the dark canvas. */
-  .auth-logo {
-    filter: invert(0.91);
+  /*
+   * The logo swaps to logomark-dark.svg: white eyes and black pupils without rims, light
+   * letters and smile. Never invert it instead; the eyes are white fills and would turn black.
+   */
+  .auth-logo.auth-logo--light {
+    display: none;
+  }
+  .auth-logo.auth-logo--dark {
+    display: block;
   }
 }
 
