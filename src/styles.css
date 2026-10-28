@@ -82,6 +82,8 @@
   --dt-color-text-muted: #4B5563;
   --dt-color-text-subtle: #6B7280;
   --dt-color-text-inverse: #FFFFFF;
+  /* Ink on an amber fill: dark in both themes, because amber stays light. */
+  --dt-color-text-on-brand: #1F2937;
   --dt-color-text-accent: #E69C00;
   --dt-color-focus-default: #FFB623;
   --dt-color-state-success: #10B981;
@@ -143,6 +145,60 @@
   --color-error: var(--dt-color-state-error);
   --color-warning: var(--dt-color-state-warning);
 
+}
+
+/*
+ * Dark theme. `nativeTheme.themeSource` (src-main/theme.js) follows the
+ * portal's Settings > Appearance, and it is what this media query reports, so
+ * one block covers system, light and dark. Values mirror darkColors in
+ * ../donethat-webapp/design-system/tokens/colors.ts: cool charcoal, surfaces
+ * lighter as they rise, amber unchanged. The Tailwind greys and state tints
+ * used in index.html are remapped alongside, so their classes follow too.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --dt-color-brand-primary-hover: #FFC54D;
+    --dt-color-brand-primary-soft: #33280F;
+    --dt-color-canvas-page: #111316;
+    --dt-color-surface-default: #191C20;
+    --dt-color-surface-subtle: #23272D;
+    --dt-color-surface-overlay: #1F2227;
+    --dt-color-border-default: #2D3238;
+    --dt-color-border-subtle: #22262B;
+    --dt-color-border-strong: #3B4149;
+    --dt-color-border-accent: #6E5320;
+    --dt-color-text-default: #E6E8EB;
+    --dt-color-text-muted: #B3B9C1;
+    --dt-color-text-subtle: #8E959F;
+    --dt-color-text-accent: #FFC54D;
+    --dt-color-focus-default: #FFC54D;
+    --dt-color-state-success: #34D399;
+    --dt-color-state-warning: #FBBF24;
+    --dt-color-state-error: #F87171;
+    --dt-color-state-info: #60A5FA;
+
+    --color-neutral-500: #6B7280;
+    --color-gray-100: #23272D;
+    --color-gray-300: #3B4149;
+    --color-gray-400: #7C838D;
+    --color-gray-500: #8E959F;
+    --color-gray-600: #B3B9C1;
+    --color-gray-700: #C9CED5;
+    --color-gray-900: #E6E8EB;
+    --color-red-50: #2C1416;
+    --color-red-200: #5E2428;
+    --color-red-500: #F87171;
+    --color-red-600: #FCA5A5;
+    --color-green-50: #0D2620;
+    --color-green-200: #1C4D3E;
+    --color-green-500: #34D399;
+  }
+
+  /* The black line-art logomark turns to light ink on the dark canvas. */
+  .auth-logo {
+    filter: invert(0.91);
+  }
 }
 
 /* Global placeholder text styling */
@@ -656,10 +712,10 @@ h6,
 .dt-inline-banner {
   margin: 8px 16px;
   padding: 8px 12px;
-  border: 1px solid #D1D5DB;
+  border: 1px solid var(--dt-color-border-strong);
   border-radius: var(--dt-radius-lg);
-  background-color: #F3F4F6;
-  color: #374151;
+  background-color: var(--dt-color-surface-subtle);
+  color: var(--dt-color-text-muted);
   font-size: var(--dt-font-size-sm);
   font-weight: var(--dt-font-weight-regular);
   line-height: 1.25rem;
@@ -690,7 +746,7 @@ h6,
   @apply ml-3;
   background-color: transparent;
   color: var(--dt-color-text-muted);
-  border: 1px solid #D1D5DB;
+  border: 1px solid var(--dt-color-border-strong);
   transition:
     background-color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard),
     border-color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard);
@@ -711,8 +767,8 @@ h6,
 }
 
 .banner-close:hover {
-  background-color: rgba(0, 0, 0, 0.06);
-  border-color: #9CA3AF;
+  background-color: color-mix(in srgb, var(--dt-color-text-default) 6%, transparent);
+  border-color: var(--dt-color-text-subtle);
 }
 
 /* Ensure hidden class works on all elements with !important to override other styles */
@@ -739,7 +795,7 @@ h6,
 
 .recent-chats-label {
   flex: 0 0 auto;
-  color: #111;
+  color: var(--dt-color-text-default);
   font-size: 10px;
   line-height: 1.2;
   white-space: nowrap;
@@ -756,7 +812,7 @@ h6,
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  scrollbar-color: color-mix(in srgb, var(--dt-color-text-default) 20%, transparent) transparent;
   align-items: center;
   cursor: grab;
   user-select: none;
@@ -776,14 +832,14 @@ h6,
 }
 
 .recent-chats-list::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--dt-color-text-default) 20%, transparent);
   border-radius: 1px;
 }
 
 .recent-chat-item {
   padding: 2px 8px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--dt-color-surface-default) 60%, transparent);
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.2s;
@@ -794,14 +850,14 @@ h6,
 }
 
 .recent-chat-item:hover {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(31, 41, 55, 0.08);
+  background: color-mix(in srgb, var(--dt-color-surface-default) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dt-color-text-default) 8%, transparent);
 }
 
 .recent-chat-preview {
   font-size: 10px;
   line-height: 1.2;
-  color: #111;
+  color: var(--dt-color-text-default);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -824,7 +880,7 @@ h6,
   display: none;
   padding: 4px 8px;
   font-size: 9px;
-  color: #111;
+  color: var(--dt-color-text-default);
   text-align: center;
   line-height: 1.2;
   flex-shrink: 0;
@@ -990,11 +1046,11 @@ h6,
   width: 100%;
   font-family: monospace;
   padding: 8px;
-  background: #f1f1f1;
-  border: 1px solid #ddd;
+  background: var(--dt-color-surface-subtle);
+  border: 1px solid var(--dt-color-border-default);
   border-radius: 4px;
   cursor: text;
-  color: #333;
+  color: var(--dt-color-text-default);
   font-size: 14px;
   text-align: center;
 }
@@ -1623,7 +1679,7 @@ h6,
   position: absolute;
   inset: 0;
   z-index: 10;
-  background-color: white;
+  background-color: var(--dt-color-surface-default);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1798,7 +1854,7 @@ h6,
 #resetView .dt-card-page {
   border-radius: var(--dt-radius-xl);
   padding: var(--dt-space-8) var(--dt-space-6);
-  border-color: #f3f4f6;
+  border-color: var(--dt-color-border-subtle);
   margin-bottom: var(--dt-space-2);
 }
 
@@ -1816,7 +1872,7 @@ h6,
 #mfaChallengeView .dt-label,
 #resetView .dt-label {
   font-weight: var(--dt-font-weight-medium);
-  color: #374151;
+  color: var(--dt-color-text-muted);
 }
 
 #signInView .dt-input,
@@ -1866,7 +1922,7 @@ h6,
 #resetView .auth-link {
   font-size: var(--dt-font-size-sm);
   font-weight: var(--dt-font-weight-medium);
-  color: #6b7280;
+  color: var(--dt-color-text-subtle);
   text-decoration: none;
 }
 
@@ -1874,7 +1930,7 @@ h6,
 #signUpView .auth-link:hover,
 #mfaChallengeView .auth-link:hover,
 #resetView .auth-link:hover {
-  color: #374151;
+  color: var(--dt-color-text-default);
 }
 
 #signInView .auth-legal a,
