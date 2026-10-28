@@ -20,7 +20,8 @@ if (process.platform === 'linux') {
   }
 }
 
-const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, screen, Notification, powerMonitor, globalShortcut, session, webContents } = require('electron')
+const { app, ipcMain, Tray, Menu, BrowserWindow, nativeImage, nativeTheme, screen, Notification, powerMonitor, globalShortcut, session, webContents } = require('electron')
+const { createThemeController } = require('./src-main/theme')
 const path = require('path')
 const crypto = require('crypto')
 const { autoUpdater } = require('electron-updater')
@@ -166,6 +167,10 @@ function createConfigStore(phasePrefix = 'early_store') {
 
 const earlyConfigStore = createConfigStore()
 recordStartupPhase('early_store_open_done', { opened: !!earlyConfigStore })
+// Light/dark from the portal's last choice, applied before any window exists
+// so the first paint is already in the right theme.
+const themeController = createThemeController({ nativeTheme, store: earlyConfigStore, log })
+try { themeController.restore() } catch (error) { log.warn('Unable to restore theme:', error.message) }
 const gpuMitigationActive = applyStartupGpuMitigation({
   app,
   store: earlyConfigStore,
@@ -1799,6 +1804,21 @@ ipcMain.handle('get-main-window-visibility', () => {
 });
 
 // Recording control handlers for renderer topbar
+// The portal's light/dark choice (relayed by src/index.js from the webview).
+ipcMain.on('theme:set', (_event, preference) => {
+  themeController.set(preference)
+})
+
+// Keep the window's own background with the theme, for the frames before
+// content paints (resize, reload).
+nativeTheme.on('updated', () => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundColor(themeController.windowBackground())
+    }
+  } catch (error) {}
+})
+
 ipcMain.on('pauseForMs', (event, ms) => {
   if (stateManager?.isManualPauseAllowed && !stateManager.isManualPauseAllowed()) {
     return;
@@ -3173,7 +3193,7 @@ function createWindow() {
       // Enable high DPI scaling on all platforms
       enableHighDpiScaling: true,
       // Keep main window opaque so the native titlebar/menu are always visible
-      backgroundColor: '#ffffff',
+      backgroundColor: themeController.windowBackground(),
       transparent: false,
       webPreferences: {
         nodeIntegration: false,    // SECURED

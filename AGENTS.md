@@ -71,7 +71,8 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 
 ## IPC Contract (non-exhaustive)
 
-- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestMicrophonePermission`, `requestLocationPermission`, `updateInputDataSettings`, `updateLocationFeatureEnabled`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`.
+- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestMicrophonePermission`, `requestLocationPermission`, `updateInputDataSettings`, `updateLocationFeatureEnabled`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`, `theme:set`.
+- Portal webview → Host (`sendToHost`, allowlisted in `src/portal-preload.js`): `theme:set` carries the portal's light/dark preference (`system`/`light`/`dark`, advertised as the `theme-sync` capability). `src/index.js` relays it to main, where `src-main/theme.js` sets `nativeTheme.themeSource` and stores it; `prefers-color-scheme` in every renderer, the webview included, follows. Host UI colours come from the `--dt-color-*` tokens in `src/styles.css`, whose dark values mirror the webapp's `darkColors`.
 - Main → Renderer: `inapp:notify`, `screenCapturePermission`, `windowsPermission`, `locationPermission`, `overlay:state`, `chat:receive-messages`, `hotkey:updated`, `chat:message-update`, `chat:reset-state`, `webview:reload`, `router:open-link`, `firebase-custom-token`, `refresh-token`, `auth-error`.
 
 ## Build/Run

@@ -901,6 +901,12 @@ function attachPortalViewListeners(view) {
       if (Number.isFinite(minutes)) {
         try { ipcRenderer.send('updateCaptureInterval', minutes); } catch (e) {}
       }
+    } else if (event.channel === 'theme:set') {
+      // Validated again in main (src-main/theme.js); anything else is dropped.
+      const preference = event.args && event.args[0];
+      if (preference === 'system' || preference === 'light' || preference === 'dark') {
+        try { ipcRenderer.send('theme:set', preference); } catch (e) {}
+      }
     } else if (event.channel === 'auth:google-reauth') {
       const payload = event.args && event.args[0] || {};
       window.electronAPI.invoke('auth:google-reauth', {

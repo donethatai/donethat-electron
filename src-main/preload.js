@@ -19,6 +19,8 @@ const validSendChannels = [
   // Navigation / UI
   'navigate',
   'router:open-link',
+  // Light/dark preference relayed from the portal (src-main/theme.js)
+  'theme:set',
 
   // Recording / permissions
   'pauseForMs',

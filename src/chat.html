@@ -78,23 +78,27 @@
       .text-btn { font-size: 12px; background: transparent; color: var(--dt-color-text-default); border: none; padding: 0 2px; line-height: 18px; }
       .bubble { cursor: text; max-width: 85%; border-radius: 12px; padding: 8px 10px; font-size: 12px; line-height: 1.4; -webkit-user-select: text; user-select: text; border: 1px solid transparent; }
       .bubble-user { background: rgba(255,255,255,0.97); color: var(--dt-color-text-default); border-color: rgba(229,231,235,0.94); }
-      .bubble-system { background: rgba(255, 182, 35, 0.92); color: var(--dt-color-text-default); border-color: rgba(252,210,138,0.95); }
+      .bubble-system { background: rgba(255, 182, 35, 0.92); color: var(--dt-color-text-on-brand); border-color: rgba(252,210,138,0.95); }
       /* Markdown styling */
       .bubble strong { font-weight: 600; }
       .bubble em { font-style: italic; }
       .bubble del { text-decoration: line-through; }
-      .bubble code { background: rgba(0, 0, 0, 0.08); padding: 1px 3px; border-radius: 3px; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 11px; }
-      .bubble pre { background: rgba(0, 0, 0, 0.08); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+      .bubble code { background: color-mix(in srgb, currentColor 10%, transparent); padding: 1px 3px; border-radius: 3px; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 11px; }
+      .bubble pre { background: color-mix(in srgb, currentColor 10%, transparent); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
       .bubble pre code { background: transparent; padding: 0; border-radius: 0; display: block; white-space: pre; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 11px; }
       .bubble br { display: block; height: 4px; content: ''; }
       .bubble ul { list-style: disc; padding-left: 18px; margin: 4px 0; }
       .bubble ol { list-style: decimal; padding-left: 18px; margin: 4px 0; }
       .bubble li { margin: 2px 0; }
-      .bubble a { color: var(--dt-color-brand-primary-hover); text-decoration: underline; word-break: break-all; }
+      /* Links are ink, never amber: deep amber on Don's amber bubble was unreadable. The
+         underline carries the link - amber on the user's bubble, ink on Don's. */
+      .bubble a { color: inherit; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 2px; word-break: break-all; }
+      .bubble-user a { text-decoration-color: var(--dt-color-brand-primary); }
+      .bubble-system a { text-decoration-color: currentColor; }
 .bubble a:hover { text-decoration: underline; cursor: pointer; }
       .bubble table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 12px; }
-      .bubble th, .bubble td { border: 1px solid rgba(0,0,0,0.12); padding: 4px 6px; text-align: left; }
-      .bubble thead th { background: rgba(0,0,0,0.06); font-weight: 600; }
+      .bubble th, .bubble td { border: 1px solid color-mix(in srgb, currentColor 14%, transparent); padding: 4px 6px; text-align: left; }
+      .bubble thead th { background: color-mix(in srgb, currentColor 7%, transparent); font-weight: 600; }
       .bubble h1, .bubble h2, .bubble h3, .bubble h4, .bubble h5, .bubble h6 { margin: 6px 0 4px; font-weight: 600; line-height: 1.2; }
       .bubble h1 { font-size: 14px; }
       .bubble h2 { font-size: 13px; }
@@ -112,6 +116,26 @@
       html.non-mac.fallback-overlay .input-wrap textarea { padding-right: 40px !important; }
       html.non-mac.fallback-overlay .input-wrap.has-screen-attachment textarea { padding-right: 54px !important; }
       html.non-mac.fallback-overlay .screen-toggle { right: 18px; }
+      /* Dark: the same glass, tinted charcoal instead of white (surface #191C20, rims
+         #2D3238, from the shared dark palette). Don's bubble stays amber with dark ink;
+         the mascot keeps its white face. Follows nativeTheme via src-main/theme.js. */
+      @media (prefers-color-scheme: dark) {
+        .overlay-card { background: rgba(25,28,32,0.55); border-color: rgba(45,50,56,0.9); }
+        .mascot-wrap { border-color: rgba(45,50,56,0.92); }
+        .icon-btn { background: rgba(35,39,45,0.6); border-color: rgba(59,65,73,0.9); }
+        .icon-btn:hover { background: rgba(35,39,45,0.96); border-color: rgba(75,81,90,0.95); }
+        .icon-btn:active { background: rgba(25,28,32,0.3); border-color: rgba(75,81,90,0.5); }
+        .screen-toggle:hover { background: rgba(255,255,255,0.12); }
+        .screen-attachment-chip span { color: rgba(230,232,235,0.78); }
+        .input-wrap textarea { background: rgba(25,28,32,0.9) !important; border-color: rgba(45,50,56,0.96) !important; }
+        .input-wrap textarea:focus { background: rgba(25,28,32,0.96) !important; border-color: rgba(59,65,73,0.96) !important; }
+        .input-wrap textarea::placeholder,
+        .input-wrap textarea::-webkit-input-placeholder { color: rgba(230,232,235,0.55); }
+        .bubble-user { background: rgba(35,39,45,0.97); border-color: rgba(45,50,56,0.94); }
+        html.non-mac.fallback-overlay .overlay-card { background: rgba(25,28,32,0.92); }
+        html.non-mac.fallback-overlay .input-wrap textarea,
+        html.non-mac.fallback-overlay .input-wrap textarea:focus { background: rgba(25,28,32,0.95) !important; }
+      }
     </style>
   </head>
   <body class="w-full h-full">

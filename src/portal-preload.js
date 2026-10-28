@@ -7,7 +7,9 @@ const ALLOWED_SEND_TO_HOST_CHANNELS = [
   'desktop:open-setup',
   // Sent by the portal's Recording settings. It was missing here, so every
   // interval change the web app made was dropped before reaching the host.
-  'updateCaptureInterval'
+  'updateCaptureInterval',
+  // Light/dark preference from the portal's Settings > Appearance.
+  'theme:set'
 ];
 const TRUSTED_PORTAL_ORIGIN = 'https://app.donethat.ai';
 
@@ -21,7 +23,7 @@ const TRUSTED_PORTAL_ORIGIN = 'https://app.donethat.ai';
  * list a capability once the host actually implements it - the portal trusts
  * this list and will not feature-detect any further.
  */
-const HOST_CAPABILITIES = ['setup-overlay', 'masking-sync'];
+const HOST_CAPABILITIES = ['setup-overlay', 'masking-sync', 'theme-sync'];
 
 function getAppVersion() {
   try {
