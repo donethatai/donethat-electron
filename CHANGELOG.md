@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix meeting detection recording audio when a macOS system daemon (e.g. Siri's corespeechd after a crash) holds the mic without a bundle ID, and detect Safari calls.
+
 ## 2.4.9
 
 - Release uploads use a one-hour GitHub App token limited to the releases repository instead of a personal access token.
