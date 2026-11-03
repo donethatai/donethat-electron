@@ -30,6 +30,12 @@ jest.mock('child_process', () => ({
   })
 }))
 
+const fs = require('fs')
+const realExistsSync = fs.existsSync
+jest.spyOn(fs, 'existsSync').mockImplementation((filePath) =>
+  String(filePath).endsWith('/bin/mic-monitor') || realExistsSync(filePath)
+)
+
 const { detectMacOSMicrophoneUsage } = require('../audioSessionDetector')
 
 describe('detectMacOSMicrophoneUsage', () => {
