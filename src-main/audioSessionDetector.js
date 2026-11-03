@@ -72,8 +72,14 @@ const ALLOWED_APPLE_MIC_BUNDLE_IDS = new Set([
   'com.apple.SafariTechnologyPreview',
   'com.apple.quicktimeplayerX',
   'com.apple.PhotoBooth',
-  'com.apple.VoiceMemos'
+  'com.apple.VoiceMemos',
+  // Safari and other WebKit pages capture the mic in this out-of-process helper.
+  'com.apple.WebKit.GPU'
 ]);
+
+// CoreAudio can report an empty bundle ID for Apple daemons (e.g. corespeechd after a crash relaunch).
+// These locations are SIP-protected, so only Apple binaries live there.
+const APPLE_SYSTEM_EXECUTABLE_PREFIXES = ['/System/', '/usr/libexec/', '/usr/sbin/'];
 
 class AudioSessionManager {
   constructor() {
@@ -198,7 +204,7 @@ class AudioSessionManager {
         throw new Error('Invalid helper output: expected JSON array');
       }
 
-      const externalSessions = sessions.filter((session) => {
+      const candidateSessions = sessions.filter((session) => {
         const pid = Number(session && session.pid);
         if (!Number.isInteger(pid) || pid <= 0) return false;
         if (this.isOwnProcessPid(pid)) return false;
@@ -206,6 +212,12 @@ class AudioSessionManager {
         if (this.isExcludedMacSystemSession(session)) return false;
         return true;
       });
+
+      const externalSessions = [];
+      for (const session of candidateSessions) {
+        if (!session.bundleId && await this.isAppleSystemExecutable(Number(session.pid))) continue;
+        externalSessions.push(session);
+      }
 
       if (externalSessions.length === 0) {
         return null;
@@ -332,6 +344,16 @@ class AudioSessionManager {
       return false;
     }
     return !ALLOWED_APPLE_MIC_BUNDLE_IDS.has(bundleId);
+  }
+
+  async isAppleSystemExecutable(pid) {
+    try {
+      const { stdout } = await execFileAsync('/bin/ps', ['-o', 'comm=', '-p', String(pid)]);
+      const executablePath = stdout.trim();
+      return APPLE_SYSTEM_EXECUTABLE_PREFIXES.some((prefix) => executablePath.startsWith(prefix));
+    } catch (_) {
+      return false;
+    }
   }
   resolveMacMicHelperPath() {
     const binaryName = 'mic-monitor';
