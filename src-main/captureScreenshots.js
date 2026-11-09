@@ -1,5 +1,5 @@
 const { nativeImage, ipcMain, shell, app, systemPreferences } = require('electron')
-const { execSync } = require('child_process')
+const { exec } = require('child_process')
 const path = require('path')
 const log = require('electron-log')
 const { default: Store } = require('electron-store')
@@ -8,6 +8,28 @@ const { recordPermissionCheck, recordSignal } = require('./telemetry')
 
 // Store Linux screenshot command
 let linuxScreenshotCommand = null
+
+const LINUX_SCREENSHOT_TIMEOUT_MS = 5000
+// Screenshot commands run one at a time. The default command saves GNOME's animation
+// and sound settings, turns them off and restores them afterwards; two overlapping
+// runs would restore each other's "off" and leave them off for good.
+let linuxScreenshotQueue = Promise.resolve()
+let linuxPermissionCheckInFlight = null
+
+function runLinuxScreenshotCommand(commandTemplate, outputPath) {
+  const command = commandTemplate.replace('%s', `"${outputPath}"`)
+  const run = linuxScreenshotQueue.then(() => new Promise((resolve, reject) => {
+    exec(command, { timeout: LINUX_SCREENSHOT_TIMEOUT_MS }, (error) => {
+      if (error) {
+        reject(error)
+        return
+      }
+      resolve()
+    })
+  }))
+  linuxScreenshotQueue = run.catch(() => {})
+  return run
+}
 
 // Store the last captured screenshots for next upload
 let lastScreenshots = null
@@ -346,8 +368,18 @@ function setLinuxScreenshotCommand(command) {
   }
 }
 
+// Concurrent callers share one probe instead of queueing a screenshot each.
+function checkLinuxScreenCapturePermission() {
+  if (!linuxPermissionCheckInFlight) {
+    linuxPermissionCheckInFlight = probeLinuxScreenCapture().finally(() => {
+      linuxPermissionCheckInFlight = null
+    })
+  }
+  return linuxPermissionCheckInFlight
+}
+
 // Linux-specific permission checking - only uses custom command
-async function checkLinuxScreenCapturePermission() {
+async function probeLinuxScreenCapture() {
   try {
     const fs = require('fs')
     const os = require('os')
@@ -363,8 +395,7 @@ async function checkLinuxScreenCapturePermission() {
     if (linuxScreenshotCommand) {
       try {
         // Test the Linux command
-        const testCommand = linuxScreenshotCommand.replace('%s', `"${testPath}"`);
-        execSync(testCommand, { timeout: 5000, stdio: 'pipe' });
+        await runLinuxScreenshotCommand(linuxScreenshotCommand, testPath);
         
         if (fs.existsSync(testPath)) {
           fs.unlinkSync(testPath);
@@ -487,8 +518,7 @@ async function captureScreenshotsLinux() {
     
     // Only use Linux command
     try {
-      const linuxCommand = linuxScreenshotCommand.replace('%s', `"${screenshotPath}"`);
-      execSync(linuxCommand, { timeout: 5000, stdio: 'pipe' });
+      await runLinuxScreenshotCommand(linuxScreenshotCommand, screenshotPath);
     } catch (e) {
       log.error(`Linux screenshot command failed: ${e.message}`)
       return []
@@ -729,11 +759,7 @@ function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndA
       const testPath = path.join(tempDir, `test-screenshot-${Date.now()}.png`);
 
       try {
-        // Replace %s placeholder with actual file path
-        const testCommand = command.replace('%s', `"${testPath}"`);
-        
-        // Execute the command with a timeout
-        execSync(testCommand, { timeout: 5000, stdio: 'pipe' });
+        await runLinuxScreenshotCommand(command, testPath);
         
         // Check if the file was created and has content
         if (fs.existsSync(testPath) && fs.statSync(testPath).size > 0) {

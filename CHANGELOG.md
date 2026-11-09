@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2.4.10
+
+- On Linux, when the main window stays blank for 20 seconds, relaunch once with Chromium's network service running in-process and keep that for 30 days.
+- Run Linux screenshot commands one at a time without freezing the app while they run.
+- Keep in-app notifications visible above the sign-in screens instead of hidden behind them.
+- Update Electron to 43.8.7.
 - Fix meeting detection recording audio when a macOS system daemon (e.g. Siri's corespeechd after a crash) holds the mic without a bundle ID, and detect Safari calls.
 
 ## 2.4.9
