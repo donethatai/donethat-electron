@@ -1,5 +1,5 @@
 const { nativeImage, ipcMain, shell, app, systemPreferences } = require('electron')
-const { execSync } = require('child_process')
+const { spawn } = require('child_process')
 const path = require('path')
 const log = require('electron-log')
 const { default: Store } = require('electron-store')
@@ -8,6 +8,130 @@ const { recordPermissionCheck, recordSignal } = require('./telemetry')
 
 // Store Linux screenshot command
 let linuxScreenshotCommand = null
+
+const LINUX_SCREENSHOT_TIMEOUT_MS = 5000
+const LINUX_SCREENSHOT_KILL_AFTER_MS = 60 * 1000
+// Screenshot commands run one at a time. The default command saves GNOME's animation
+// and sound settings, turns them off and restores them afterwards; two overlapping
+// runs would restore each other's "off" and leave them off for good. So the queue
+// only moves on once the previous command has exited. A caller gives up after
+// LINUX_SCREENSHOT_TIMEOUT_MS, but the command keeps running so it can still restore
+// the settings; only after LINUX_SCREENSHOT_KILL_AFTER_MS is its whole process group
+// killed, nested shells and gnome-screenshot included.
+let linuxScreenshotQueue = Promise.resolve()
+let linuxPermissionCheckInFlight = null
+let activeLinuxScreenshot = null
+const LINUX_SCREENSHOT_QUIT_WAIT_MS = 5000
+
+function killProcessGroup(pid) {
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch (error) {
+    if (error.code === 'ESRCH') return
+    log.warn('Unable to kill screenshot command process group:', error.message)
+  }
+}
+
+// A zombie still has a /proc entry; it has exited, it just has not been reaped
+// (the event loop is blocked while we wait here).
+function isProcessRunning(pid) {
+  try {
+    const stat = require('fs').readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const state = stat.slice(stat.lastIndexOf(')') + 2).charAt(0)
+    return state !== 'Z' && state !== 'X'
+  } catch (_) {
+    return false
+  }
+}
+
+function waitForProcessExitSync(pid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+  while (Date.now() < deadline) {
+    if (!isProcessRunning(pid)) return
+    Atomics.wait(sleeper, 0, 0, 50)
+  }
+}
+
+// Called while the app quits. The detached command would outlive the app, and with it
+// any screenshot it writes later, so give it a moment to finish (and restore the GNOME
+// settings), then kill what is left and delete its output.
+function stopLinuxScreenshotCommandForQuit() {
+  const active = activeLinuxScreenshot
+  if (!active) return
+  activeLinuxScreenshot = null
+  waitForProcessExitSync(active.pid, LINUX_SCREENSHOT_QUIT_WAIT_MS)
+  killProcessGroup(active.pid)
+  removeScreenshotOutput(active.outputPath)
+}
+
+if (process.platform === 'linux') {
+  process.once('exit', stopLinuxScreenshotCommandForQuit)
+}
+
+function removeScreenshotOutput(outputPath) {
+  try {
+    require('fs').rmSync(outputPath, { force: true })
+  } catch (error) {
+    log.warn('Unable to remove screenshot output:', error.message)
+  }
+}
+
+// Resolves once the command has exited (never rejects); `caller` is settled earlier on timeout.
+// Whenever the caller did not get a successful result, the output file is removed on exit:
+// a command that finishes after its caller gave up would otherwise leave a screenshot behind.
+function runCommandToExit(command, outputPath, caller) {
+  return new Promise((resolveExited) => {
+    let finished = false
+    let callerGaveUp = false
+    let callerTimer = null
+    let killTimer = null
+    const finish = (error) => {
+      if (finished) return
+      finished = true
+      clearTimeout(callerTimer)
+      clearTimeout(killTimer)
+      if (activeLinuxScreenshot?.outputPath === outputPath) activeLinuxScreenshot = null
+      if (error || callerGaveUp) removeScreenshotOutput(outputPath)
+      if (error) caller.reject(error)
+      else caller.resolve()
+      resolveExited()
+    }
+
+    let child
+    try {
+      child = spawn('/bin/sh', ['-c', command], { detached: true, stdio: 'ignore' })
+    } catch (error) {
+      finish(error)
+      return
+    }
+    activeLinuxScreenshot = { pid: child.pid, outputPath }
+
+    callerTimer = setTimeout(() => {
+      callerGaveUp = true
+      caller.reject(new Error(`Screenshot command timed out after ${LINUX_SCREENSHOT_TIMEOUT_MS}ms`))
+    }, LINUX_SCREENSHOT_TIMEOUT_MS)
+    killTimer = setTimeout(() => {
+      log.warn(`Screenshot command still running after ${LINUX_SCREENSHOT_KILL_AFTER_MS}ms; killing its process group`)
+      killProcessGroup(child.pid)
+    }, LINUX_SCREENSHOT_KILL_AFTER_MS)
+
+    child.once('error', finish)
+    child.once('exit', (code, signal) => {
+      finish(code === 0 ? null : new Error(`Screenshot command exited with ${signal || `code ${code}`}`))
+    })
+  })
+}
+
+function runLinuxScreenshotCommand(commandTemplate, outputPath) {
+  const command = commandTemplate.replace('%s', `"${outputPath}"`)
+  let caller
+  const callerResult = new Promise((resolve, reject) => {
+    caller = { resolve, reject }
+  })
+  linuxScreenshotQueue = linuxScreenshotQueue.then(() => runCommandToExit(command, outputPath, caller))
+  return callerResult
+}
 
 // Store the last captured screenshots for next upload
 let lastScreenshots = null
@@ -346,8 +470,18 @@ function setLinuxScreenshotCommand(command) {
   }
 }
 
+// Concurrent callers share one probe instead of queueing a screenshot each.
+function checkLinuxScreenCapturePermission() {
+  if (!linuxPermissionCheckInFlight) {
+    linuxPermissionCheckInFlight = probeLinuxScreenCapture().finally(() => {
+      linuxPermissionCheckInFlight = null
+    })
+  }
+  return linuxPermissionCheckInFlight
+}
+
 // Linux-specific permission checking - only uses custom command
-async function checkLinuxScreenCapturePermission() {
+async function probeLinuxScreenCapture() {
   try {
     const fs = require('fs')
     const os = require('os')
@@ -363,8 +497,7 @@ async function checkLinuxScreenCapturePermission() {
     if (linuxScreenshotCommand) {
       try {
         // Test the Linux command
-        const testCommand = linuxScreenshotCommand.replace('%s', `"${testPath}"`);
-        execSync(testCommand, { timeout: 5000, stdio: 'pipe' });
+        await runLinuxScreenshotCommand(linuxScreenshotCommand, testPath);
         
         if (fs.existsSync(testPath)) {
           fs.unlinkSync(testPath);
@@ -487,8 +620,7 @@ async function captureScreenshotsLinux() {
     
     // Only use Linux command
     try {
-      const linuxCommand = linuxScreenshotCommand.replace('%s', `"${screenshotPath}"`);
-      execSync(linuxCommand, { timeout: 5000, stdio: 'pipe' });
+      await runLinuxScreenshotCommand(linuxScreenshotCommand, screenshotPath);
     } catch (e) {
       log.error(`Linux screenshot command failed: ${e.message}`)
       return []
@@ -729,11 +861,7 @@ function initScreenCapturePermissionHandling(mainWindow, stateManager, checkAndA
       const testPath = path.join(tempDir, `test-screenshot-${Date.now()}.png`);
 
       try {
-        // Replace %s placeholder with actual file path
-        const testCommand = command.replace('%s', `"${testPath}"`);
-        
-        // Execute the command with a timeout
-        execSync(testCommand, { timeout: 5000, stdio: 'pipe' });
+        await runLinuxScreenshotCommand(command, testPath);
         
         // Check if the file was created and has content
         if (fs.existsSync(testPath) && fs.statSync(testPath).size > 0) {
@@ -776,5 +904,6 @@ module.exports = {
   PREVIOUS_SCREENSHOT_SCALE_FACTOR,
   initScreenCapturePermissionHandling,
   setLinuxScreenshotCommand,
-  loadLinuxScreenshotCommand
+  loadLinuxScreenshotCommand,
+  stopLinuxScreenshotCommandForQuit
 } 

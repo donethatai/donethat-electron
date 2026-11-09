@@ -23,7 +23,26 @@ const TRUSTED_PORTAL_ORIGIN = 'https://app.donethat.ai';
  * list a capability once the host actually implements it - the portal trusts
  * this list and will not feature-detect any further.
  */
-const HOST_CAPABILITIES = ['setup-overlay', 'masking-sync', 'theme-sync'];
+const HOST_CAPABILITIES = ['setup-overlay', 'masking-sync', 'theme-sync', 'local-llm-status'];
+
+/**
+ * Whether this machine has its own LLM configured, as a bare boolean.
+ *
+ * Same test `processLocal` uses to pick the local path. The portal only needs
+ * the yes/no for its Settings label, so endpoints, models and key sources stay
+ * on this side of the bridge.
+ */
+async function isLocalLlmConfigured() {
+  try {
+    const result = await ipcRenderer.invoke('get-local-processing-state');
+    if (!result || !result.success) return false;
+    const state = result.state || {};
+    return !!(state.gemini && state.gemini.hasKey)
+      || !!(state.openAICompatible && state.openAICompatible.endpoint);
+  } catch (e) {
+    return false;
+  }
+}
 
 function getAppVersion() {
   try {
@@ -63,6 +82,12 @@ ipcRenderer.on('desktop:refresh-data', () => {
   postDesktopMessage({ source: 'donethat-desktop', type: 'desktop:refresh-data' });
 });
 
+// Host -> portal: the Setup overlay closed, so the local LLM may have changed.
+ipcRenderer.on('desktop:local-llm-changed', async () => {
+  const configured = await isLocalLlmConfigured();
+  postDesktopMessage({ source: 'donethat-desktop', type: 'desktop:local-llm-changed', payload: { configured } });
+});
+
 ipcRenderer.on('auth:reauth-result', (_event, payload) => {
   postDesktopMessage({ source: 'donethat-desktop', type: 'auth:reauth-result', payload: payload || {} });
 });
@@ -77,7 +102,8 @@ contextBridge.exposeInMainWorld('Donethat', {
   host: {
     appVersion: getAppVersion(),
     platform: process.platform,
-    capabilities: HOST_CAPABILITIES.slice()
+    capabilities: HOST_CAPABILITIES.slice(),
+    isLocalLlmConfigured
   }
 });
 

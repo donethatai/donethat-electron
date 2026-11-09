@@ -33,6 +33,10 @@ const {
   createGpuCrashMitigator
 } = require('./src-main/gpuCrashMitigation')
 const {
+  applyStartupNetworkServiceMitigation,
+  createMainWindowLoadWatchdog
+} = require('./src-main/networkServiceMitigation')
+const {
   getAutoUpdateDisableState,
   isAutoUpdateDisabled,
   toggleAutoUpdateDisabled,
@@ -70,7 +74,8 @@ app.commandLine.appendSwitch('disable-features', 'MediaRouter,DialMediaRouteProv
 const {
   checkScreenCapturePermission: moduleCheckPermission,
   initScreenCapturePermissionHandling,
-  getMacScreenAccessStatus
+  getMacScreenAccessStatus,
+  stopLinuxScreenshotCommandForQuit
 } = require('./src-main/captureScreenshots')
 const { initWindowsPermissionHandling, checkPermissions: checkWindowsPermission } = require('./src-main/captureWindows')
 const { checkMicrophonePermission } = require('./src-main/captureAudio')
@@ -189,6 +194,31 @@ const gpuCrashMitigator = createGpuCrashMitigator({
   alreadyDisabled: gpuMitigationActive
 })
 recordStartupPhase('gpu_crash_mitigator_created')
+const networkServiceMitigationActive = applyStartupNetworkServiceMitigation({
+  app,
+  store: earlyConfigStore,
+  log,
+  platform: process.platform,
+  argv: process.argv
+})
+recordStartupPhase('network_service_mitigation_checked', { active: networkServiceMitigationActive })
+const mainWindowLoadWatchdog = createMainWindowLoadWatchdog({
+  app,
+  getStore: () => createConfigStore('network_service_mitigation_store'),
+  log,
+  recordSignal,
+  reportToSentry: (message, fields) => {
+    Sentry.captureMessage(message, {
+      level: 'warning',
+      tags: { 'main_window.network_service_in_process': String(networkServiceMitigationActive) },
+      contexts: { main_window_load: fields }
+    })
+  },
+  platform: process.platform,
+  argv: process.argv,
+  alreadyMitigated: networkServiceMitigationActive,
+  beforeRelaunch: () => stopLinuxScreenshotCommandForQuit()
+})
 
 function isTransientSentryNetworkError(event, hint) {
   const exceptionValues = event?.exception?.values || []
@@ -3256,6 +3286,7 @@ function createWindow() {
       }
     });
 
+    mainWindowLoadWatchdog.watch(mainWindow.webContents)
     mainWindow.loadFile('./src/index.html')
 
     // Debug inspector
@@ -3742,6 +3773,7 @@ app.on('window-all-closed', (event) => {
 // Unregister shortcuts on quit
 app.on('will-quit', () => {
   try { globalShortcut.unregisterAll(); } catch (e) {}
+  stopLinuxScreenshotCommandForQuit();
 });
 
 // Update focus handler to clear fallback idle flags.
