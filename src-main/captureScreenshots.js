@@ -1,5 +1,5 @@
 const { nativeImage, ipcMain, shell, app, systemPreferences } = require('electron')
-const { exec } = require('child_process')
+const { spawn } = require('child_process')
 const path = require('path')
 const log = require('electron-log')
 const { default: Store } = require('electron-store')
@@ -10,25 +10,72 @@ const { recordPermissionCheck, recordSignal } = require('./telemetry')
 let linuxScreenshotCommand = null
 
 const LINUX_SCREENSHOT_TIMEOUT_MS = 5000
+const LINUX_SCREENSHOT_KILL_AFTER_MS = 60 * 1000
 // Screenshot commands run one at a time. The default command saves GNOME's animation
 // and sound settings, turns them off and restores them afterwards; two overlapping
-// runs would restore each other's "off" and leave them off for good.
+// runs would restore each other's "off" and leave them off for good. So the queue
+// only moves on once the previous command has exited. A caller gives up after
+// LINUX_SCREENSHOT_TIMEOUT_MS, but the command keeps running so it can still restore
+// the settings; only after LINUX_SCREENSHOT_KILL_AFTER_MS is its whole process group
+// killed, nested shells and gnome-screenshot included.
 let linuxScreenshotQueue = Promise.resolve()
 let linuxPermissionCheckInFlight = null
 
+function killProcessGroup(pid) {
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch (error) {
+    log.warn('Unable to kill screenshot command process group:', error.message)
+  }
+}
+
+// Resolves once the command has exited (never rejects); `caller` is settled earlier on timeout.
+function runCommandToExit(command, caller) {
+  return new Promise((resolveExited) => {
+    let finished = false
+    let callerTimer = null
+    let killTimer = null
+    const finish = (error) => {
+      if (finished) return
+      finished = true
+      clearTimeout(callerTimer)
+      clearTimeout(killTimer)
+      if (error) caller.reject(error)
+      else caller.resolve()
+      resolveExited()
+    }
+
+    let child
+    try {
+      child = spawn('/bin/sh', ['-c', command], { detached: true, stdio: 'ignore' })
+    } catch (error) {
+      finish(error)
+      return
+    }
+
+    callerTimer = setTimeout(() => {
+      caller.reject(new Error(`Screenshot command timed out after ${LINUX_SCREENSHOT_TIMEOUT_MS}ms`))
+    }, LINUX_SCREENSHOT_TIMEOUT_MS)
+    killTimer = setTimeout(() => {
+      log.warn(`Screenshot command still running after ${LINUX_SCREENSHOT_KILL_AFTER_MS}ms; killing its process group`)
+      killProcessGroup(child.pid)
+    }, LINUX_SCREENSHOT_KILL_AFTER_MS)
+
+    child.once('error', finish)
+    child.once('exit', (code, signal) => {
+      finish(code === 0 ? null : new Error(`Screenshot command exited with ${signal || `code ${code}`}`))
+    })
+  })
+}
+
 function runLinuxScreenshotCommand(commandTemplate, outputPath) {
   const command = commandTemplate.replace('%s', `"${outputPath}"`)
-  const run = linuxScreenshotQueue.then(() => new Promise((resolve, reject) => {
-    exec(command, { timeout: LINUX_SCREENSHOT_TIMEOUT_MS }, (error) => {
-      if (error) {
-        reject(error)
-        return
-      }
-      resolve()
-    })
-  }))
-  linuxScreenshotQueue = run.catch(() => {})
-  return run
+  let caller
+  const callerResult = new Promise((resolve, reject) => {
+    caller = { resolve, reject }
+  })
+  linuxScreenshotQueue = linuxScreenshotQueue.then(() => runCommandToExit(command, caller))
+  return callerResult
 }
 
 // Store the last captured screenshots for next upload

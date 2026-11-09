@@ -1,4 +1,6 @@
-const mockExecCalls = []
+const { EventEmitter } = require('events')
+
+const mockSpawnCalls = []
 
 const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
 Object.defineProperty(process, 'platform', {
@@ -7,8 +9,12 @@ Object.defineProperty(process, 'platform', {
 })
 
 jest.mock('child_process', () => ({
-  exec: jest.fn((command, options, callback) => {
-    mockExecCalls.push({ command, options, callback })
+  spawn: jest.fn((file, args, options) => {
+    const { EventEmitter: Emitter } = require('events')
+    const child = new Emitter()
+    child.pid = 4000 + mockSpawnCalls.length
+    mockSpawnCalls.push({ file, args, options, child })
+    return child
   })
 }))
 jest.mock('electron-log', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }))
@@ -34,34 +40,70 @@ const {
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
+beforeEach(() => {
+  mockSpawnCalls.length = 0
+  setLinuxScreenshotCommand('take-screenshot %s')
+})
+
+afterEach(() => {
+  jest.useRealTimers()
+  jest.restoreAllMocks()
+})
+
 afterAll(() => {
   Object.defineProperty(process, 'platform', platformDescriptor)
 })
 
 describe('Linux screenshot command queue', () => {
   test('runs one screenshot command at a time and shares concurrent permission checks', async () => {
-    setLinuxScreenshotCommand('take-screenshot %s')
-
     const firstCheck = checkScreenCapturePermission('first')
     const secondCheck = checkScreenCapturePermission('second')
     await flush()
 
-    expect(mockExecCalls).toHaveLength(1)
-    expect(mockExecCalls[0].options).toEqual({ timeout: 5000 })
+    expect(mockSpawnCalls).toHaveLength(1)
+    expect(mockSpawnCalls[0].file).toBe('/bin/sh')
+    expect(mockSpawnCalls[0].options).toEqual({ detached: true, stdio: 'ignore' })
 
     const capture = captureScreenshotDetailed({ caller: 'capture-cycle' })
     await flush()
-    expect(mockExecCalls).toHaveLength(1)
+    expect(mockSpawnCalls).toHaveLength(1)
 
-    mockExecCalls[0].callback(new Error('timed out'))
+    mockSpawnCalls[0].child.emit('exit', 1, null)
     await expect(firstCheck).resolves.toBe(false)
     await expect(secondCheck).resolves.toBe(false)
     await flush()
 
-    expect(mockExecCalls).toHaveLength(2)
-    expect(mockExecCalls[1].command).toMatch(/^take-screenshot ".*screenshot-\d+\.png"$/)
+    expect(mockSpawnCalls).toHaveLength(2)
+    expect(mockSpawnCalls[1].args[1]).toMatch(/^take-screenshot ".*screenshot-\d+\.png"$/)
 
-    mockExecCalls[1].callback(null)
+    mockSpawnCalls[1].child.emit('exit', 0, null)
+    await expect(capture).resolves.toEqual([])
+  })
+
+  test('gives up on a slow command without starting the next one until the first has exited', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] })
+    const kill = jest.spyOn(process, 'kill').mockImplementation(() => true)
+
+    const check = checkScreenCapturePermission('slow')
+    await flush()
+    expect(mockSpawnCalls).toHaveLength(1)
+
+    jest.advanceTimersByTime(5000)
+    await expect(check).resolves.toBe(false)
+
+    const capture = captureScreenshotDetailed({ caller: 'capture-cycle' })
+    await flush()
+    expect(mockSpawnCalls).toHaveLength(1)
+
+    jest.advanceTimersByTime(55000)
+    expect(kill).toHaveBeenCalledWith(-mockSpawnCalls[0].child.pid, 'SIGKILL')
+    expect(mockSpawnCalls).toHaveLength(1)
+
+    mockSpawnCalls[0].child.emit('exit', null, 'SIGKILL')
+    await flush()
+    expect(mockSpawnCalls).toHaveLength(2)
+
+    mockSpawnCalls[1].child.emit('exit', 0, null)
     await expect(capture).resolves.toEqual([])
   })
 })
