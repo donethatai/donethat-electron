@@ -20,13 +20,53 @@ const LINUX_SCREENSHOT_KILL_AFTER_MS = 60 * 1000
 // killed, nested shells and gnome-screenshot included.
 let linuxScreenshotQueue = Promise.resolve()
 let linuxPermissionCheckInFlight = null
+let activeLinuxScreenshot = null
+const LINUX_SCREENSHOT_QUIT_WAIT_MS = 5000
 
 function killProcessGroup(pid) {
   try {
     process.kill(-pid, 'SIGKILL')
   } catch (error) {
+    if (error.code === 'ESRCH') return
     log.warn('Unable to kill screenshot command process group:', error.message)
   }
+}
+
+// A zombie still has a /proc entry; it has exited, it just has not been reaped
+// (the event loop is blocked while we wait here).
+function isProcessRunning(pid) {
+  try {
+    const stat = require('fs').readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const state = stat.slice(stat.lastIndexOf(')') + 2).charAt(0)
+    return state !== 'Z' && state !== 'X'
+  } catch (_) {
+    return false
+  }
+}
+
+function waitForProcessExitSync(pid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+  while (Date.now() < deadline) {
+    if (!isProcessRunning(pid)) return
+    Atomics.wait(sleeper, 0, 0, 50)
+  }
+}
+
+// Called while the app quits. The detached command would outlive the app, and with it
+// any screenshot it writes later, so give it a moment to finish (and restore the GNOME
+// settings), then kill what is left and delete its output.
+function stopLinuxScreenshotCommandForQuit() {
+  const active = activeLinuxScreenshot
+  if (!active) return
+  activeLinuxScreenshot = null
+  waitForProcessExitSync(active.pid, LINUX_SCREENSHOT_QUIT_WAIT_MS)
+  killProcessGroup(active.pid)
+  removeScreenshotOutput(active.outputPath)
+}
+
+if (process.platform === 'linux') {
+  process.once('exit', stopLinuxScreenshotCommandForQuit)
 }
 
 function removeScreenshotOutput(outputPath) {
@@ -51,6 +91,7 @@ function runCommandToExit(command, outputPath, caller) {
       finished = true
       clearTimeout(callerTimer)
       clearTimeout(killTimer)
+      if (activeLinuxScreenshot?.outputPath === outputPath) activeLinuxScreenshot = null
       if (error || callerGaveUp) removeScreenshotOutput(outputPath)
       if (error) caller.reject(error)
       else caller.resolve()
@@ -64,6 +105,7 @@ function runCommandToExit(command, outputPath, caller) {
       finish(error)
       return
     }
+    activeLinuxScreenshot = { pid: child.pid, outputPath }
 
     callerTimer = setTimeout(() => {
       callerGaveUp = true
@@ -862,5 +904,6 @@ module.exports = {
   PREVIOUS_SCREENSHOT_SCALE_FACTOR,
   initScreenCapturePermissionHandling,
   setLinuxScreenshotCommand,
-  loadLinuxScreenshotCommand
+  loadLinuxScreenshotCommand,
+  stopLinuxScreenshotCommandForQuit
 } 

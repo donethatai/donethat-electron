@@ -82,6 +82,7 @@ function createMainWindowLoadWatchdog({
   argv = process.argv,
   env = process.env,
   alreadyMitigated = false,
+  beforeRelaunch,
   timeoutMs = LOAD_TIMEOUT_MS,
   now = () => Date.now(),
   setTimer = setTimeout,
@@ -128,6 +129,11 @@ function createMainWindowLoadWatchdog({
     }
 
     log?.warn?.('Relaunching with the network service in-process')
+    try {
+      beforeRelaunch?.()
+    } catch (error) {
+      log?.warn?.('Cleanup before network service relaunch failed:', error.message)
+    }
     app?.relaunch?.(buildRelaunchOptions(argv, env))
     app?.exit?.(0)
   }

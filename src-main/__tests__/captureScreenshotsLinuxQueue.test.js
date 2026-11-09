@@ -35,7 +35,8 @@ jest.mock('electron', () => ({
 const {
   captureScreenshotDetailed,
   checkScreenCapturePermission,
-  setLinuxScreenshotCommand
+  setLinuxScreenshotCommand,
+  stopLinuxScreenshotCommandForQuit
 } = require('../captureScreenshots')
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
@@ -123,5 +124,31 @@ describe('Linux screenshot command queue', () => {
     await flush()
 
     expect(rmSync).toHaveBeenCalledWith(expect.stringMatching(/screenshot-\d+\.png$/), { force: true })
+  })
+
+  test('on quit, kills a running command and deletes its output so nothing outlives the app', async () => {
+    const fs = require('fs')
+    const kill = jest.spyOn(process, 'kill').mockImplementation(() => true)
+    const rmSync = jest.spyOn(fs, 'rmSync').mockImplementation(() => {})
+    const realReadFileSync = fs.readFileSync
+    jest.spyOn(fs, 'readFileSync').mockImplementation((file, ...rest) => (
+      String(file).startsWith('/proc/') ? '4000 (sh) Z 1 4000' : realReadFileSync(file, ...rest)
+    ))
+
+    captureScreenshotDetailed({ caller: 'capture-cycle' })
+    await flush()
+    const { child } = mockSpawnCalls[0]
+
+    stopLinuxScreenshotCommandForQuit()
+
+    expect(kill).toHaveBeenCalledWith(-child.pid, 'SIGKILL')
+    expect(rmSync).toHaveBeenCalledWith(expect.stringMatching(/screenshot-\d+\.png$/), { force: true })
+
+    kill.mockClear()
+    stopLinuxScreenshotCommandForQuit()
+    expect(kill).not.toHaveBeenCalled()
+
+    child.emit('exit', null, 'SIGKILL')
+    await flush()
   })
 })

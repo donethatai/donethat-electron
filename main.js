@@ -74,7 +74,8 @@ app.commandLine.appendSwitch('disable-features', 'MediaRouter,DialMediaRouteProv
 const {
   checkScreenCapturePermission: moduleCheckPermission,
   initScreenCapturePermissionHandling,
-  getMacScreenAccessStatus
+  getMacScreenAccessStatus,
+  stopLinuxScreenshotCommandForQuit
 } = require('./src-main/captureScreenshots')
 const { initWindowsPermissionHandling, checkPermissions: checkWindowsPermission } = require('./src-main/captureWindows')
 const { checkMicrophonePermission } = require('./src-main/captureAudio')
@@ -215,7 +216,8 @@ const mainWindowLoadWatchdog = createMainWindowLoadWatchdog({
   },
   platform: process.platform,
   argv: process.argv,
-  alreadyMitigated: networkServiceMitigationActive
+  alreadyMitigated: networkServiceMitigationActive,
+  beforeRelaunch: () => stopLinuxScreenshotCommandForQuit()
 })
 
 function isTransientSentryNetworkError(event, hint) {
@@ -3771,6 +3773,7 @@ app.on('window-all-closed', (event) => {
 // Unregister shortcuts on quit
 app.on('will-quit', () => {
   try { globalShortcut.unregisterAll(); } catch (e) {}
+  stopLinuxScreenshotCommandForQuit();
 });
 
 // Update focus handler to clear fallback idle flags.

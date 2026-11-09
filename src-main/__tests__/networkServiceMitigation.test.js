@@ -34,7 +34,7 @@ function createMockApp() {
   return app
 }
 
-function createWatchdog({ app = createMockApp(), store = createMockStore(), alreadyMitigated = false, platform = 'linux', env = {} } = {}) {
+function createWatchdog({ app = createMockApp(), store = createMockStore(), alreadyMitigated = false, platform = 'linux', env = {}, beforeRelaunch } = {}) {
   const timers = []
   const reportToSentry = jest.fn()
   const recordSignal = jest.fn()
@@ -48,6 +48,7 @@ function createWatchdog({ app = createMockApp(), store = createMockStore(), alre
     argv: ['/tmp/.mount_x/donethat', '--flag'],
     env,
     alreadyMitigated,
+    beforeRelaunch,
     now: () => 5000,
     setTimer: (fn, ms) => {
       const timer = { fn, ms, cleared: false }
@@ -119,6 +120,17 @@ describe('main window load watchdog', () => {
     }))
     expect(app.relaunch).toHaveBeenCalledWith({ execPath: '/home/u/DoneThat.AppImage', args: ['--flag', RELAUNCH_ARG] })
     expect(app.exit).toHaveBeenCalledWith(0)
+  })
+
+  test('runs cleanup before relaunching', () => {
+    const beforeRelaunch = jest.fn()
+    const { app, timers, watchdog } = createWatchdog({ beforeRelaunch })
+    watchdog.watch(new EventEmitter())
+
+    timers[0].fn()
+
+    expect(beforeRelaunch).toHaveBeenCalled()
+    expect(beforeRelaunch.mock.invocationCallOrder[0]).toBeLessThan(app.relaunch.mock.invocationCallOrder[0])
   })
 
   test('reports but never relaunches again when already mitigated', () => {
