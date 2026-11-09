@@ -513,9 +513,21 @@ function toggleShortcutsOverlay(sections) {
 function closeSetupOverlay() {
   const overlay = document.getElementById('settingsView');
   if (!overlay) return;
+  const wasOpen = !overlay.classList.contains('hidden');
   // Focus left on a node that is about to be hidden is focus nobody owns.
   if (overlay.contains(document.activeElement)) document.activeElement.blur();
   overlay.classList.add('hidden');
+  if (wasOpen) notifyPortalLocalLlmChanged();
+}
+
+/** Let the portal re-read the local LLM state the user may just have edited. */
+function notifyPortalLocalLlmChanged() {
+  if (!portalView || !portalDomReady || !isTrustedPortalView(portalView)) return;
+  try {
+    portalView.send('desktop:local-llm-changed');
+  } catch (e) {
+    console.error('[setup] failed to notify portal of local LLM change', e);
+  }
 }
 
 const SETUP_FOCUSABLE_SELECTOR = [

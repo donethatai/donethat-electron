@@ -4,6 +4,7 @@
 
 ## 2.4.10
 
+- Tell the web app whether your own LLM is configured, so its Settings card shows "Manage" instead of "Set up" once it is.
 - On Linux, when the main window stays blank for 20 seconds, relaunch once with Chromium's network service running in-process and keep that for 30 days.
 - Run Linux screenshot commands one at a time without freezing the app while they run.
 - Keep in-app notifications visible above the sign-in screens instead of hidden behind them.
