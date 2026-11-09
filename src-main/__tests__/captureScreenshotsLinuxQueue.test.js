@@ -80,9 +80,10 @@ describe('Linux screenshot command queue', () => {
     await expect(capture).resolves.toEqual([])
   })
 
-  test('gives up on a slow command without starting the next one until the first has exited', async () => {
+  test('gives up on a slow command, removes its late output, and starts the next one only after it exits', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate'] })
     const kill = jest.spyOn(process, 'kill').mockImplementation(() => true)
+    const rmSync = jest.spyOn(require('fs'), 'rmSync').mockImplementation(() => {})
 
     const check = checkScreenCapturePermission('slow')
     await flush()
@@ -102,8 +103,25 @@ describe('Linux screenshot command queue', () => {
     mockSpawnCalls[0].child.emit('exit', null, 'SIGKILL')
     await flush()
     expect(mockSpawnCalls).toHaveLength(2)
+    expect(rmSync).toHaveBeenCalledWith(expect.stringMatching(/test-screenshot-\d+\.png$/), { force: true })
 
     mockSpawnCalls[1].child.emit('exit', 0, null)
     await expect(capture).resolves.toEqual([])
+  })
+
+  test('removes the output of a command that finishes after its caller gave up', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] })
+    const rmSync = jest.spyOn(require('fs'), 'rmSync').mockImplementation(() => {})
+
+    const capture = captureScreenshotDetailed({ caller: 'capture-cycle' })
+    await flush()
+    jest.advanceTimersByTime(5000)
+    await expect(capture).resolves.toEqual([])
+    expect(rmSync).not.toHaveBeenCalled()
+
+    mockSpawnCalls[0].child.emit('exit', 0, null)
+    await flush()
+
+    expect(rmSync).toHaveBeenCalledWith(expect.stringMatching(/screenshot-\d+\.png$/), { force: true })
   })
 })

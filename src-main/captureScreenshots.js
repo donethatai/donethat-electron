@@ -29,10 +29,21 @@ function killProcessGroup(pid) {
   }
 }
 
+function removeScreenshotOutput(outputPath) {
+  try {
+    require('fs').rmSync(outputPath, { force: true })
+  } catch (error) {
+    log.warn('Unable to remove screenshot output:', error.message)
+  }
+}
+
 // Resolves once the command has exited (never rejects); `caller` is settled earlier on timeout.
-function runCommandToExit(command, caller) {
+// Whenever the caller did not get a successful result, the output file is removed on exit:
+// a command that finishes after its caller gave up would otherwise leave a screenshot behind.
+function runCommandToExit(command, outputPath, caller) {
   return new Promise((resolveExited) => {
     let finished = false
+    let callerGaveUp = false
     let callerTimer = null
     let killTimer = null
     const finish = (error) => {
@@ -40,6 +51,7 @@ function runCommandToExit(command, caller) {
       finished = true
       clearTimeout(callerTimer)
       clearTimeout(killTimer)
+      if (error || callerGaveUp) removeScreenshotOutput(outputPath)
       if (error) caller.reject(error)
       else caller.resolve()
       resolveExited()
@@ -54,6 +66,7 @@ function runCommandToExit(command, caller) {
     }
 
     callerTimer = setTimeout(() => {
+      callerGaveUp = true
       caller.reject(new Error(`Screenshot command timed out after ${LINUX_SCREENSHOT_TIMEOUT_MS}ms`))
     }, LINUX_SCREENSHOT_TIMEOUT_MS)
     killTimer = setTimeout(() => {
@@ -74,7 +87,7 @@ function runLinuxScreenshotCommand(commandTemplate, outputPath) {
   const callerResult = new Promise((resolve, reject) => {
     caller = { resolve, reject }
   })
-  linuxScreenshotQueue = linuxScreenshotQueue.then(() => runCommandToExit(command, caller))
+  linuxScreenshotQueue = linuxScreenshotQueue.then(() => runCommandToExit(command, outputPath, caller))
   return callerResult
 }
 
