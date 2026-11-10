@@ -18,7 +18,47 @@ const {
   isLocalProcessingAuthError,
   shouldRethrowLocalProcessingError,
   formatLocalProcessingErrorForUser,
+  getLocalCycleBudgetMs,
+  noteLocalBudgetExceeded,
+  resetLocalBudgetStreak,
+  summarizeLlmPayload,
 } = require('../processLocal');
+
+describe('local processing time budget', () => {
+  test('leaves a fixed reserve of the capture interval, never below 60s', () => {
+    expect(getLocalCycleBudgetMs(5)).toBe(240_000);
+    expect(getLocalCycleBudgetMs(3)).toBe(120_000);
+    expect(getLocalCycleBudgetMs(2)).toBe(60_000);
+    expect(getLocalCycleBudgetMs(1)).toBe(60_000);
+    expect(getLocalCycleBudgetMs(undefined)).toBe(60_000);
+  });
+
+  test('notifies once per streak of budget overruns and re-arms after a success', () => {
+    resetLocalBudgetStreak();
+    expect(noteLocalBudgetExceeded()).toBe(false);
+    expect(noteLocalBudgetExceeded()).toBe(false);
+    expect(noteLocalBudgetExceeded()).toBe(true);
+    expect(noteLocalBudgetExceeded()).toBe(false);
+
+    resetLocalBudgetStreak();
+    expect(noteLocalBudgetExceeded()).toBe(false);
+    expect(noteLocalBudgetExceeded()).toBe(false);
+    expect(noteLocalBudgetExceeded()).toBe(true);
+  });
+
+  test('summarizes payload by size without including content', () => {
+    const image = `data:image/jpeg;base64,${'A'.repeat(4096)}`;
+    const summary = summarizeLlmPayload([{ content: [
+      { type: 'text', text: 'secret window title' },
+      { type: 'image_url', image_url: { url: image } },
+      { type: 'image_url', image_url: image },
+      { type: 'input_audio', input_audio: { data: 'B'.repeat(2048), format: 'wav' } }
+    ] }]);
+
+    expect(summary).toContain('2 image(s)');
+    expect(summary).not.toContain('secret');
+  });
+});
 
 describe('local processing notifications', () => {
   beforeEach(() => {
