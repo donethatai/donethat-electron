@@ -1011,7 +1011,7 @@ async function _sendToServer(idToken, screenshots, inputData = {}, previousScree
     
     if (localProcessingAvailable) {
       try {
-        const result = await processDataLocally(idToken, screenshots, { ...inputData, previousScreenshotData, clientTelemetry });
+        const result = await processDataLocally(idToken, screenshots, { ...inputData, previousScreenshotData, clientTelemetry, captureIntervalMinutes });
         return result;
       } catch (error) {
         // Handle local processing auth errors consistently with cloud path

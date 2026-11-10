@@ -15,6 +15,8 @@ let configCache = {
 
 // LLM models (will be initialized when needed)
 let llmModels = null;
+// Model ids parallel to llmModels, for logs (the structured-output wrappers hide them)
+let llmModelNames = null;
 // latest config snapshot for downstream use
 let latestConfig = null;
 // Local provider: 'gemini' or 'openai'
@@ -25,9 +27,13 @@ let skipGeminiOnceAfterQuota = false;
 const CAPTION_TOKENS = 200; // Target tokens for description truncation
 const MAX_OUTPUT_TOKENS = 1000; // Max tokens allowed for model output
 const MAX_SCREENSHOT_SIZE = 2000000; // 2MB per screenshot
-const LOCAL_LLM_CYCLE_BUDGET_MS = 60_000;
+const LOCAL_LLM_MIN_CYCLE_BUDGET_MS = 60_000;
+// Time kept free in each capture interval for screenshots, config fetch and result submission.
+const LOCAL_LLM_CYCLE_RESERVE_MS = 60_000;
 const LOCAL_LLM_BASE_ATTEMPT_TIMEOUT_MS = 120_000;
 const LOCAL_LLM_MIN_ATTEMPT_TIMEOUT_MS = 3_000;
+const LOCAL_BUDGET_STREAK_NOTIFY_THRESHOLD = 3;
+let consecutiveLocalBudgetExceeded = 0;
 const TRANSIENT_LOCAL_PROCESSING_CODES = new Set([
   'EAI_AGAIN',
   'ENETDOWN',
@@ -191,6 +197,81 @@ function createGeminiCooldownError() {
   return error;
 }
 
+function base64Bytes(data) {
+  if (typeof data !== 'string') return 0;
+  const base64 = data.includes(',') ? data.slice(data.indexOf(',') + 1) : data;
+  return Math.round(base64.length * 0.75);
+}
+
+/**
+ * Describe an LLM request by size only (counts and KB), never its content.
+ */
+function summarizeLlmPayload(messages) {
+  let imageCount = 0;
+  let imageBytes = 0;
+  let audioBytes = 0;
+  for (const message of messages || []) {
+    const blocks = Array.isArray(message?.content) ? message.content : [];
+    for (const block of blocks) {
+      if (block?.type === 'image_url') {
+        const image = block.image_url;
+        imageCount += 1;
+        imageBytes += base64Bytes(typeof image === 'string' ? image : image?.url);
+      } else if (block?.type === 'media') {
+        audioBytes += base64Bytes(block.data);
+      } else if (block?.type === 'input_audio') {
+        audioBytes += base64Bytes(block.input_audio?.data);
+      }
+    }
+  }
+  return `${imageCount} image(s) ~${Math.round(imageBytes / 1024)}KB, audio ~${Math.round(audioBytes / 1024)}KB`;
+}
+
+function getLocalCycleBudgetMs(captureIntervalMinutes) {
+  const intervalMs = Number(captureIntervalMinutes) * 60_000;
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    return LOCAL_LLM_MIN_CYCLE_BUDGET_MS;
+  }
+  return Math.max(LOCAL_LLM_MIN_CYCLE_BUDGET_MS, intervalMs - LOCAL_LLM_CYCLE_RESERVE_MS);
+}
+
+/**
+ * Count a budget overrun and report whether this one should notify the user.
+ * Notifies once per streak, when the streak reaches the threshold.
+ */
+function noteLocalBudgetExceeded() {
+  consecutiveLocalBudgetExceeded += 1;
+  return consecutiveLocalBudgetExceeded === LOCAL_BUDGET_STREAK_NOTIFY_THRESHOLD;
+}
+
+function resetLocalBudgetStreak() {
+  consecutiveLocalBudgetExceeded = 0;
+}
+
+function buildLocalTooSlowNotification() {
+  return {
+    id: 'local-processing-too-slow',
+    title: 'Local model too slow',
+    message: 'Your local AI model is taking too long to respond, so recent activity was not recorded. Try a smaller or faster model in Settings.',
+    sticky: true,
+    alsoNative: true
+  };
+}
+
+function notifyMainWindow(payload) {
+  // Notify main window only — getAllWindows()[0] is not ordered; overlay (chat) has no listener.
+  try {
+    const win = getMainWindow();
+    if (win) {
+      win.webContents.send('request-notification', payload);
+    } else {
+      log.warn('Local processing error: main window unavailable for in-app notification');
+    }
+  } catch (e) {
+    log.warn('Local processing error: failed to send notification:', e?.message || e);
+  }
+}
+
 function createLocalBudgetExceededError() {
   const error = new Error('Local processing time budget exceeded for this cycle');
   error.code = 'LOCAL_BUDGET_EXCEEDED';
@@ -334,6 +415,7 @@ async function initializeLLM(idToken) {
           temperature: 0.2 // some randomness so the retries make sense
         }).withStructuredOutput(config.outputSchema, { safe: true }))
       );
+      llmModelNames = geminiModels.map(m => m.model);
       if (!llmModels || llmModels.length === 0) {
         throw new Error('No Gemini models available in config');
       }
@@ -357,6 +439,7 @@ async function initializeLLM(idToken) {
         configuration: { baseURL }
       }).withStructuredOutput(outputSchema, { safe: true });
       llmModels = [chat];
+      llmModelNames = [openaiCompat.config.model];
       return;
     }
   } catch (error) {
@@ -376,25 +459,31 @@ async function invokeWithFallback(messages, testMode = false, options = {}) {
   let lastError = null;
   const deadlineMs = Number(options.deadlineMs) || 0;
   const hasDeadline = Number.isFinite(deadlineMs) && deadlineMs > 0;
+  const payloadSummary = summarizeLlmPayload(messages);
 
-  for (const llm of llmModels) {
+  for (const [modelIndex, llm] of llmModels.entries()) {
+    const modelName = llmModelNames?.[modelIndex] || 'unknown';
     let attempt = 0;
     while (attempt <= 2) {
+      let attemptTimeoutMs = LOCAL_LLM_BASE_ATTEMPT_TIMEOUT_MS;
+      const attemptStartedAt = Date.now();
       try {
-        let attemptTimeoutMs = LOCAL_LLM_BASE_ATTEMPT_TIMEOUT_MS;
         if (hasDeadline) {
           const remainingMs = deadlineMs - Date.now();
           if (remainingMs <= 0) {
             throw createLocalBudgetExceededError();
           }
-          attemptTimeoutMs = Math.max(
-            LOCAL_LLM_MIN_ATTEMPT_TIMEOUT_MS,
-            Math.min(LOCAL_LLM_BASE_ATTEMPT_TIMEOUT_MS, remainingMs)
-          );
+          // The cycle deadline bounds every attempt, so one slow call may use all remaining time.
+          attemptTimeoutMs = Math.max(LOCAL_LLM_MIN_ATTEMPT_TIMEOUT_MS, remainingMs);
         }
 
-        return await llm.invoke(messages, { signal: AbortSignal.timeout(attemptTimeoutMs) });
+        const response = await llm.invoke(messages, { signal: AbortSignal.timeout(attemptTimeoutMs) });
+        log.info(`[local-llm] ${localProvider} ${modelName} ok in ${Date.now() - attemptStartedAt}ms (attempt ${attempt + 1}, timeout ${attemptTimeoutMs}ms, ${payloadSummary})`);
+        return response;
       } catch (error) {
+        if (error?.code !== 'LOCAL_BUDGET_EXCEEDED') {
+          log.warn(`[local-llm] ${localProvider} ${modelName} failed after ${Date.now() - attemptStartedAt}ms (${error?.name || 'Error'}, attempt ${attempt + 1}, timeout ${attemptTimeoutMs}ms, ${payloadSummary})`);
+        }
         if (testMode) throw error;
         if (error?.code === 'LOCAL_BUDGET_EXCEEDED') throw error;
         if (hasDeadline && (deadlineMs - Date.now()) <= 0) {
@@ -624,8 +713,9 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
  * @param {number} idleTime - Idle time in seconds
  * @param {string} idToken - Firebase ID token
  * @param {boolean} testMode - If true, skip Firebase submission
+ * @param {Object} options - { cycleBudgetMs } time allowed for all LLM attempts this cycle
  */
-async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioCycle, idleTime, idToken, testMode = false) {
+async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioCycle, idleTime, idToken, testMode = false, options = {}) {
   try {
     // Screenshots are optional: we can still process cycles using audio/activity/idle data.
     const screenshotList = Array.isArray(screenshots) ? screenshots : [];
@@ -647,7 +737,8 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
 
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
-    const localCycleDeadlineMs = Date.now() + LOCAL_LLM_CYCLE_BUDGET_MS;
+    const cycleBudgetMs = Number(options.cycleBudgetMs) || LOCAL_LLM_MIN_CYCLE_BUDGET_MS;
+    const localCycleDeadlineMs = Date.now() + cycleBudgetMs;
 
     // Call LLM with retry logic:
     //   - any error with audio present → log payload diagnostics, retry once without audio
@@ -826,8 +917,10 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
         audioCycle,
         idleTime,
         idToken,
-        testMode
+        testMode,
+        { cycleBudgetMs: getLocalCycleBudgetMs(inputData?.captureIntervalMinutes) }
       );
+      resetLocalBudgetStreak();
     } catch (err) {
       if (shouldRethrowLocalProcessingError(err, testMode)) {
         throw err;
@@ -840,21 +933,13 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
 
       if (err?.code === 'LOCAL_BUDGET_EXCEEDED') {
         recordLocalBudgetExceeded();
-        log.warn('Local processing budget exceeded; skipping local processing for this cycle.');
-      }
-
-      // Notify main window only — getAllWindows()[0] is not ordered; overlay (chat) has no listener.
-      if (err?.code !== 'GEMINI_COOLDOWN' && err?.code !== 'LOCAL_BUDGET_EXCEEDED') {
-        try {
-          const win = getMainWindow();
-          if (win) {
-            win.webContents.send('request-notification', buildLocalProcessingNotification(err));
-          } else {
-            log.warn('Local processing error: main window unavailable for in-app notification');
-          }
-        } catch (e) {
-          log.warn('Local processing error: failed to send notification:', e?.message || e);
+        const shouldNotify = noteLocalBudgetExceeded();
+        log.warn(`Local processing budget exceeded (${consecutiveLocalBudgetExceeded} in a row); skipping local processing for this cycle.`);
+        if (shouldNotify) {
+          notifyMainWindow(buildLocalTooSlowNotification());
         }
+      } else if (err?.code !== 'GEMINI_COOLDOWN') {
+        notifyMainWindow(buildLocalProcessingNotification(err));
       }
       // Throw canonical local-processing error marker for upstream
       throw new Error('Local Processing');
@@ -906,9 +991,14 @@ module.exports = {
   shouldRethrowLocalProcessingError,
   buildLocalProcessingNotification,
   formatLocalProcessingErrorForUser,
+  getLocalCycleBudgetMs,
+  noteLocalBudgetExceeded,
+  resetLocalBudgetStreak,
+  summarizeLlmPayload,
   // Allow main process to reset cached config and models when FE updates settings
-  resetLLMModels: () => { 
-    llmModels = null; 
+  resetLLMModels: () => {
+    llmModels = null;
+    llmModelNames = null;
     localProvider = null;
   }
 };

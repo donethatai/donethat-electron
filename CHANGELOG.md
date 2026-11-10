@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.4.11
+
+- Give your own LLM most of the capture interval to respond (4 minutes at the default 5-minute interval, never less than 60 seconds), and notify you when it is too slow three captures in a row instead of dropping them silently.
+
 ## 2.4.10
 
 - Tell the web app whether your own LLM is configured, so its Settings card shows "Manage" instead of "Set up" once it is.
