@@ -11,6 +11,19 @@ function logProcessError(label, error) {
   if (error.stderr) console.error(`${label} stderr:\n${error.stderr.toString()}`);
 }
 
+// signtool only signs Windows PE files. Some packages ship native modules for
+// every OS (get-windows bundles its macOS .node), so those are skipped.
+function isWindowsBinary(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const header = Buffer.alloc(2);
+    return fs.readSync(fd, header, 0, 2, 0) === 2 && header.toString('latin1') === 'MZ';
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 function shouldSkipSigning(file) {
   const isCi = process.env.GITHUB_ACTIONS === 'true';
 
@@ -48,6 +61,10 @@ function signFile(file) {
   }
   if (!fs.existsSync(file)) {
     throw new Error(`Build failed: file to sign not found at ${file}`);
+  }
+  if (!isWindowsBinary(file)) {
+    console.log(`Skipping signing for a non-Windows binary: ${file}`);
+    return;
   }
 
   console.log(`Signing via Azure Trusted Signing: ${file}`);
@@ -92,6 +109,7 @@ async function signConfiguration(configuration) {
 }
 
 exports.signFile = signFile;
+exports.isWindowsBinary = isWindowsBinary;
 exports.default = signConfiguration;
 
 if (require.main === module) {
