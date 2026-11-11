@@ -80,6 +80,9 @@ describe('local processing secret storage', () => {
           model: 'gpt-local',
           hasApiKey: true,
           keySource: 'managed'
+        },
+        bundled: {
+          enabled: false
         }
       }
     });

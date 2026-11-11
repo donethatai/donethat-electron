@@ -51,6 +51,14 @@ const GEMINI_KEY_SOURCE_STORE_KEY = 'geminiApiKeySource';
 const OPENAI_KEY_SOURCE_STORE_KEY = 'openaiCompatibleApiKeySource';
 const API_KEY_SOURCE_MANAGED = 'managed';
 const API_KEY_SOURCE_USER = 'user';
+const BUNDLED_SETTINGS_STORE_KEY = 'localProcessing.bundled';
+const LLM_MANAGED_MESSAGE = 'LLM settings are managed by your organization';
+const BUNDLED_UNSUPPORTED_MESSAGE = 'The on-device model is not supported on this computer';
+const LOCAL_PROVIDER_NAMES = {
+  bundled: 'On-device model',
+  gemini: 'Gemini',
+  openai: 'OpenAI-Compatible'
+};
 let managedAppSettings = {
   recording: {
     manualPauseEnabled: null
@@ -1842,9 +1850,67 @@ function setupIPCHandlers() {
     }
   });
 
+  // On-device model handlers. Download progress reaches the renderer through
+  // `localModel:status` events (wired in main.js), so download returns at once.
+  ipcMain.handle('localModel:get-status', async () => {
+    try {
+      return getLocalModelSummary();
+    } catch (error) {
+      log.error('Error reading on-device model status:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // The enable setting is kept: cycles then fail locally ("not downloaded")
+  // instead of silently switching to the cloud.
+  ipcMain.handle('localModel:delete', async () => {
+    try {
+      await require('./localModel').deleteModel();
+      return getLocalModelSummary();
+    } catch (error) {
+      log.error('Error deleting on-device model:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('localModel:set-enabled', async (_event, payload) => {
+    try {
+      if (!payload || typeof payload !== 'object' || typeof payload.enabled !== 'boolean') {
+        return { success: false, error: 'Invalid on-device model setting' };
+      }
+      if (isLocalProcessingManaged()) {
+        return { success: false, error: LLM_MANAGED_MESSAGE };
+      }
+      if (!payload.enabled) {
+        cancelPendingBundledEnable();
+      } else {
+        const localModel = require('./localModel');
+        if (!localModel.isBundledSupported()) {
+          return { success: false, error: BUNDLED_UNSUPPORTED_MESSAGE };
+        }
+        const modelState = localModel.getModelStatus().state;
+        if (modelState === 'deleting') {
+          return { success: false, error: 'The on-device model is being deleted; try again in a moment' };
+        }
+        // Without a verified model, download it first; the setting turns on
+        // once the download finishes, so capture keeps its current path until then.
+        if (modelState !== 'ready') {
+          enableBundledAfterDownload(localModel);
+          return getLocalModelSummary();
+        }
+      }
+      setBundledEnabled(payload.enabled);
+      log.info(`On-device model ${payload.enabled ? 'enabled' : 'disabled'}`);
+      return getLocalModelSummary();
+    } catch (error) {
+      log.error('Error updating on-device model setting:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Test local processing handler
   ipcMain.handle('test-local-processing', async (event) => {
-    const { processDataLocally, isLocalProcessingAvailable, formatLocalProcessingErrorForUser } = require('./processLocal');
+    const { processDataLocally, getLocalProvider, formatLocalProcessingErrorForUser } = require('./processLocal');
     try {
       const { getInputDataSettings } = require('./capture');
       const audioCapture = require('./captureAudio');
@@ -1855,21 +1921,18 @@ function setupIPCHandlers() {
         idleTime: 0
       };
 
-      const screenshots = await require('./captureScreenshots').captureScreenshot({ caller: 'test-local-processing' });
-
-      // Check if we have local processing available and determine which provider
-      if (!await isLocalProcessingAvailable()) {
-        return { success: false, message: 'No local processing configuration found. Set up Gemini API key or OpenAI-compatible endpoint first.' };
+      // Same provider the capture cycle would pick
+      const provider = await getLocalProvider();
+      if (!provider) {
+        return { success: false, message: 'No local processing configuration found. Turn on the on-device model, or set up a Gemini API key or an OpenAI-compatible endpoint first.' };
       }
 
-      // Determine which provider is configured (Gemini takes precedence)
-      const geminiResult = await getGeminiApiKey();
-      const openaiResult = await getOpenAICompatibleConfig();
-      const isGemini = geminiResult.success && geminiResult.apiKey;
-      const isOpenAI = !isGemini && openaiResult.success && openaiResult.config && openaiResult.config.endpoint;
-      const providerName = isGemini ? 'Gemini' : (isOpenAI ? 'OpenAI-Compatible' : 'Local');
+      const screenshots = await captureMaskedTestScreenshots(provider);
+
+      const providerName = LOCAL_PROVIDER_NAMES[provider] || 'Local';
       const captureSettings = getInputDataSettings();
-      const shouldTestAudio = !!captureSettings?.audio;
+      // The on-device model is text-only and does not use audio.
+      const shouldTestAudio = provider !== 'bundled' && !!captureSettings?.audio;
       let audioIncludedInTest = false;
 
       if (shouldTestAudio) {
@@ -2555,6 +2618,94 @@ async function getGeminiApiKey() {
   }
 }
 
+function getStoredBundledEnabled() {
+  const stored = safeStoreOperation(() => {
+    if (!store) return null;
+    return store.get(BUNDLED_SETTINGS_STORE_KEY);
+  }, 'get on-device model setting');
+  return stored?.enabled === true;
+}
+
+// Managed LLM settings have no on-device key, so an organization that manages
+// the LLM keeps it to the provider it configured.
+function isBundledEnabled() {
+  if (isLocalProcessingManaged()) return false;
+  if (!getStoredBundledEnabled()) return false;
+  return require('./localModel').isBundledSupported();
+}
+
+function setBundledEnabled(enabled) {
+  if (typeof enabled !== 'boolean') {
+    throw new Error('Invalid on-device model setting');
+  }
+  safeStoreOperation(() => {
+    if (!store) throw new Error('Store not initialized');
+    store.set(BUNDLED_SETTINGS_STORE_KEY, { enabled });
+  }, 'save on-device model setting');
+  try { require('./processLocal').resetLLMModels(); } catch (_) {}
+}
+
+// Not persisted: after a restart the toggle is off and turning it on again
+// resumes the partial download.
+let bundledEnablePending = false;
+let bundledEnableRequest = 0;
+
+function enableBundledAfterDownload(localModel) {
+  bundledEnablePending = true;
+  const request = ++bundledEnableRequest;
+  // A failure is already logged and reported through the model status.
+  localModel.downloadModel().then(() => {
+    if (request !== bundledEnableRequest || !bundledEnablePending) return;
+    bundledEnablePending = false;
+    if (isLocalProcessingManaged() || localModel.getModelStatus().state !== 'ready') return;
+    setBundledEnabled(true);
+    log.info('On-device model enabled after download');
+  }).catch(() => {
+    if (request === bundledEnableRequest) bundledEnablePending = false;
+  });
+}
+
+function cancelPendingBundledEnable() {
+  if (!bundledEnablePending) return;
+  bundledEnablePending = false;
+  bundledEnableRequest += 1;
+  require('./localModel').cancelDownload();
+}
+
+// Screenshots for the LLM test get the same app-exclusion masking as a capture
+// cycle. If masking fails, the test runs without screenshots rather than with
+// unmasked ones. The on-device path also treats masking that could not be
+// applied (no window or display data) as a failure.
+async function captureMaskedTestScreenshots(provider) {
+  const { captureScreenshotDetailed } = require('./captureScreenshots');
+  const { applyAppExclusionsToDetailedScreenshots } = require('./appExclusionMasking');
+  const detailedScreenshots = await captureScreenshotDetailed({ caller: 'test-local-processing' });
+  try {
+    const masked = provider === 'bundled'
+      ? await applyAppExclusionsToDetailedScreenshots(detailedScreenshots, { throwOnError: true })
+      : await applyAppExclusionsToDetailedScreenshots(detailedScreenshots);
+    return masked.map((entry) => entry.imageDataUrl);
+  } catch (error) {
+    log.warn('Local processing test: app exclusion masking failed; testing without screenshots:', error?.message || error);
+    return [];
+  }
+}
+
+function getLocalModelSummary() {
+  const localModel = require('./localModel');
+  const supported = localModel.isBundledSupported();
+  return {
+    success: true,
+    supported,
+    unsupportedReason: supported ? null : localModel.getBundledUnsupportedReason(),
+    managed: isLocalProcessingManaged(),
+    enabled: isBundledEnabled(),
+    enablePending: bundledEnablePending,
+    model: localModel.getModelInfo(),
+    status: supported ? localModel.getModelStatus() : null
+  };
+}
+
 function getLocalProcessingState() {
   try {
     const geminiStoredKey = safeStoreOperation(() => {
@@ -2589,6 +2740,9 @@ function getLocalProcessingState() {
           model: openaiStoredConfig?.model || null,
           hasApiKey: !!openaiStoredConfig?.apiKey,
           keySource: openaiKeySource || null
+        },
+        bundled: {
+          enabled: isBundledEnabled()
         }
       }
     };

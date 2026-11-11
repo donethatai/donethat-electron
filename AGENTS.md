@@ -36,6 +36,8 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - `src-main/captureWindows.js`: active window timeline + permissions.
 - `src-main/captureAudio.js`: rolling audio capture (chunks sent as multimodal input to LLM).
 - `src-main/processLocal.js`: local summarization path (if available).
+- `src-main/localModel/`: on-device model (provider `bundled`): pinned model info, verified download/delete (`modelManager.js`), node-llama-cpp in a `utilityProcess` (`client.js`/`worker.js`), Sentry filter for its crash dumps.
+- `src-main/captureUiText.js` / `src-main/ocrScreenshots.js`: accessibility window text capture (part of the Active applications `windows` setting, sent as `uiText`) and OCR of masked screenshots for the on-device model.
 - `src-main/main-state.js`: work scheduling, pause/resume, permissions, encrypted settings, auth token SOT.
 - Renderer: `src/index.html/js`, `src/chat.html/js`, `src/firebase.js`.
 
@@ -71,9 +73,9 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 
 ## IPC Contract (non-exhaustive)
 
-- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestMicrophonePermission`, `requestLocationPermission`, `updateInputDataSettings`, `updateLocationFeatureEnabled`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`, `theme:set`.
+- Renderer → Main: `chat:send-message`, `overlay:*` (`overlay:toggle`, `overlay:show`, `overlay:hide`, `overlay:open-main`, `overlay:resize`, `overlay:get-state`), `requestMicrophonePermission`, `requestLocationPermission`, `updateInputDataSettings`, `updateLocationFeatureEnabled`, `login`, `logout`, `token-refreshed`, `inapp:notify`, `hotkey:set`, `hotkey:get`, `focus-app-window`, `checkScreenCapturePermission`, `theme:set`, `localModel:*` invokes (`localModel:get-status`, `localModel:delete`, `localModel:set-enabled` with `{ enabled }`; enabling without a downloaded model starts the download and turns on once it is verified, disabling cancels it), `test-local-processing`.
 - Portal webview → Host (`sendToHost`, allowlisted in `src/portal-preload.js`): `theme:set` carries the portal's light/dark preference (`system`/`light`/`dark`, advertised as the `theme-sync` capability). `src/index.js` relays it to main, where `src-main/theme.js` sets `nativeTheme.themeSource` and stores it; `prefers-color-scheme` in every renderer, the webview included, follows. Host UI colours come from the `--dt-color-*` tokens in `src/styles.css`, whose dark values mirror the webapp's `darkColors`.
-- Main → Renderer: `inapp:notify`, `screenCapturePermission`, `windowsPermission`, `locationPermission`, `overlay:state`, `chat:receive-messages`, `hotkey:updated`, `chat:message-update`, `chat:reset-state`, `webview:reload`, `router:open-link`, `firebase-custom-token`, `refresh-token`, `auth-error`.
+- Main → Renderer: `inapp:notify`, `screenCapturePermission`, `windowsPermission`, `locationPermission`, `overlay:state`, `chat:receive-messages`, `hotkey:updated`, `chat:message-update`, `chat:reset-state`, `webview:reload`, `router:open-link`, `firebase-custom-token`, `refresh-token`, `auth-error`, `localModel:status` (on-device model status object).
 
 ## Build/Run
 

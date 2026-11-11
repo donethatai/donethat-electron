@@ -136,6 +136,34 @@ describe('GPU crash mitigation', () => {
     expect(app.exit).toHaveBeenCalledWith(0)
   })
 
+  test('runs the cleanup hook before relaunching, even if it throws', () => {
+    const order = []
+    const app = createMockApp()
+    app.relaunch.mockImplementation(() => order.push('relaunch'))
+    app.exit.mockImplementation(() => order.push('exit'))
+    const log = { warn: jest.fn() }
+    const beforeRelaunch = jest.fn(() => {
+      order.push('cleanup')
+      throw new Error('worker gone')
+    })
+    const mitigator = createGpuCrashMitigator({
+      app,
+      store: createMockStore(),
+      log,
+      platform: 'win32',
+      argv: ['DoneThat'],
+      now: () => 1000,
+      beforeRelaunch
+    })
+
+    mitigator.handleChildProcessGone({ type: 'GPU', reason: 'crashed' })
+    expect(beforeRelaunch).not.toHaveBeenCalled()
+    expect(mitigator.handleChildProcessGone({ type: 'GPU', reason: 'crashed' })).toBe(true)
+
+    expect(order).toEqual(['cleanup', 'relaunch', 'exit'])
+    expect(log.warn).toHaveBeenCalledWith('Cleanup before GPU mitigation relaunch failed:', 'worker gone')
+  })
+
   test('does not relaunch when mitigation is already active', () => {
     const app = createMockApp()
     const mitigator = createGpuCrashMitigator({

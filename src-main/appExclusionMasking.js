@@ -66,6 +66,17 @@ function shouldUseIndexDisplayFallback(screenshotEntries, displayBounds) {
   return screenshotEntries.every((entry) => !entry.displayId)
 }
 
+/**
+ * In strict mode a screenshot that might still show an excluded app is an
+ * error rather than something to pass through unmasked.
+ */
+function failIfStrict(throwOnError, reason) {
+  if (!throwOnError) return
+  const error = new Error(`App exclusion masking unavailable: ${reason}`)
+  error.code = 'APP_EXCLUSION_MASKING_UNAVAILABLE'
+  throw error
+}
+
 function getWindowLogMeta(window, extra = {}) {
   const title = typeof window?.title === 'string' ? window.title : ''
   return {
@@ -84,15 +95,26 @@ function getWindowLogMeta(window, extra = {}) {
  * @param {Array} excludedApps Array of exclusion rules [{appName, titlePattern}]
  * @param {Array} windowData Array of window info with bounds, screen, displayId, app name, title (already sorted by z-order)
  * @param {Array} displayBounds Array of display bounds from screen.getAllDisplays()
+ * @param {{throwOnError?: boolean}} options throwOnError throws instead of returning
+ *   screenshots that could not be fully masked
  * @returns {Promise<Array>} Masked screenshot entries array
  */
-async function maskExcludedApps(screenshots, excludedApps, windowData, displayBounds) {
+async function maskExcludedApps(screenshots, excludedApps, windowData, displayBounds, { throwOnError = false } = {}) {
   try {
     const screenshotEntries = normalizeScreenshotEntries(screenshots)
     if (screenshotEntries.length === 0) return screenshotEntries
     if (!excludedApps || excludedApps.length === 0) return screenshotEntries
-    if (!windowData || windowData.length === 0) return screenshotEntries
-    if (!displayBounds || displayBounds.length === 0) return screenshotEntries
+    if (!windowData || windowData.length === 0) {
+      failIfStrict(throwOnError, 'no window data')
+      return screenshotEntries
+    }
+    if (!displayBounds || displayBounds.length === 0) {
+      failIfStrict(throwOnError, 'no display bounds')
+      return screenshotEntries
+    }
+    if (throwOnError && windowData.some((window) => window && !window.bounds && shouldExcludeWindow(window, excludedApps))) {
+      failIfStrict(throwOnError, 'excluded window without bounds')
+    }
 
     const isMergedScreenshot = screenshotEntries.length === 1 &&
       (screenshotEntries[0].merged || displayBounds.length > 1)
@@ -121,6 +143,7 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
           windowDisplay = displayBounds[excludedWindow.screen] || null
         }
         if (!windowDisplay) {
+          failIfStrict(throwOnError, 'excluded window with unresolved display')
           log.warn('[app-masking] Skipping excluded window with unresolved display', getWindowLogMeta(excludedWindow, {
             screenshotDisplayId: 'merged',
             screenshotIndex: '0',
@@ -161,6 +184,7 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
       for (const excludedWindow of windowData) {
         if (!excludedWindow?.bounds || !shouldExcludeWindow(excludedWindow, excludedApps)) continue
         if (!excludedWindow.displayId) {
+          failIfStrict(throwOnError, 'excluded window with unresolved display')
           log.warn('[app-masking] Skipping excluded window with unresolved display', getWindowLogMeta(excludedWindow, {
             screenshotDisplayId: 'unresolved',
             screenshotIndex: 'n/a',
@@ -170,6 +194,7 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
           continue
         }
         if (!screenshotDisplayIds.has(excludedWindow.displayId)) {
+          failIfStrict(throwOnError, 'excluded window without matching screenshot')
           log.warn('[app-masking] Skipping excluded window without matching screenshot', getWindowLogMeta(excludedWindow, {
             screenshotDisplayId: excludedWindow.displayId,
             screenshotIndex: 'n/a',
@@ -180,6 +205,13 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
       }
     }
 
+    if (throwOnError && useIndexFallback) {
+      const unplacedExcludedWindow = windowData.some((window) =>
+        window?.bounds && !Number.isInteger(window.screen) && shouldExcludeWindow(window, excludedApps)
+      )
+      if (unplacedExcludedWindow) failIfStrict(throwOnError, 'excluded window with unresolved display')
+    }
+
     const maskedScreenshotEntries = []
     for (let i = 0; i < screenshotEntries.length; i++) {
       const screenshotEntry = screenshotEntries[i]
@@ -188,6 +220,9 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
         : findDisplayById(displayBounds, screenshotEntry.displayId)
 
       if (!display || !display.bounds) {
+        if (throwOnError && windowData.some((window) => window?.bounds && shouldExcludeWindow(window, excludedApps))) {
+          failIfStrict(throwOnError, 'screenshot with unresolved display')
+        }
         if (!useIndexFallback) {
           log.warn('[app-masking] Skipping screenshot entry with unresolved display', {
             screenshotDisplayId: screenshotEntry.displayId || 'unresolved',
@@ -236,6 +271,7 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
     return maskedScreenshotEntries
   } catch (error) {
     log.error('Error masking excluded apps:', error)
+    if (throwOnError) throw error
     return normalizeScreenshotEntries(screenshots)
   }
 }
@@ -244,14 +280,17 @@ async function maskExcludedApps(screenshots, excludedApps, windowData, displayBo
  * Apply app exclusions to detailed screenshots (internal API)
  * Handles loading exclusions from store, gathering window data, and applying masks
  * @param {Array} screenshots Array of screenshot entries or screenshot data URLs
+ * @param {{throwOnError?: boolean}} options throwOnError throws when exclusions are
+ *   configured but masking failed or could not be applied, instead of returning the
+ *   unmasked screenshots
  * @returns {Promise<Array>} Masked screenshot entries array (or original if no exclusions or error)
  */
-async function applyAppExclusionsToDetailedScreenshots(screenshots) {
+async function applyAppExclusionsToDetailedScreenshots(screenshots, { throwOnError = false } = {}) {
   try {
     const screenshotEntries = normalizeScreenshotEntries(screenshots)
     if (screenshotEntries.length === 0) return screenshotEntries
 
-    const { default: Store } = await import('electron-store')
+    const { default: Store } = require('electron-store')
     const { app } = require('electron')
     const store = new Store({ name: 'donethat-config', cwd: app.getPath('userData') })
     const exclusions = store.get('appExclusions') || []
@@ -260,12 +299,14 @@ async function applyAppExclusionsToDetailedScreenshots(screenshots) {
     const windowData = await windowsCapture.getAllVisibleWindows()
     const displayBounds = screen.getAllDisplays()
     if (!windowData || windowData.length === 0 || !displayBounds || displayBounds.length === 0) {
+      failIfStrict(throwOnError, 'no window or display data')
       return screenshotEntries
     }
 
-    return await maskExcludedApps(screenshotEntries, exclusions, windowData, displayBounds)
+    return await maskExcludedApps(screenshotEntries, exclusions, windowData, displayBounds, { throwOnError })
   } catch (error) {
     log.error('Error applying app exclusions:', error)
+    if (throwOnError) throw error
     return normalizeScreenshotEntries(screenshots)
   }
 }

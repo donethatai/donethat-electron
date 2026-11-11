@@ -40,3 +40,33 @@ describe('preload send channel allowlist', () => {
     expect(allowed.has('updateHoliday')).toBe(true);
   });
 });
+
+function readPreloadList(name) {
+  const source = fs.readFileSync(path.join(ROOT, 'src-main', 'preload.js'), 'utf8');
+  const start = source.indexOf(`const ${name}`);
+  expect(start).toBeGreaterThan(-1);
+  const block = source.slice(start, source.indexOf(']', start));
+  return new Set([...block.matchAll(/'([^']+)'/g)].map((m) => m[1]));
+}
+
+describe('on-device model channels', () => {
+  const invokeChannels = [
+    'localModel:get-status',
+    'localModel:delete',
+    'localModel:set-enabled'
+  ];
+
+  test.each(invokeChannels)('%s is allowlisted, handled in main and used by settings', (channel) => {
+    expect(readPreloadList('validInvokeChannels').has(channel)).toBe(true);
+    const mainState = fs.readFileSync(path.join(ROOT, 'src-main', 'main-state.js'), 'utf8');
+    expect(mainState).toContain(`ipcMain.handle('${channel}'`);
+    const settings = fs.readFileSync(path.join(ROOT, 'src', 'settings.js'), 'utf8');
+    expect(settings).toContain(`'${channel}'`);
+  });
+
+  test('status events are allowlisted and sent by main', () => {
+    expect(readPreloadList('validReceiveChannels').has('localModel:status')).toBe(true);
+    const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    expect(main).toContain("webContents.send('localModel:status'");
+  });
+});

@@ -1,6 +1,8 @@
 const log = require('electron-log');
 const { getGeminiApiKey, getLocalProcessingState, getOpenAICompatibleConfig, getMainWindow } = require('./main-state');
 const { recordLocalQuotaCooldownSkip, recordLocalBudgetExceeded } = require('./telemetry');
+const localModel = require('./localModel');
+const ocr = require('./ocrScreenshots');
 
 // Firebase URLs for config and processing
 const FIREBASE_CONFIG_URL = 'https://europe-west1-donethat.cloudfunctions.net/inputConfig';
@@ -19,7 +21,7 @@ let llmModels = null;
 let llmModelNames = null;
 // latest config snapshot for downstream use
 let latestConfig = null;
-// Local provider: 'gemini' or 'openai'
+// Local provider: 'bundled', 'gemini' or 'openai'
 let localProvider = null;
 let skipGeminiOnceAfterQuota = false;
 
@@ -40,6 +42,40 @@ const TRANSIENT_LOCAL_PROCESSING_CODES = new Set([
   'ENETRESET',
   'ENETUNREACH',
 ]);
+
+// The worker rejects prompts over MAX_PROMPT_TOKENS (counted with the real tokenizer), so the
+// estimate here must not undercount. Qwen's tokenizer averages ~4 chars/token on English prose
+// and ~3 on code; OCR'd UI text (short words, numbers, symbols, broken lines) is denser, so 2.5
+// chars/token is used, minus a safety reserve. Chat template and system prompt sit in the
+// context margin the model module keeps outside MAX_PROMPT_TOKENS. If the estimate still
+// undercounts (CJK, emoji-heavy screens), one rebuild at 1 char/token follows.
+const BUNDLED_CHARS_PER_TOKEN = 2.5;
+const BUNDLED_RETRY_CHARS_PER_TOKEN = 1;
+const BUNDLED_PROMPT_SAFETY_TOKENS = 256;
+// A test run may include the first model load (up to ~2 minutes), plus OCR and generation.
+const BUNDLED_TEST_MIN_BUDGET_MS = 5 * 60_000;
+// The model process is killed only this long after the cycle's abort, in case it ignores the abort.
+const BUNDLED_REQUEST_GRACE_MS = 5_000;
+const BUNDLED_MAX_REQUEST_TIMEOUT_MS = 30 * 60_000;
+// OCR gets at most a quarter of the cycle budget, split across images.
+const OCR_BUDGET_SHARE = 0.25;
+const OCR_MIN_TIMEOUT_MS = 2_000;
+const OCR_MAX_TIMEOUT_MS = 15_000;
+const MIN_TRUNCATED_SECTION_CHARS = 200;
+const TRUNCATION_MARKER = '\n[truncated to fit the on-device model input limit]';
+const NO_IMAGES_NOTE = 'No images are attached. The activity text recognized by OCR and the window text below are provided instead.';
+const DEFAULT_UI_TEXT_LABEL = 'WINDOW TEXT (accessibility):';
+const DEFAULT_TEXT_BLOCK_LABELS = {
+  currentScreenTextLabel: 'CURRENT ACTIVITY TEXT (OCR):',
+  previousScreenTextLabel: 'PREVIOUS ACTIVITY TEXT (OCR, from the previous capture):',
+  uiTextLabel: DEFAULT_UI_TEXT_LABEL
+};
+const BUNDLED_UNAVAILABLE_CODES = new Set(['MODEL_NOT_READY', 'UNSUPPORTED']);
+const BUNDLED_ABORT_CODES = new Set(['ABORTED', 'TIMEOUT']);
+const BUNDLED_WORKER_CODES = new Set(['WORKER_EXITED', 'WORKER_START_FAILED']);
+let lastBundledUnavailableMessage = null;
+
+let loadFetch = () => import('node-fetch').then(module => module.default);
 
 
 /**
@@ -248,11 +284,68 @@ function resetLocalBudgetStreak() {
   consecutiveLocalBudgetExceeded = 0;
 }
 
-function buildLocalTooSlowNotification() {
+function buildLocalTooSlowNotification(provider = null) {
+  const message = provider === 'bundled'
+    ? 'The on-device model is taking too long on this computer, so recent activity was not recorded. Try a longer capture interval or another provider in Settings.'
+    : 'Your local AI model is taking too long to respond, so recent activity was not recorded. Try a smaller or faster model in Settings.';
   return {
     id: 'local-processing-too-slow',
     title: 'Local model too slow',
-    message: 'Your local AI model is taking too long to respond, so recent activity was not recorded. Try a smaller or faster model in Settings.',
+    message,
+    sticky: true,
+    alsoNative: true
+  };
+}
+
+function createBundledError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function bundledUnavailableMessage(code, modelState) {
+  if (code === 'UNSUPPORTED') {
+    return 'The on-device model is not supported on this computer, so recent activity was not recorded. Choose another provider in Settings > Bring your own LLM.';
+  }
+  if (modelState === 'downloading') {
+    return 'The on-device model is still downloading, so recent activity was not recorded. Recording resumes once the download finishes.';
+  }
+  if (modelState === 'verifying') {
+    return 'The on-device model is being prepared (verifying the download), so recent activity was not recorded. Recording resumes once it is ready.';
+  }
+  return 'On-device model not downloaded yet, so recent activity was not recorded. Download it in Settings > Bring your own LLM.';
+}
+
+function bundledFailureMessage(code) {
+  if (BUNDLED_WORKER_CODES.has(code)) {
+    return 'The on-device model stopped unexpectedly. DoneThat will try again on the next capture.';
+  }
+  return 'The on-device model could not summarize this capture. DoneThat will try again on the next capture.';
+}
+
+function isBundledUnavailableError(err) {
+  return BUNDLED_UNAVAILABLE_CODES.has(err?.code);
+}
+
+/**
+ * Report whether this unavailable error should notify the user: once per streak, and again
+ * only when the reason changes (e.g. download cancelled after it was in progress).
+ */
+function noteBundledUnavailable(err) {
+  if (lastBundledUnavailableMessage === err.message) return false;
+  lastBundledUnavailableMessage = err.message;
+  return true;
+}
+
+function resetBundledUnavailableStreak() {
+  lastBundledUnavailableMessage = null;
+}
+
+function buildBundledUnavailableNotification(err) {
+  return {
+    id: 'local-model-not-ready',
+    title: 'On-device model not ready',
+    message: err.message,
     sticky: true,
     alsoNative: true
   };
@@ -297,14 +390,20 @@ function shouldRethrowLocalProcessingError(err, testMode = false) {
 }
 
 /**
- * Determine which local provider is configured ('gemini' or 'openai')
- * @returns {Promise<string>} 'gemini' or 'openai'
+ * Determine which local provider is configured. An enabled on-device model wins over API
+ * providers even when it is not ready yet, so those cycles stay local (and are lost) instead of
+ * silently using another provider or the cloud.
+ * @returns {Promise<string|null>} 'bundled', 'gemini', 'openai' or null
  */
 async function getLocalProvider() {
   try {
     const localProcessingState = await getLocalProcessingState();
     if (!localProcessingState.success) {
       return null;
+    }
+
+    if (localProcessingState.state?.bundled?.enabled) {
+      return 'bundled';
     }
 
     // Check for Gemini key first (preferred)
@@ -325,7 +424,7 @@ async function getLocalProvider() {
 }
 
 /**
- * Check if local processing is available (has Gemini API key or OpenAI-compatible config)
+ * Check if local processing is available (on-device model enabled, Gemini API key or OpenAI-compatible config)
  */
 async function isLocalProcessingAvailable() {
   const provider = await getLocalProvider();
@@ -344,7 +443,7 @@ async function getConfig(idToken) {
   }
 
   try {
-    const fetch = await import('node-fetch').then(module => module.default);
+    const fetch = await loadFetch();
     
     const response = await fetch(FIREBASE_CONFIG_URL, {
       method: 'GET',
@@ -584,8 +683,9 @@ function validateAndProcessImage(imageData) {
  * @param {Object|null} audioCycle - Audio cycle payload for multimodal input
  * @param {number} idleTime - Idle time in seconds
  * @param {string} provider - 'gemini' or 'openai' to determine image format
+ * @param {Object|null} uiText - Window text (accessibility) payload for this cycle
  */
-function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioCycle, idleTime, provider = 'gemini') {
+function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioCycle, idleTime, provider = 'gemini', uiText = null) {
   const spec = config.contentBlocksSpec || {};
   const imageKey = spec.imagePartKey || 'image_url';
   const blocks = [ { type: 'text', text: config.prefilledPrompt } ];
@@ -649,9 +749,13 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
   }
   
   if (idleTime !== undefined && idleTime !== null) {
-    const idleMinutes = Math.floor(idleTime / 60);
-    const idleSeconds = idleTime % 60;
-    blocks.push({ type: 'text', text: `System Idle Time: ${idleMinutes}m ${idleSeconds}s` });
+    blocks.push({ type: 'text', text: formatIdleTime(idleTime) });
+  }
+
+  const windowText = formatUiText(uiText);
+  if (windowText) {
+    const label = config.textContentBlocksSpec?.uiTextLabel || DEFAULT_UI_TEXT_LABEL;
+    blocks.push({ type: 'text', text: `${label}\n${windowText}` });
   }
 
   // Previous screenshots as context (from ~5 min ago)
@@ -704,6 +808,240 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
   return blocks;
 }
 
+function formatIdleTime(idleTime) {
+  const idleMinutes = Math.floor(idleTime / 60);
+  const idleSeconds = idleTime % 60;
+  return `System Idle Time: ${idleMinutes}m ${idleSeconds}s`;
+}
+
+/**
+ * Format window text (accessibility) entries as `[App — Title]\ntext` blocks.
+ */
+function formatUiText(uiText) {
+  const entries = Array.isArray(uiText?.entries) ? uiText.entries : [];
+  const parts = entries
+    .filter(entry => typeof entry?.text === 'string' && entry.text.trim())
+    .map(entry => {
+      const app = typeof entry.app === 'string' && entry.app.trim() ? entry.app.trim() : 'Unknown app';
+      const title = typeof entry.windowTitle === 'string' && entry.windowTitle.trim() ? entry.windowTitle.trim() : null;
+      return `${title ? `[${app} — ${title}]` : `[${app}]`}\n${entry.text.trim()}`;
+    });
+  if (parts.length === 0) return '';
+  const text = parts.join('\n\n');
+  return uiText.truncated ? `${text}\n[window text truncated]` : text;
+}
+
+function formatScreenText(ocrResults) {
+  const texts = (ocrResults || []).map(result => (typeof result?.text === 'string' ? result.text.trim() : ''));
+  if (texts.length <= 1) return texts[0] || '';
+  return texts
+    .map((text, index) => (text ? `Display ${index + 1}:\n${text}` : ''))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function filterImageDataUrls(images) {
+  return (Array.isArray(images) ? images : []).filter(img => typeof img === 'string' && img.startsWith('data:image/'));
+}
+
+function truncateWithMarker(text, maxChars) {
+  if (text.length <= maxChars) return { text, truncated: false };
+  const cut = text.slice(0, Math.max(0, maxChars - TRUNCATION_MARKER.length));
+  const lastBreak = cut.lastIndexOf('\n');
+  const kept = lastBreak > cut.length * 0.8 ? cut.slice(0, lastBreak) : cut;
+  return { text: `${kept}${TRUNCATION_MARKER}`, truncated: true };
+}
+
+function pickTextBlockLabels(spec) {
+  const labels = { ...DEFAULT_TEXT_BLOCK_LABELS };
+  for (const key of Object.keys(labels)) {
+    if (typeof spec?.[key] === 'string' && spec[key].trim()) labels[key] = spec[key].trim();
+  }
+  return labels;
+}
+
+/**
+ * Build the single text prompt for the on-device model and fit it into its input limit.
+ * Truncation priority: instructions and activity are kept, then current screen text, then
+ * window text, then previous screen text. Cut or dropped sections are marked in the text.
+ * @param {Object} config inputConfig response
+ * @param {{ applicationActivity: string, idleTime?: number, currentScreenText: string,
+ *   previousScreenText: string, windowText: string }} inputs
+ * @param {number} charsPerToken Estimate used to turn the token limit into a char budget
+ * @returns {{ prompt: string, truncatedSections: string[] }}
+ */
+function buildBundledPrompt(config, inputs, charsPerToken = BUNDLED_CHARS_PER_TOKEN) {
+  const separator = '\n\n';
+  const labels = pickTextBlockLabels(config.textContentBlocksSpec);
+  const instructions = config.textPrefilledPrompt || `${config.prefilledPrompt || ''}${separator}${NO_IMAGES_NOTE}`;
+  const activityLabel = 'Application Activity:\n';
+  const idleSection = inputs.idleTime !== undefined && inputs.idleTime !== null ? formatIdleTime(inputs.idleTime) : null;
+  const maxChars = Math.floor((localModel.MAX_PROMPT_TOKENS - BUNDLED_PROMPT_SAFETY_TOKENS) * charsPerToken);
+  const truncatedSections = [];
+
+  let remaining = maxChars - instructions.length - separator.length - activityLabel.length
+    - (idleSection ? separator.length + idleSection.length : 0);
+
+  const activity = truncateWithMarker(inputs.applicationActivity || '', Math.max(0, remaining));
+  if (activity.truncated) truncatedSections.push('activity');
+  remaining -= activity.text.length;
+
+  const fitSection = (name, label, body) => {
+    if (!body) return null;
+    const overhead = separator.length + label.length + 1;
+    const room = remaining - overhead;
+    if (body.length > room && room < MIN_TRUNCATED_SECTION_CHARS) {
+      truncatedSections.push(name);
+      const omitted = TRUNCATION_MARKER.trim();
+      if (room < omitted.length) return null;
+      remaining -= overhead + omitted.length;
+      return `${label}\n${omitted}`;
+    }
+    const fitted = truncateWithMarker(body, room);
+    if (fitted.truncated) truncatedSections.push(name);
+    remaining -= overhead + fitted.text.length;
+    return `${label}\n${fitted.text}`;
+  };
+
+  const currentSection = fitSection('current', labels.currentScreenTextLabel, inputs.currentScreenText);
+  const windowSection = fitSection('window', labels.uiTextLabel, inputs.windowText);
+  const previousSection = fitSection('previous', labels.previousScreenTextLabel, inputs.previousScreenText);
+
+  const prompt = [
+    instructions,
+    `${activityLabel}${activity.text}`,
+    idleSection,
+    currentSection,
+    previousSection,
+    windowSection
+  ].filter(Boolean).join(separator);
+  return { prompt, truncatedSections };
+}
+
+function getOcrTimeoutMs(cycleBudgetMs, imageCount) {
+  if (imageCount <= 0) return OCR_MAX_TIMEOUT_MS;
+  const share = Math.floor((cycleBudgetMs * OCR_BUDGET_SHARE) / imageCount);
+  return Math.min(OCR_MAX_TIMEOUT_MS, Math.max(OCR_MIN_TIMEOUT_MS, share));
+}
+
+function getBundledUnavailableError() {
+  if (!localModel.isBundledSupported() || !ocr.isOcrSupported()) {
+    return createBundledError('UNSUPPORTED', bundledUnavailableMessage('UNSUPPORTED'));
+  }
+  const modelState = localModel.getModelStatus()?.state;
+  if (modelState !== 'ready') {
+    return createBundledError('MODEL_NOT_READY', bundledUnavailableMessage('MODEL_NOT_READY', modelState));
+  }
+  return null;
+}
+
+/**
+ * Map an on-device model failure to a budget overrun or a coded error with a user-safe message.
+ */
+function toBundledGenerationError(error, deadlineMs) {
+  if (error?.code === 'LOCAL_BUDGET_EXCEEDED') return error;
+  const aborted = error?.name === 'AbortError' || error?.name === 'TimeoutError' || BUNDLED_ABORT_CODES.has(error?.code);
+  if (aborted || Date.now() >= deadlineMs) return createLocalBudgetExceededError();
+  const code = typeof error?.code === 'string' && error.code ? error.code : 'GENERATION_FAILED';
+  if (BUNDLED_UNAVAILABLE_CODES.has(code)) {
+    return createBundledError(code, bundledUnavailableMessage(code, localModel.getModelStatus()?.state));
+  }
+  return createBundledError(code, bundledFailureMessage(code));
+}
+
+// Character caps the on-device grammar enforces, so a rambling model has to
+// close the JSON well before the output token limit. DESCRIPTION matches the
+// caption truncation applied afterwards.
+const BUNDLED_FIELD_MAX_CHARS = {
+  CATEGORY: 80,
+  ONELINE: 120,
+  DESCRIPTION: CAPTION_TOKENS * 4
+};
+const BUNDLED_DEFAULT_FIELD_MAX_CHARS = 400;
+
+function boundBundledOutputSchema(schema) {
+  if (!schema?.properties || typeof schema.properties !== 'object') return schema;
+  const properties = {};
+  for (const [name, property] of Object.entries(schema.properties)) {
+    const unbounded = property?.type === 'string' && !Array.isArray(property.enum) && typeof property.maxLength !== 'number';
+    properties[name] = unbounded
+      ? { ...property, maxLength: BUNDLED_FIELD_MAX_CHARS[name] || BUNDLED_DEFAULT_FIELD_MAX_CHARS }
+      : property;
+  }
+  return { ...schema, properties };
+}
+
+async function generateBundled(prompt, schema, deadlineMs) {
+  const remainingMs = deadlineMs - Date.now();
+  if (remainingMs <= 0) throw createLocalBudgetExceededError();
+  try {
+    return await localModel.generateStructured({
+      prompt,
+      schema: boundBundledOutputSchema(schema),
+      signal: AbortSignal.timeout(remainingMs),
+      timeoutMs: Math.min(remainingMs + BUNDLED_REQUEST_GRACE_MS, BUNDLED_MAX_REQUEST_TIMEOUT_MS),
+      maxTokens: localModel.MAX_OUTPUT_TOKENS
+    });
+  } catch (error) {
+    log.warn(`[local-llm] on-device generation failed (${error?.code || error?.name || 'ERROR'}) with ${Math.max(0, deadlineMs - Date.now())} ms of the cycle budget left`);
+    throw toBundledGenerationError(error, deadlineMs);
+  }
+}
+
+/**
+ * Summarize a cycle with the on-device model from text only: OCR of the (already masked)
+ * current and previous screenshots, window text, activity and idle time. Audio is not used.
+ * Recognized text stays in memory for this call and is never logged.
+ */
+async function analyzeWithBundledModel({ screenshots, previousScreenshots, applicationActivity, idleTime, uiText, idToken, cycleBudgetMs }) {
+  const unavailableError = getBundledUnavailableError();
+  if (unavailableError) throw unavailableError;
+
+  const config = await getConfig(idToken);
+  if (!config?.outputSchema) {
+    throw createBundledError('INVALID_SCHEMA', bundledFailureMessage('INVALID_SCHEMA'));
+  }
+  const deadlineMs = Date.now() + cycleBudgetMs;
+
+  const currentImages = filterImageDataUrls(screenshots);
+  const previousImages = filterImageDataUrls(previousScreenshots);
+  const ocrTimeoutMs = getOcrTimeoutMs(cycleBudgetMs, currentImages.length + previousImages.length);
+  const ocrStartedAt = Date.now();
+  const currentScreenText = formatScreenText(await ocr.ocrImages(currentImages, { timeoutMs: ocrTimeoutMs }));
+  const previousScreenText = formatScreenText(await ocr.ocrImages(previousImages, { timeoutMs: ocrTimeoutMs }));
+  const ocrMs = Date.now() - ocrStartedAt;
+  if (Date.now() >= deadlineMs) throw createLocalBudgetExceededError();
+
+  const inputs = {
+    applicationActivity,
+    idleTime,
+    currentScreenText: currentScreenText
+      || (currentImages.length > 0 ? 'none (no text recognized)' : 'none (no captures this cycle)'),
+    previousScreenText,
+    windowText: formatUiText(uiText)
+  };
+  let { prompt, truncatedSections } = buildBundledPrompt(config, inputs);
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await generateBundled(prompt, config.outputSchema, deadlineMs);
+  } catch (error) {
+    if (error?.code !== 'PROMPT_TOO_LONG') throw error;
+    log.warn(`[local-llm] bundled prompt over the token limit (${prompt.length} chars); rebuilding once with a tighter estimate`);
+    ({ prompt, truncatedSections } = buildBundledPrompt(config, inputs, BUNDLED_RETRY_CHARS_PER_TOKEN));
+    response = await generateBundled(prompt, config.outputSchema, deadlineMs);
+  }
+  log.info(`[local-llm] bundled ok in ${Date.now() - startedAt}ms (OCR ${currentImages.length}+${previousImages.length} image(s) in ${ocrMs}ms, screen text ${currentScreenText.length}+${previousScreenText.length} chars, window text ${inputs.windowText.length} chars, prompt ${prompt.length} chars${truncatedSections.length > 0 ? `, truncated: ${truncatedSections.join(',')}` : ''})`);
+
+  if (!response || typeof response !== 'object') {
+    throw createBundledError('INVALID_OUTPUT', bundledFailureMessage('INVALID_OUTPUT'));
+  }
+  if (typeof response.DESCRIPTION === 'string') {
+    response.DESCRIPTION = truncateToTokens(response.DESCRIPTION, CAPTION_TOKENS);
+  }
+  return response;
+}
+
 /**
  * Analyze screenshots using local LLM processing
  * @param {Array<string>} screenshots - Current screenshot data URLs
@@ -713,7 +1051,7 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
  * @param {number} idleTime - Idle time in seconds
  * @param {string} idToken - Firebase ID token
  * @param {boolean} testMode - If true, skip Firebase submission
- * @param {Object} options - { cycleBudgetMs } time allowed for all LLM attempts this cycle
+ * @param {Object} options - { cycleBudgetMs, uiText } time allowed for all LLM attempts this cycle, window text
  */
 async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioCycle, idleTime, idToken, testMode = false, options = {}) {
   try {
@@ -733,7 +1071,8 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
     // Ensure we have up-to-date config
     const config = latestConfig || await getConfig(idToken);
     // Build content blocks using spec with correct provider format
-    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioCycle, idleTime, provider);
+    const uiText = options.uiText ?? null;
+    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioCycle, idleTime, provider, uiText);
 
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
@@ -768,7 +1107,7 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
           : 'unknown';
         log.warn(`LLM failed (${error.name || 'Error'}); payload: ${imgCount} image(s) ~${(imgBytes / 1024).toFixed(0)}KB; audio ~${(audioBytes / 1024).toFixed(0)}KB ${audioDurationSec}s; total ~${((imgBytes + audioBytes) / 1024).toFixed(0)}KB`);
         log.warn('Retrying without audio payload...');
-        const blocksNoAudio = buildBlocks(config, validScreenshots, previousScreenshots, activity, null, idleTime, provider);
+        const blocksNoAudio = buildBlocks(config, validScreenshots, previousScreenshots, activity, null, idleTime, provider, uiText);
         response = await invokeWithFallback(
           [new HumanMessage({ content: blocksNoAudio })],
           testMode,
@@ -814,9 +1153,16 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
 /**
  * Submit processed results to Firebase
  */
-async function submitResults(idToken, timestamp, structured, parameters, clientTelemetry = null, location = null) {
+// Provider names as reported to the backend for analytics; never the model or endpoint.
+const SUBMITTED_PROVIDER_NAMES = {
+  gemini: 'gemini',
+  openai: 'openai-compatible',
+  bundled: 'on-device'
+};
+
+async function submitResults(idToken, timestamp, structured, parameters, clientTelemetry = null, location = null, provider = null) {
   try {
-    const fetch = await import('node-fetch').then(module => module.default);
+    const fetch = await loadFetch();
     
     // Prepare payload for Firebase
     const payload = {
@@ -824,6 +1170,10 @@ async function submitResults(idToken, timestamp, structured, parameters, clientT
       structured: structured,
       parameters: parameters
     };
+    const localProvider = SUBMITTED_PROVIDER_NAMES[provider];
+    if (localProvider) {
+      payload.localProvider = localProvider
+    }
     if (clientTelemetry) {
       payload.clientTelemetry = clientTelemetry
     }
@@ -880,12 +1230,12 @@ async function submitResults(idToken, timestamp, structured, parameters, clientT
  */
 async function processDataLocally(idToken, screenshots, inputData, testMode = false) {
   try {
-    // Check if local processing is available
-    if (!await isLocalProcessingAvailable()) {
+    const provider = await getLocalProvider();
+    if (!provider) {
       throw new Error('Local processing not available - no API keys or configuration');
     }
 
-    if (skipGeminiOnceAfterQuota) {
+    if (skipGeminiOnceAfterQuota && provider !== 'bundled') {
       skipGeminiOnceAfterQuota = false;
       recordLocalQuotaCooldownSkip();
       throw createGeminiCooldownError();
@@ -908,19 +1258,34 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
     }
 
     const prevImages = inputData?.previousScreenshotData?.images?.map(i => i.base64Data) ?? [];
+    const uiText = inputData?.uiText ?? null;
+    const cycleBudgetMs = getLocalCycleBudgetMs(inputData?.captureIntervalMinutes);
     let structured;
     try {
-      structured = await analyzeScreenshots(
-        screenshots,
-        prevImages,
-        applicationActivity,
-        audioCycle,
-        idleTime,
-        idToken,
-        testMode,
-        { cycleBudgetMs: getLocalCycleBudgetMs(inputData?.captureIntervalMinutes) }
-      );
+      if (provider === 'bundled') {
+        structured = await analyzeWithBundledModel({
+          screenshots,
+          previousScreenshots: prevImages,
+          applicationActivity,
+          idleTime,
+          uiText,
+          idToken,
+          cycleBudgetMs: testMode ? Math.max(cycleBudgetMs, BUNDLED_TEST_MIN_BUDGET_MS) : cycleBudgetMs
+        });
+      } else {
+        structured = await analyzeScreenshots(
+          screenshots,
+          prevImages,
+          applicationActivity,
+          audioCycle,
+          idleTime,
+          idToken,
+          testMode,
+          { cycleBudgetMs, uiText }
+        );
+      }
       resetLocalBudgetStreak();
+      resetBundledUnavailableStreak();
     } catch (err) {
       if (shouldRethrowLocalProcessingError(err, testMode)) {
         throw err;
@@ -936,7 +1301,12 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
         const shouldNotify = noteLocalBudgetExceeded();
         log.warn(`Local processing budget exceeded (${consecutiveLocalBudgetExceeded} in a row); skipping local processing for this cycle.`);
         if (shouldNotify) {
-          notifyMainWindow(buildLocalTooSlowNotification());
+          notifyMainWindow(buildLocalTooSlowNotification(provider));
+        }
+      } else if (isBundledUnavailableError(err)) {
+        log.warn(`On-device model unavailable (${err.code}); skipping local processing for this cycle.`);
+        if (noteBundledUnavailable(err)) {
+          notifyMainWindow(buildBundledUnavailableNotification(err));
         }
       } else if (err?.code !== 'GEMINI_COOLDOWN') {
         notifyMainWindow(buildLocalProcessingNotification(err));
@@ -972,7 +1342,8 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
       structured,
       paramsToSend,
       inputData?.clientTelemetry || null,
-      inputData?.location || null
+      inputData?.location || null,
+      provider
     );
 
     return { ...result, structured, parameters: paramsToSend };
@@ -1000,5 +1371,27 @@ module.exports = {
     llmModels = null;
     llmModelNames = null;
     localProvider = null;
+    resetBundledUnavailableStreak();
+  },
+  __test__: {
+    buildBlocks,
+    buildBundledPrompt,
+    boundBundledOutputSchema,
+    formatUiText,
+    getOcrTimeoutMs,
+    setFetchLoader(loader) {
+      loadFetch = loader;
+    },
+    resetState() {
+      configCache.data = null;
+      configCache.lastFetch = 0;
+      latestConfig = null;
+      llmModels = null;
+      llmModelNames = null;
+      localProvider = null;
+      skipGeminiOnceAfterQuota = false;
+      resetLocalBudgetStreak();
+      resetBundledUnavailableStreak();
+    }
   }
 };

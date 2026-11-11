@@ -1,8 +1,11 @@
 {
   "name": "donethat",
-  "version": "2.4.11",
+  "version": "2.5.0",
   "description": "DoneThat",
   "main": "main.js",
+  "config": {
+    "nodeLlamaCppPostinstall": "skip"
+  },
   "scripts": {
     "predev": "node scripts/build-os-helpers.js",
     "generate:icons": "node scripts/generate-icons.js",
@@ -73,6 +76,7 @@
     "webpack-cli": "^7.0.2"
   },
   "dependencies": {
+    "@crowecawcaw/xa11y": "0.15.4",
     "@firebase/analytics": "^0.10.22",
     "@firebase/app": "^0.16.0",
     "@firebase/auth": "^1.13.1",
@@ -81,6 +85,7 @@
     "@langchain/core": "^1.1.46",
     "@langchain/google-genai": "^2.1.30",
     "@langchain/openai": "^1.4.5",
+    "@napi-rs/system-ocr": "1.2.0",
     "@rive-app/canvas-single": "^2.37.6",
     "@sentry/electron": "7.18.0",
     "audiobuffer-to-wav": "^1.0.0",
@@ -94,6 +99,7 @@
     "mediabunny": "^1.45.2",
     "node-addon-api": "^8.7.0",
     "node-fetch": "^3.3.2",
+    "node-llama-cpp": "3.22.3",
     "tailwindcss": "^4.3.0"
   },
   "optionalDependencies": {
@@ -109,7 +115,10 @@
     "asar": true,
     "asarUnpack": [
       "**/*.node",
-      "bin/**/*"
+      "bin/**/*",
+      "node_modules/@node-llama-cpp/**/*",
+      "node_modules/@napi-rs/system-ocr-*/**/*",
+      "node_modules/@crowecawcaw/xa11y-*/**/*"
     ],
     "afterSign": "scripts/notarize.js",
     "icon": "resources/icon-launcher.png",
@@ -131,7 +140,12 @@
       "build/**/*",
       "resources/**/*",
       "src-main/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/node-llama-cpp/llama/gitRelease.bundle",
+      "!node_modules/node-llama-cpp/llama/localBuilds/**/*",
+      "!node_modules/@node-llama-cpp/**/*",
+      "node_modules/@node-llama-cpp/${os}-${arch}{,-metal,-vulkan}/**/*",
+      "!node_modules/@crowecawcaw/xa11y/bin/**/*"
     ],
     "directories": {
       "buildResources": "resources",
@@ -180,6 +194,10 @@
         }
       ],
       "artifactName": "${productName}-${arch}.${ext}",
+      "signExts": [
+        ".node",
+        ".dll"
+      ],
       "signtoolOptions": {
         "sign": "./scripts/azure-sign-windows.js",
         "signingHashAlgorithms": [
@@ -198,6 +216,9 @@
       "target": "AppImage",
       "icon": "resources/icon-launcher.png",
       "category": "Utility",
+      "files": [
+        "!node_modules/@node-llama-cpp/**/*"
+      ],
       "desktop": {
         "entry": {
           "StartupWMClass": "donethat",
