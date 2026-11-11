@@ -43,7 +43,12 @@ describe('ocrScreenshots', () => {
 
     recognize.mockClear()
     nativeImage.createFromBuffer.mockClear()
-    await ocrImages([imageDataUrl('jpeg-bytes')], { timeoutMs: 1000 })
+    setPlatform('darwin')
+    try {
+      await ocrImages([imageDataUrl('jpeg-bytes')], { timeoutMs: 1000 })
+    } finally {
+      setPlatform(originalPlatform)
+    }
     expect(nativeImage.createFromBuffer).not.toHaveBeenCalled()
     expect(recognize.mock.calls[0][0]).toEqual(Buffer.from('jpeg-bytes'))
   })
