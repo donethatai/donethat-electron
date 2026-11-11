@@ -1226,13 +1226,13 @@ function describeBundledModelState(summary) {
     case 'deleting':
       return 'Deleting…';
     case 'ready':
-      return summary.enabled ? 'Downloaded · in use' : 'Downloaded';
+      return '';
     case 'error':
       return 'Download failed · turn on to try again';
     default:
       return status.receivedBytes > 0
         ? `Download paused at ${formatMegabytes(status.receivedBytes)} of ${formatMegabytes(status.totalBytes)} MB · turn on to resume`
-        : 'Not downloaded · turn on to download';
+        : '';
   }
 }
 
@@ -1296,7 +1296,7 @@ function renderBundledModelUnavailable(summary) {
   }
   const info = document.getElementById('bundledModelInfo');
   if (info) info.textContent = '';
-  ['bundledModelProgress', 'bundledModelCancelBtn', 'bundledModelDeleteBtn', 'bundledModelNotice', 'bundledModelError']
+  ['bundledModelProgress', 'bundledModelStatusRow', 'bundledModelCancelBtn', 'bundledModelDeleteBtn', 'bundledModelNotice', 'bundledModelError']
     .forEach((id) => setElementHidden(document.getElementById(id), true));
   const stateText = document.getElementById('bundledModelStateText');
   if (stateText) stateText.textContent = '';
@@ -1322,6 +1322,7 @@ function renderBundledModelSection() {
   const progress = document.getElementById('bundledModelProgress');
   const progressTrack = document.getElementById('bundledModelProgressTrack');
   const progressBar = document.getElementById('bundledModelProgressBar');
+  const statusRow = document.getElementById('bundledModelStatusRow');
   const stateText = document.getElementById('bundledModelStateText');
   const cancelBtn = document.getElementById('bundledModelCancelBtn');
   const deleteBtn = document.getElementById('bundledModelDeleteBtn');
@@ -1331,7 +1332,8 @@ function renderBundledModelSection() {
   setManagedCardLock(section, managed);
 
   if (info && summary.model) {
-    info.textContent = `${summary.model.name || summary.model.fileName} · ${formatModelSize(summary.model.sizeBytes)} download`;
+    const size = formatModelSize(summary.model.sizeBytes);
+    info.textContent = `${summary.model.name || summary.model.fileName} · ${state === 'ready' ? size : `${size} download`}`;
   }
   if (checkbox) {
     // Turning on without a downloaded model starts the download; turning off cancels it.
@@ -1343,14 +1345,16 @@ function renderBundledModelSection() {
   setElementHidden(progress, state !== 'downloading');
   if (progressBar) progressBar.style.width = `${percent}%`;
   if (progressTrack) progressTrack.setAttribute('aria-valuenow', String(percent));
-  if (stateText) stateText.textContent = describeBundledModelState(summary);
+  const stateDescription = describeBundledModelState(summary);
+  if (stateText) stateText.textContent = stateDescription;
+  setElementHidden(statusRow, !stateDescription);
 
   setElementHidden(cancelBtn, state !== 'downloading');
   if (cancelBtn) cancelBtn.disabled = managed || bundledModelBusy;
   setElementHidden(deleteBtn, state !== 'ready');
   if (deleteBtn) {
     deleteBtn.disabled = bundledModelBusy;
-    deleteBtn.textContent = bundledModelDeleteArmed ? 'Confirm delete' : 'Delete';
+    deleteBtn.textContent = bundledModelDeleteArmed ? 'confirm delete' : 'delete';
   }
 
   const noticeText = getBundledModelNotice(summary, state);

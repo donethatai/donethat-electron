@@ -729,7 +729,7 @@
                   <div class="flex items-center justify-between gap-4">
                     <div>
                       <div class="dt-section-title">On-device model <span class="dt-pill">Experimental</span></div>
-                      <div id="bundledModelInfo" class="dt-supporting-text"></div>
+                      <div class="dt-supporting-text"><span id="bundledModelInfo"></span> <button id="bundledModelDeleteBtn" class="underline cursor-pointer hidden" style="color: inherit; font: inherit;">delete</button></div>
                     </div>
                     <label class="toggle"><input type="checkbox" id="bundledModelCheckbox" disabled aria-label="Use the on-device model"><span class="slider"></span></label>
                   </div>
@@ -740,12 +740,9 @@
                       <div id="bundledModelProgressBar" class="rounded-full" style="height: 100%; width: 0%; background-color: var(--dt-color-brand-primary); transition: width 0.2s ease;"></div>
                     </div>
                   </div>
-                  <div class="flex items-center justify-between gap-3 mt-3">
+                  <div id="bundledModelStatusRow" class="hidden flex items-center justify-between gap-3 mt-3">
                     <span id="bundledModelStateText" class="dt-supporting-text" aria-live="polite"></span>
-                    <div class="flex gap-2">
-                      <button id="bundledModelCancelBtn" class="dt-button dt-button--secondary dt-button--small hidden">Cancel</button>
-                      <button id="bundledModelDeleteBtn" class="dt-button dt-button--secondary dt-button--small hidden">Delete</button>
-                    </div>
+                    <button id="bundledModelCancelBtn" class="dt-button dt-button--secondary dt-button--small hidden">Cancel</button>
                   </div>
                   <p id="bundledModelNotice" class="hidden dt-supporting-text mt-2" aria-live="polite"></p>
                   <p id="bundledModelError" class="hidden text-sm mt-2" style="color: var(--dt-color-state-error);"></p>

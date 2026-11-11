@@ -8,7 +8,7 @@ const MODEL_FILE_NAME = 'Qwen3.5-2B-Q4_K_M.gguf'
 
 const MODEL = Object.freeze({
   id: 'qwen3.5-2b-q4_k_m',
-  name: 'Qwen3.5 2B (Q4_K_M)',
+  name: 'Qwen3.5 2B',
   license: 'Apache-2.0',
   repo: MODEL_REPO,
   revision: MODEL_REVISION,

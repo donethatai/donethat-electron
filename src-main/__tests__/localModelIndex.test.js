@@ -15,7 +15,7 @@ describe('local model module', () => {
   test('exposes the pinned model', () => {
     expect(localModel.getModelInfo()).toEqual({
       id: MODEL.id,
-      name: 'Qwen3.5 2B (Q4_K_M)',
+      name: 'Qwen3.5 2B',
       fileName: 'Qwen3.5-2B-Q4_K_M.gguf',
       sizeBytes: 1280835840,
       sha256: 'aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223'
