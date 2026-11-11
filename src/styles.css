@@ -514,6 +514,19 @@ h6,
   color: var(--dt-color-text-default);
 }
 
+.dt-pill {
+  display: inline-block;
+  margin-left: 0.375rem;
+  padding: 0 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--dt-color-border-default);
+  background-color: var(--dt-color-surface-subtle);
+  color: var(--dt-color-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1.25rem;
+  vertical-align: middle;
+}
+
 .dt-menu-item {
   width: 100%;
   display: flex;

@@ -552,7 +552,7 @@
                 <div class="flex items-center justify-between">
                   <div>
                     <div class="dt-section-title">Active applications</div>
-                    <div class="dt-supporting-text">This allows us to know which apps are active. This helps to understand what happens in between screenshots. On macOS, you may see a permission request to control your browser to capture the active URL.</div>
+                    <div class="dt-supporting-text">This allows us to know which apps are active. This helps to understand what happens in between screenshots. On macOS, you may see a permission request to control your browser to capture the active URL. On macOS and Windows it also reads the text of the window you are working in through accessibility APIs; password fields and masked apps are skipped.</div>
                     <div class="mt-2">
                       <button id="recheckWindowsPermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check Permissions</button>
                     </div>
@@ -679,7 +679,7 @@
           <div class="dt-card dt-settings-card" id="llmSettingsCard" data-settings-card>
             <div class="dt-card-header">
               <h2 class="dt-card-title">Bring your own LLM (optional)</h2>
-              <p class="dt-card-description">Process screenshots and other raw data with your own LLM. Keys are encrypted and stored on your device. This only affects raw data. The processed data will still be synced to our servers and further analzed there to eg detect tasks.</p>
+              <p class="dt-card-description">Process screenshots and other raw data on this computer or with your own LLM. Keys are encrypted and stored on your device. This only affects raw data. The processed data will still be synced to our servers and further analzed there to eg detect tasks.</p>
               <p class="dt-card-description">You can further increase privacy by deleting intermediary data at the end of every day automatically in your settings in the dashboard.</p>
               <p class="dt-card-description">Note that raw data shared with Don will also be processed on our servers (and deleted after).</p>
             </div>
@@ -723,6 +723,34 @@
                 <div class="flex items-center mt-2">
                   <button id="clearOpenaiConfigBtn" class="text-xs text-gray-500 hover:text-gray-700 underline">Clear configuration</button>
                 </div>
+              </div>
+              <div id="bundledModelSettingsSection" class="hidden mt-6">
+                <div id="bundledModelBody">
+                  <div class="flex items-center justify-between gap-4">
+                    <div>
+                      <div class="dt-section-title">On-device model <span class="dt-pill">Experimental</span></div>
+                      <div id="bundledModelInfo" class="dt-supporting-text"></div>
+                    </div>
+                    <label class="toggle"><input type="checkbox" id="bundledModelCheckbox" disabled aria-label="Use the on-device model"><span class="slider"></span></label>
+                  </div>
+                  <p class="dt-supporting-text mt-2">Runs on this computer and downloads the model when you turn it on. It reads screen text (OCR) and window text only, not images or audio, so summaries are likely somewhat less accurate.</p>
+                  <p class="dt-supporting-text mt-1">When on, it is used instead of Gemini or the OpenAI-compatible API.</p>
+                  <div id="bundledModelProgress" class="hidden mt-3">
+                    <div id="bundledModelProgressTrack" class="w-full rounded-full overflow-hidden" style="height: 6px; background-color: var(--dt-color-surface-subtle);" role="progressbar" aria-label="On-device model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                      <div id="bundledModelProgressBar" class="rounded-full" style="height: 100%; width: 0%; background-color: var(--dt-color-brand-primary); transition: width 0.2s ease;"></div>
+                    </div>
+                  </div>
+                  <div class="flex items-center justify-between gap-3 mt-3">
+                    <span id="bundledModelStateText" class="dt-supporting-text" aria-live="polite"></span>
+                    <div class="flex gap-2">
+                      <button id="bundledModelCancelBtn" class="dt-button dt-button--secondary dt-button--small hidden">Cancel</button>
+                      <button id="bundledModelDeleteBtn" class="dt-button dt-button--secondary dt-button--small hidden">Delete</button>
+                    </div>
+                  </div>
+                  <p id="bundledModelNotice" class="hidden dt-supporting-text mt-2" aria-live="polite"></p>
+                  <p id="bundledModelError" class="hidden text-sm mt-2" style="color: var(--dt-color-state-error);"></p>
+                </div>
+                <p id="bundledModelUnavailable" class="hidden dt-supporting-text mt-2"></p>
               </div>
               <div class="mt-6">
                 <div class="grid grid-cols-2 items-center gap-4">

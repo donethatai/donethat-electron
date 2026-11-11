@@ -92,6 +92,8 @@ const { initState } = require('./src-main/main-state')
 const { getScreenSources } = require('./src-main/screenCaptureSemaphore')
 const { recordLog, recordSignal, restorePersistedTelemetry, flushTelemetryForShutdown } = require('./src-main/telemetry')
 const linuxAutostart = require('./src-main/linuxAutostart')
+const localModel = require('./src-main/localModel')
+const { isLocalModelWorkerSentryEvent } = require('./src-main/localModel/sentryFilter')
 
 const SENTRY_CHILD_PROCESS_EVENT_REASONS = new Set(['abnormal-exit', 'launch-failed', 'integrity-failure'])
 const TRANSIENT_SENTRY_NETWORK_ERRORS = [
@@ -191,7 +193,11 @@ const gpuCrashMitigator = createGpuCrashMitigator({
   recordSignal,
   platform: process.platform,
   argv: process.argv,
-  alreadyDisabled: gpuMitigationActive
+  alreadyDisabled: gpuMitigationActive,
+  beforeRelaunch: () => {
+    stopLinuxScreenshotCommandForQuit()
+    shutdownLocalModelForQuit()
+  }
 })
 recordStartupPhase('gpu_crash_mitigator_created')
 const networkServiceMitigationActive = applyStartupNetworkServiceMitigation({
@@ -217,7 +223,10 @@ const mainWindowLoadWatchdog = createMainWindowLoadWatchdog({
   platform: process.platform,
   argv: process.argv,
   alreadyMitigated: networkServiceMitigationActive,
-  beforeRelaunch: () => stopLinuxScreenshotCommandForQuit()
+  beforeRelaunch: () => {
+    stopLinuxScreenshotCommandForQuit()
+    shutdownLocalModelForQuit()
+  }
 })
 
 function isTransientSentryNetworkError(event, hint) {
@@ -296,6 +305,11 @@ Sentry.init({
   },
   beforeSend(event, hint) {
     if (isTransientSentryNetworkError(event, hint)) {
+      return null
+    }
+
+    // Its crash dumps can hold prompt text (screen and window text).
+    if (isLocalModelWorkerSentryEvent(event, hint)) {
       return null
     }
 
@@ -1283,11 +1297,31 @@ function persistOverlayPosition(x, y, height) {
   } catch (e) {}
 }
 
+// Stops the on-device model worker and any model download (the partial file
+// stays for resume). Not awaited: quitting must not wait on it.
+function shutdownLocalModelForQuit() {
+  localModel.shutdown().catch((error) => {
+    log.warn('[localModel] Shutdown failed:', error?.message || error)
+  })
+}
+
+function forwardLocalModelStatus() {
+  localModel.cleanupOrphanedModelFiles().catch((error) => {
+    log.warn('[localModel] Removing old model files failed:', error?.message || error)
+  })
+  if (!localModel.isBundledSupported()) return
+  localModel.onStatusChange((status) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('localModel:status', status)
+  })
+}
+
 function installUpdate(payload) {
   if (isAutoUpdateDisabled({ store: earlyConfigStore })) {
     log.info('Skipping update install: auto-update disabled')
     return
   }
+  shutdownLocalModelForQuit();
   const runAfter = payload && payload.forceRunAfter === true;
   if (process.platform === 'win32') {
     autoUpdater.quitAndInstall(true, runAfter);
@@ -1589,6 +1623,7 @@ function setupAutoUpdater() {
         setTimeout(() => {
           log.info('Executing quitAndInstall() for macOS');
           app.isQuitting = true; // Explicitly set this flag to prevent event.preventDefault in close handlers
+          shutdownLocalModelForQuit();
           autoUpdater.quitAndInstall();
         }, 1000); // 1 second delay
       }
@@ -1802,8 +1837,10 @@ async function emitLaunchConfigSnapshot() {
     const localState = await stateManager?.getLocalProcessingState?.()
     const hasOpenAI = !!localState?.state?.openAICompatible?.hasApiKey
     const hasGemini = !!localState?.state?.gemini?.hasKey
+    const hasBundled = !!localState?.state?.bundled?.enabled
     let localProvider = 'none'
-    if (hasOpenAI) localProvider = 'openai'
+    if (hasBundled) localProvider = 'bundled'
+    else if (hasOpenAI) localProvider = 'openai'
     else if (hasGemini) localProvider = 'gemini'
     recordSignal('launch_config_snapshot', {
       audioEnabled: !!inputSettings?.audio,
@@ -2237,6 +2274,7 @@ app.whenReady().then(async () => {
 
   // Create window as early as possible (kept hidden) to avoid losing early deep-links
   createWindow()
+  forwardLocalModelStatus()
 
   // Lazy-load electron-store for overlay position persistence
   try {
@@ -2742,6 +2780,8 @@ app.on('before-quit', () => {
   
   // Stop auth server
   stopAuthServer();
+
+  shutdownLocalModelForQuit();
   
   // Clean up state (timeouts and save pause state if needed)
   stateManager?.cleanupOnQuit();

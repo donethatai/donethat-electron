@@ -80,7 +80,8 @@ function createGpuCrashMitigator({
   platform = process.platform,
   argv = process.argv,
   now = () => Date.now(),
-  alreadyDisabled = false
+  alreadyDisabled = false,
+  beforeRelaunch
 } = {}) {
   let gpuCrashTimestamps = []
   let relaunching = false
@@ -114,6 +115,11 @@ function createGpuCrashMitigator({
     log?.warn?.('GPU process crashed repeatedly; relaunching with hardware acceleration disabled', signalFields)
     recordSignal?.('gpu-mitigation-relaunch', signalFields)
 
+    try {
+      beforeRelaunch?.()
+    } catch (error) {
+      log?.warn?.('Cleanup before GPU mitigation relaunch failed:', error.message)
+    }
     app?.relaunch?.({ args: buildRelaunchArgs(argv) })
     app?.exit?.(0)
     return true

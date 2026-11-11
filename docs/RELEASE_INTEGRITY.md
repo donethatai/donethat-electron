@@ -35,6 +35,7 @@ This means the release version and the source tag are locked together by the rel
 
 - Windows release builds use Azure Trusted Signing (Artifact Signing).
 - The workflow authenticates to Azure via OIDC federated identity (`azure/login@v2`) and provisions the Trusted Signing dlib plus a `metadata.json` pointing at the `DoneThat / Letss` certificate profile in West Europe.
+- Electron Builder signs the app executable plus every `.dll` and `.node` file in the app, including native modules in `app.asar.unpacked` (`win.signExts`). The arm64 workflow step signs the same file types in the unpacked app.
 - `scripts/azure-sign-windows.js` signs the produced artifact with `signtool sign /dlib /dmdf` against `http://timestamp.acs.microsoft.com` and immediately verifies it with `signtool verify /pa /v`.
 - Windows arm64 native code is compiled on the `windows-11-arm` runner through an unsigned NSIS build, which also prepares installer resources in `release/win-arm64-unpacked`. The unpacked app is then signed and packaged on a `windows-latest` x64 runner because Azure Trusted Signing currently ships an x64 dlib, not an ARM64-native dlib.
 - Windows arm64 release update metadata is generated after the unpacked app has been signed, so published hashes describe the final signed artifacts.

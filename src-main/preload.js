@@ -109,6 +109,9 @@ const validInvokeChannels = [
   'save-app-exclusions',
   'test-app-exclusions',
   'test-local-processing',
+  'localModel:get-status',
+  'localModel:delete',
+  'localModel:set-enabled',
   'get-save-capture-data',
   'get-client-telemetry',
   'choose-capture-dump-folder',
@@ -192,6 +195,9 @@ const validReceiveChannels = [
   'windowsPermission',
   'pauseStateChanged',
   'flag-permission-issues',
+
+  // On-device model
+  'localModel:status',
 
   // Analytics / notifications
   'analytics-event',

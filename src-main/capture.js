@@ -22,7 +22,8 @@ const {
   recordCyclePhaseDuration,
   recordPermissionCheck,
   recordCaptureCycleSkippedOverlap,
-  recordSignal
+  recordSignal,
+  recordUiTextStats
 } = require('./telemetry');
 
 // Firebase URL constant
@@ -31,6 +32,7 @@ const FIREBASE_CAPTURE_URL = 'https://europe-west1-donethat.cloudfunctions.net/c
 // Import capture modules
 const audioCapture = require('./captureAudio');
 const windowsCapture = require('./captureWindows');
+const uiTextCapture = require('./captureUiText');
 const networksCapture = require('./captureNetworks');
 const { watchForPermissionReturn } = require('./permissionFocus');
 
@@ -241,7 +243,8 @@ const failureStreaks = {
   windows: 0,
   microphone: 0,
   systemAudio: 0,
-  location: 0
+  location: 0,
+  uiText: 0
 };
 
 const RUNTIME_ISSUE_THRESHOLDS = {
@@ -251,7 +254,8 @@ const RUNTIME_ISSUE_THRESHOLDS = {
   systemAudio: 4,
   // Higher than the rest: a location grant does not lapse mid-session, so a
   // streak this long means the grant really is gone rather than a slow helper.
-  location: 6
+  location: 6,
+  uiText: 6
 };
 
 /** Authorizations that are the user's to fix, as opposed to hardware states. */
@@ -464,6 +468,23 @@ async function _startWindowTracking() {
 }
 
 /**
+ * Starts UI text (accessibility) tracking. A refusal is retried on the next
+ * capture cycle; a missing Accessibility grant surfaces through captureErrors.
+ * @returns {Promise<boolean>} Success status
+ */
+async function _startUiTextTracking() {
+  if (!uiTextCapture.isUiTextSupported()) return false;
+  try {
+    const started = await uiTextCapture.startTracking();
+    if (started) resetFailureStreak('uiText');
+    return started;
+  } catch (error) {
+    log.warn('Failed to start UI text tracking:', error?.name || 'Error');
+    return false;
+  }
+}
+
+/**
  * Updates input data settings
  * @param {Object} settings Settings with audio, windows flags
  * @returns {Object} Updated settings
@@ -513,9 +534,12 @@ function updateInputDataSettings(settings) {
       });
     }
     
+    // Window text is part of Active applications.
     if (previousSettings.windows && !inputDataSettings.windows) {
       resetFailureStreak('windows');
       windowsCapture.stopTracking();
+      resetFailureStreak('uiText');
+      uiTextCapture.stopTracking();
     }
     
     // Start tracking for newly enabled options or changed systemAudio preference
@@ -541,6 +565,7 @@ function updateInputDataSettings(settings) {
         }
         windowStartRetryCount = 0;
         _startWindowTracking();
+        _startUiTextTracking();
       }
     }
   }
@@ -853,6 +878,15 @@ function initCapture(mainWindow, onAuthError, getIdToken, getClientTelemetryEnab
  * @param {boolean} resetBuffers - Whether to reset data buffers after collection
  * @returns {Promise<Object>} The captured input data
  */
+// Size counters only; a telemetry problem must not mark window-text capture as failed.
+function recordUiTextCycleTelemetry() {
+  try {
+    recordUiTextStats(uiTextCapture.getLastCycleStats());
+  } catch (error) {
+    log.warn('Failed to record window text telemetry:', error?.name || 'Error');
+  }
+}
+
 async function collectInputData(resetBuffers = true, options = {}) {
   const includeOpenAIWav = options.includeOpenAIWav === true;
   let inputData = {};
@@ -861,7 +895,8 @@ async function collectInputData(resetBuffers = true, options = {}) {
     windows: false,
     microphone: false,
     systemAudio: false,
-    location: false
+    location: false,
+    uiText: false
   };
   
   // Get system idle time
@@ -959,6 +994,25 @@ async function collectInputData(resetBuffers = true, options = {}) {
     }
   }
   
+  if (inputDataSettings.windows && uiTextCapture.isUiTextSupported()) {
+    try {
+      const uiText = await uiTextCapture.getUiTextBuffer(resetBuffers);
+      if (uiText) {
+        inputData.uiText = uiText;
+      }
+      const uiTextStatus = uiTextCapture.getStatus();
+      if (uiTextStatus.permissionDenied || uiTextStatus.libraryUnavailable) {
+        captureErrors.uiText = true;
+      } else {
+        resetFailureStreak('uiText');
+      }
+    } catch (error) {
+      captureErrors.uiText = true;
+      log.warn('Error collecting UI text:', error?.name || 'Error');
+    }
+    recordUiTextCycleTelemetry();
+  }
+
   // Process activity data
   inputData.activity = [];
   
@@ -988,6 +1042,55 @@ async function collectInputData(resetBuffers = true, options = {}) {
   
   inputData.captureErrors = captureErrors;
   return inputData;
+}
+
+/**
+ * Builds the request body for the captureScreenshot cloud function.
+ */
+function buildCloudPayload(screenshots, inputData, previousScreenshotData, clientTelemetry) {
+  const payload = {
+    timestamp: Date.now(),
+    screenshots: screenshots,
+    previousScreenshotData: previousScreenshotData || null
+  };
+  if (clientTelemetry) {
+    payload.clientTelemetry = clientTelemetry;
+  }
+  
+  if (inputData) {
+    if (inputData.audioCycle && inputData.audioCycle.base64Data) {
+      const { openai, ...cloudAudioCycle } = inputData.audioCycle;
+      payload.audioCycle = cloudAudioCycle;
+    }
+    if (inputData.idleTime !== undefined) {
+      payload.idleTime = inputData.idleTime;
+    }
+    if (inputData.location) {
+      payload.location = inputData.location;
+    }
+    if (inputData.uiText && inputDataSettings.windows) {
+      payload.uiText = inputData.uiText;
+    }
+    
+    if (inputData.activity && inputData.activity.length > 0) {
+      // Format all timestamps to local time in activity data
+      payload.activity = inputData.activity.map(item => {
+        // Create a new object without start/end times for the API
+        const apiItem = {
+          ...item,
+          formattedDuration: `${Math.round(item.duration / 1000)}s`  // Duration in seconds
+        };
+        
+        // Remove start/end times from the API payload
+        delete apiItem.startTime;
+        delete apiItem.endTime;
+        delete apiItem.duration;
+        
+        return apiItem;
+      });
+    }
+  }
+  return payload;
 }
 
 /**
@@ -1042,45 +1145,8 @@ async function _sendToServer(idToken, screenshots, inputData = {}, previousScree
     } else {
       const fetch = await import('node-fetch').then(module => module.default);
       
-      const payload = {
-        timestamp: Date.now(),
-        screenshots: screenshots,
-        previousScreenshotData: previousScreenshotData || null
-      };
-      if (clientTelemetry) {
-        payload.clientTelemetry = clientTelemetry;
-      }
-      
-      if (inputData) {
-        if (inputData.audioCycle && inputData.audioCycle.base64Data) {
-          const { openai, ...cloudAudioCycle } = inputData.audioCycle;
-          payload.audioCycle = cloudAudioCycle;
-        }
-        if (inputData.idleTime !== undefined) {
-          payload.idleTime = inputData.idleTime;
-        }
-        if (inputData.location) {
-          payload.location = inputData.location;
-        }
-        
-        if (inputData.activity && inputData.activity.length > 0) {
-          // Format all timestamps to local time in activity data
-          payload.activity = inputData.activity.map(item => {
-            // Create a new object without start/end times for the API
-            const apiItem = {
-              ...item,
-              formattedDuration: `${Math.round(item.duration / 1000)}s`  // Duration in seconds
-            };
-            
-            // Remove start/end times from the API payload
-            delete apiItem.startTime;
-            delete apiItem.endTime;
-            delete apiItem.duration;
-            
-            return apiItem;
-          });
-        }
-      }
+      const payload = buildCloudPayload(screenshots, inputData, previousScreenshotData, clientTelemetry);
+
       // Send data to Firebase
       const headers = {
         'Content-Type': 'application/json',
@@ -1166,7 +1232,8 @@ async function captureAndSend(idToken) {
       windows: false,
       microphone: false,
       systemAudio: false,
-      location: false
+      location: false,
+      uiText: false
     };
 
     // Capture screenshots only if enabled
@@ -1186,14 +1253,10 @@ async function captureAndSend(idToken) {
       }
     }
     
-    // Apply app exclusions if configured
-    try {
-      detailedScreenshots = await applyAppExclusionsToDetailedScreenshots(detailedScreenshots)
-      screenshots = detailedScreenshots.map((entry) => entry.imageDataUrl)
-    } catch (error) {
-      // Non-critical: if masking fails, continue with unmasked screenshots
-      log.warn('Error applying app exclusions to screenshots:', error);
-    }
+    const localProvider = await getLocalProvider();
+
+    detailedScreenshots = await maskScreenshotsForCycle(detailedScreenshots, localProvider)
+    screenshots = detailedScreenshots.map((entry) => entry.imageDataUrl)
 
     const validScreenshots = screenshots.filter((shot) => isValidImageDataUrl(shot));
     if (validScreenshots.length !== screenshots.length) {
@@ -1226,7 +1289,6 @@ async function captureAndSend(idToken) {
       } catch (_) {}
     }
 
-    const localProvider = await getLocalProvider();
     const includeOpenAIWav = localProvider === 'openai';
 
     // Get input data while resetting buffers
@@ -1239,10 +1301,11 @@ async function captureAndSend(idToken) {
     captureErrors.microphone = !!moduleErrors.microphone;
     captureErrors.systemAudio = !!moduleErrors.systemAudio;
     captureErrors.location = !!moduleErrors.location;
+    captureErrors.uiText = !!moduleErrors.uiText;
 
 
     // Check if any capture errors occurred
-    if (captureErrors.screen || captureErrors.windows || captureErrors.microphone || captureErrors.systemAudio || captureErrors.location) {
+    if (captureErrors.screen || captureErrors.windows || captureErrors.microphone || captureErrors.systemAudio || captureErrors.location || captureErrors.uiText) {
       // Pass the specific errors to the handler
       handleCaptureError(new Error('Capture module error detected'), 'module-specific', captureErrors, false);
     }
@@ -1326,6 +1389,36 @@ async function captureAndSend(idToken) {
   }
 }
 
+function getUiTextIssueReason() {
+  const status = uiTextCapture.getStatus();
+  if (status.accessibilityTrusted === false) return 'accessibility';
+  if (status.libraryUnavailable) return 'unavailable';
+  if (status.permissionDenied) return 'app-refused';
+  return 'read-failed';
+}
+
+/**
+ * Masks excluded apps out of this cycle's screenshots. On the on-device path the
+ * screenshots are OCR'd into text, so a failed mask must not fall back to the
+ * unmasked images there: the cycle goes without screenshots instead.
+ * @returns {Promise<Array>} Masked screenshot entries, or [] when masking failed on the bundled path
+ */
+async function maskScreenshotsForCycle(detailedScreenshots, localProvider) {
+  const failClosed = localProvider === 'bundled';
+  try {
+    const masked = await applyAppExclusionsToDetailedScreenshots(detailedScreenshots, { throwOnError: failClosed });
+    if (Array.isArray(masked)) return masked;
+    log.warn('[capture] App exclusion masking returned no screenshot list');
+  } catch (error) {
+    log.warn('Error applying app exclusions to screenshots:', error?.name || 'Error');
+  }
+  if (!failClosed) return detailedScreenshots;
+  if (detailedScreenshots.length > 0) {
+    log.warn(`[capture] Dropping ${detailedScreenshots.length} screenshot(s) this cycle: app exclusion masking failed on the on-device path`);
+  }
+  return [];
+}
+
 // Helper function to handle errors during capture interval
 function handleCaptureError(error, context, captureErrors = null, stopCapture = true) {
   log.error(`handleCaptureError: Error details (Context: ${context}):`, error); // Keep error log
@@ -1344,7 +1437,8 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
     windows: 'Window tracking',
     microphone: 'Microphone capture',
     systemAudio: 'System audio capture',
-    location: 'Nearby network detection'
+    location: 'Nearby network detection',
+    uiText: 'Window text capture'
   };
   
   if (captureErrors) {
@@ -1378,6 +1472,11 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
           if (feature === 'location') {
             runtimeIssues[feature].authorization = networksCapture.getLastAuthorization();
           }
+          // Only a missing Accessibility grant belongs to the Active applications
+          // indicator; other window text failures must not mark it denied.
+          if (feature === 'uiText') {
+            runtimeIssues[feature].reason = getUiTextIssueReason();
+          }
           resetFailureStreak(feature);
           shouldNotifyRenderer = true;
 
@@ -1394,7 +1493,7 @@ function handleCaptureError(error, context, captureErrors = null, stopCapture = 
                   ? `Check ${
                     feature === 'screen'
                       ? 'screen recording'
-                      : (feature === 'windows'
+                      : (feature === 'windows' || feature === 'uiText'
                         ? 'accessibility'
                         : (feature === 'microphone'
                           ? 'microphone'
@@ -1547,6 +1646,10 @@ async function _runCaptureCycle() {
       await _startWindowTracking();
     }
 
+    if (inputDataSettings.windows && !uiTextCapture.isTracking()) {
+      await _startUiTextTracking();
+    }
+
     // Capture and send data, passing the fetched token
     cycleCaptureResult = await captureAndSend(currentIdToken); // Pass currentIdToken
     const sendResult = cycleCaptureResult && Object.prototype.hasOwnProperty.call(cycleCaptureResult, 'sendResult')
@@ -1624,6 +1727,10 @@ function startCaptureInterval() {
     _startWindowTracking();
   }
 
+  if (inputDataSettings.windows && !uiTextCapture.isTracking()) {
+    _startUiTextTracking();
+  }
+
   // Wait 1 minute before first capture
   initialCaptureDelayTimer = setTimeout(() => {
     initialCaptureDelayTimer = null;
@@ -1671,6 +1778,8 @@ function stopCaptureInterval() {
   if (inputDataSettings.windows) {
     windowsCapture.stopTracking();
   }
+
+  uiTextCapture.stopTracking();
 }
 
 /**
@@ -1697,7 +1806,11 @@ module.exports = {
 
   collectInputData,
   __test__: {
+    updateInputDataSettings,
     handleCaptureError,
-    isLocationDenial
+    isLocationDenial,
+    applyManagedInputDataOverrides,
+    buildCloudPayload,
+    maskScreenshotsForCycle
   }
 }; 

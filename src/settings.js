@@ -64,8 +64,15 @@ const DEFAULT_CAPTURE_INTERVAL_MINUTES = 5;
 const ALLOWED_CAPTURE_INTERVAL_MINUTES = [1, 2, 3, 5, 6];
 const llmManagedLocks = {
   gemini: false,
-  openAICompatible: false
+  openAICompatible: false,
+  bundled: false
 };
+let bundledModelSummary = null;
+let bundledModelBusy = false;
+let bundledModelDeleteArmed = false;
+let bundledModelDeleteArmTimer = null;
+const BUNDLED_DELETE_CONFIRM_MS = 6000;
+const BUNDLED_NOT_PROCESSED_NOTICE = "Captures won't be processed. Turn the on-device model off, or off and on again to download it.";
 let applySaveCaptureManagedConfig = null;
 let waylandWindowsPersistInFlight = false;
 
@@ -474,6 +481,7 @@ function initializeSettings(onSettingsUpdate, showBlockingSpinner, hideBlockingS
   setupGeminiApiKeyListeners();
   // Set up OpenAI-compatible config listeners
   setupOpenAICompatibleListeners();
+  setupBundledModelSection();
   // Set up hotkey configuration UI
   setupHotkeyConfiguration();
   setupLogTimeHotkeyConfiguration();
@@ -637,6 +645,8 @@ function stopSettingsListener(resetManagedState = true) {
   };
   llmManagedLocks.gemini = false;
   llmManagedLocks.openAICompatible = false;
+  llmManagedLocks.bundled = false;
+  renderBundledModelSection();
   // Server-driven, so it cannot outlive the session that reported it: main
   // would otherwise keep scanning on the last-seen value after logout.
   locationFeatureEnabled = false;
@@ -1118,6 +1128,8 @@ async function applyManagedLocalProcessingSettings(localProcessing) {
   const llmManaged = geminiManaged || openAiManaged;
   llmManagedLocks.gemini = llmManaged;
   llmManagedLocks.openAICompatible = llmManaged;
+  llmManagedLocks.bundled = llmManaged;
+  refreshBundledModelSection();
 
   setManagedCardLock(llmSettingsCard, llmManaged);
   setManagedCardLock(geminiSection, llmManaged);
@@ -1188,6 +1200,245 @@ async function applyManagedLocalProcessingSettings(localProcessing) {
 }
 
 
+
+const BYTES_PER_MB = 1000 * 1000;
+
+function formatMegabytes(bytes) {
+  return Math.round((Number(bytes) || 0) / BYTES_PER_MB).toLocaleString();
+}
+
+function formatModelSize(bytes) {
+  return `${((Number(bytes) || 0) / (1000 * BYTES_PER_MB)).toFixed(1)} GB`;
+}
+
+function getDownloadPercent(status) {
+  if (!status?.totalBytes) return 0;
+  return Math.min(100, Math.floor((status.receivedBytes / status.totalBytes) * 100));
+}
+
+function describeBundledModelState(summary) {
+  const status = summary.status || {};
+  switch (status.state) {
+    case 'downloading':
+      return `Downloading… ${getDownloadPercent(status)}% (${formatMegabytes(status.receivedBytes)} of ${formatMegabytes(status.totalBytes)} MB)`;
+    case 'verifying':
+      return 'Verifying download…';
+    case 'deleting':
+      return 'Deleting…';
+    case 'ready':
+      return summary.enabled ? 'Downloaded · in use' : 'Downloaded';
+    case 'error':
+      return 'Download failed · turn on to try again';
+    default:
+      return status.receivedBytes > 0
+        ? `Download paused at ${formatMegabytes(status.receivedBytes)} of ${formatMegabytes(status.totalBytes)} MB · turn on to resume`
+        : 'Not downloaded · turn on to download';
+  }
+}
+
+function setElementHidden(element, hidden) {
+  if (element) element.classList.toggle('hidden', !!hidden);
+}
+
+// Turned on but without a usable model, cycles are lost instead of going to the cloud.
+function getBundledModelNotice(summary, state) {
+  if (bundledModelDeleteArmed && state === 'ready') {
+    return summary.enabled
+      ? `Delete the downloaded model? ${BUNDLED_NOT_PROCESSED_NOTICE}`
+      : 'Delete the downloaded model? You can download it again later.';
+  }
+  if (summary.enablePending && (state === 'downloading' || state === 'verifying')) {
+    return 'Captures keep using your current processing until the download is finished and verified.';
+  }
+  if (!summary.enabled || state === 'ready') return null;
+  if (state === 'downloading' || state === 'verifying') {
+    return "The on-device model is on. Captures won't be processed until the download is finished and verified.";
+  }
+  return `The on-device model is on but not downloaded. ${BUNDLED_NOT_PROCESSED_NOTICE}`;
+}
+
+function disarmBundledModelDelete() {
+  bundledModelDeleteArmed = false;
+  clearTimeout(bundledModelDeleteArmTimer);
+  bundledModelDeleteArmTimer = null;
+}
+
+function showBundledModelError(message) {
+  const errorEl = document.getElementById('bundledModelError');
+  if (!errorEl) return;
+  errorEl.textContent = message || '';
+  setElementHidden(errorEl, !message);
+}
+
+const BUNDLED_UNSUPPORTED_TEXT = {
+  platform: 'The on-device model is not available on Linux.',
+  memory: 'The on-device model needs at least 8 GB of memory.'
+};
+const BUNDLED_ALTERNATIVE_TEXT = 'You can run a model yourself (for example with Ollama or LM Studio) and connect it under OpenAI-compatible API above.';
+
+// Unsupported devices see the section greyed out with a pointer to running their own model.
+function renderBundledModelUnavailable(summary) {
+  const body = document.getElementById('bundledModelBody');
+  const unavailable = document.getElementById('bundledModelUnavailable');
+  const checkbox = document.getElementById('bundledModelCheckbox');
+  const unsupported = !summary.supported;
+  body?.classList.toggle('managed-locked-card', unsupported);
+  setElementHidden(unavailable, !unsupported);
+  if (!unsupported) return false;
+
+  if (unavailable) {
+    const reason = BUNDLED_UNSUPPORTED_TEXT[summary.unsupportedReason] || 'The on-device model is not available on this computer.';
+    unavailable.textContent = `${reason} ${BUNDLED_ALTERNATIVE_TEXT}`;
+  }
+  if (checkbox) {
+    checkbox.checked = false;
+    checkbox.disabled = true;
+  }
+  const info = document.getElementById('bundledModelInfo');
+  if (info) info.textContent = '';
+  ['bundledModelProgress', 'bundledModelCancelBtn', 'bundledModelDeleteBtn', 'bundledModelNotice', 'bundledModelError']
+    .forEach((id) => setElementHidden(document.getElementById(id), true));
+  const stateText = document.getElementById('bundledModelStateText');
+  if (stateText) stateText.textContent = '';
+  return true;
+}
+
+function renderBundledModelSection() {
+  const section = document.getElementById('bundledModelSettingsSection');
+  if (!section) return;
+  const summary = bundledModelSummary;
+  if (!summary) {
+    setElementHidden(section, true);
+    return;
+  }
+  setElementHidden(section, false);
+  if (renderBundledModelUnavailable(summary)) return;
+
+  const status = summary.status || {};
+  const state = status.state || 'absent';
+  const managed = !!summary.managed || llmManagedLocks.bundled;
+  const info = document.getElementById('bundledModelInfo');
+  const checkbox = document.getElementById('bundledModelCheckbox');
+  const progress = document.getElementById('bundledModelProgress');
+  const progressTrack = document.getElementById('bundledModelProgressTrack');
+  const progressBar = document.getElementById('bundledModelProgressBar');
+  const stateText = document.getElementById('bundledModelStateText');
+  const cancelBtn = document.getElementById('bundledModelCancelBtn');
+  const deleteBtn = document.getElementById('bundledModelDeleteBtn');
+  const notice = document.getElementById('bundledModelNotice');
+
+  if (state !== 'ready') disarmBundledModelDelete();
+  setManagedCardLock(section, managed);
+
+  if (info && summary.model) {
+    info.textContent = `${summary.model.name || summary.model.fileName} · ${formatModelSize(summary.model.sizeBytes)} download`;
+  }
+  if (checkbox) {
+    // Turning on without a downloaded model starts the download; turning off cancels it.
+    checkbox.checked = !!summary.enabled || !!summary.enablePending;
+    checkbox.disabled = managed || bundledModelBusy || state === 'deleting';
+  }
+
+  const percent = getDownloadPercent(status);
+  setElementHidden(progress, state !== 'downloading');
+  if (progressBar) progressBar.style.width = `${percent}%`;
+  if (progressTrack) progressTrack.setAttribute('aria-valuenow', String(percent));
+  if (stateText) stateText.textContent = describeBundledModelState(summary);
+
+  setElementHidden(cancelBtn, state !== 'downloading');
+  if (cancelBtn) cancelBtn.disabled = managed || bundledModelBusy;
+  setElementHidden(deleteBtn, state !== 'ready');
+  if (deleteBtn) {
+    deleteBtn.disabled = bundledModelBusy;
+    deleteBtn.textContent = bundledModelDeleteArmed ? 'Confirm delete' : 'Delete';
+  }
+
+  const noticeText = getBundledModelNotice(summary, state);
+  if (notice) notice.textContent = noticeText || '';
+  setElementHidden(notice, !noticeText);
+
+  showBundledModelError(state === 'error' ? status.error : null);
+}
+
+function applyBundledModelResult(result) {
+  if (result?.success) {
+    bundledModelSummary = result;
+    renderBundledModelSection();
+    return true;
+  }
+  renderBundledModelSection();
+  showBundledModelError(result?.error || 'Something went wrong. Please try again.');
+  return false;
+}
+
+async function refreshBundledModelSection() {
+  try {
+    const result = await ipcRenderer.invoke('localModel:get-status');
+    if (result?.success) bundledModelSummary = result;
+  } catch (error) {
+    console.error('Error loading on-device model status:', error);
+  }
+  renderBundledModelSection();
+}
+
+async function runBundledModelAction(channel, payload) {
+  if (bundledModelBusy) return false;
+  bundledModelBusy = true;
+  showBundledModelError(null);
+  renderBundledModelSection();
+  try {
+    const result = await ipcRenderer.invoke(channel, payload);
+    bundledModelBusy = false;
+    return applyBundledModelResult(result);
+  } catch (error) {
+    console.error(`Error running ${channel}:`, error);
+    bundledModelBusy = false;
+    return applyBundledModelResult({ success: false, error: error?.message });
+  }
+}
+
+function setupBundledModelSection() {
+  const section = document.getElementById('bundledModelSettingsSection');
+  if (!section) return;
+
+  ipcRenderer.on('localModel:status', (status) => {
+    if (!bundledModelSummary || !status) return;
+    const wasPending = !!bundledModelSummary.enablePending;
+    bundledModelSummary = { ...bundledModelSummary, status };
+    renderBundledModelSection();
+    // Main turns the setting on (or drops the request) when the download ends.
+    if (wasPending && BUNDLED_DOWNLOAD_END_STATES.has(status.state)) refreshBundledModelSection();
+  });
+  // Cancelling is turning the toggle off: the download stops and the partial file stays for resume.
+  document.getElementById('bundledModelCancelBtn')?.addEventListener('click', () => {
+    runBundledModelAction('localModel:set-enabled', { enabled: false });
+  });
+  document.getElementById('bundledModelDeleteBtn')?.addEventListener('click', async () => {
+    if (!bundledModelDeleteArmed) {
+      bundledModelDeleteArmed = true;
+      bundledModelDeleteArmTimer = setTimeout(() => {
+        disarmBundledModelDelete();
+        renderBundledModelSection();
+      }, BUNDLED_DELETE_CONFIRM_MS);
+      renderBundledModelSection();
+      return;
+    }
+    disarmBundledModelDelete();
+    if (await runBundledModelAction('localModel:delete')) {
+      logAnalyticsEvent('local_model_deleted', {});
+    }
+  });
+  document.getElementById('bundledModelCheckbox')?.addEventListener('change', async (event) => {
+    const enabled = !!event.target.checked;
+    const needsDownload = enabled && bundledModelSummary?.status?.state !== 'ready';
+    if (await runBundledModelAction('localModel:set-enabled', { enabled })) {
+      if (needsDownload) logAnalyticsEvent('local_model_download_started', {});
+      logAnalyticsEvent(enabled ? 'local_model_enabled' : 'local_model_disabled', {});
+    }
+  });
+
+  refreshBundledModelSection();
+}
 
 // Set up Gemini API key listeners
 function setupGeminiApiKeyListeners() {
@@ -1930,6 +2181,14 @@ function setupTestLocalProcessing() {
       testBtn.textContent = 'Testing...';
       testResult.classList.add('hidden');
       if (testResultHideTimer) { clearTimeout(testResultHideTimer); testResultHideTimer = null; }
+      // No renderer-side timeout: the main process bounds the test run.
+      if (bundledModelSummary?.enabled) {
+        testIcon.innerHTML = '';
+        testResult.classList.remove('border-gray-300', 'border-green-200', 'border-red-200');
+        testResult.classList.add('border-gray-300');
+        testMessage.textContent = 'Testing the on-device model. The first run loads the model and can take a couple of minutes.';
+        testResult.classList.remove('hidden');
+      }
 
       const result = await ipcRenderer.invoke('test-local-processing');
       const success = result && result.success;

@@ -101,6 +101,18 @@ function initializePermissions(topbarVisibilityUpdater) {
   checkPermissionsOnStartup();
 }
 
+/**
+ * Window text shares the Accessibility grant with active applications on macOS,
+ * so only its `accessibility` reason marks that indicator denied. Other window
+ * text failures (an app refusing, macOS 26 wanting Screen Recording to read
+ * window content, a missing library) have no indicator of their own and must
+ * not be reported as a lost Accessibility grant.
+ */
+function shouldFlagWindowsPermission(runtimeIssues, platform) {
+  if (runtimeIssues.windows) return true;
+  return platform === 'darwin' && runtimeIssues.uiText?.reason === 'accessibility';
+}
+
 function setupRuntimePermissionIssueListener() {
   ipcRenderer.on('flag-permission-issues', (payload) => {
     const runtimeIssues = payload && typeof payload === 'object' ? payload.runtimeIssues : null;
@@ -110,7 +122,7 @@ function setupRuntimePermissionIssueListener() {
       applyScreenPermissionUpdate(false, false, 'runtime-issue');
     }
 
-    if (runtimeIssues.windows) {
+    if (shouldFlagWindowsPermission(runtimeIssues, window.electronAPI.platform)) {
       applyWindowsPermissionUpdate(false, false, 'runtime-issue');
     }
 
@@ -870,5 +882,8 @@ function requestSystemAudioPermission(shouldOpenSettings = true) {
 module.exports = {
   initializePermissions,
   requestMicrophonePermission,
-  requestWindowsPermission
+  requestWindowsPermission,
+  __test__: {
+    shouldFlagWindowsPermission
+  }
 };

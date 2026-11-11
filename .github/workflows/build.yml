@@ -351,9 +351,10 @@ jobs:
           $appDir = Join-Path $PWD 'release/win-arm64-unpacked'
           if (!(Test-Path $appDir)) { throw "Missing prepackaged app directory: $appDir" }
 
-          $signTargets = @(Get-ChildItem -Path $appDir -Recurse -File -Filter '*.exe' |
+          # Native modules and DLLs are signed too, matching win.signExts for the x64 build.
+          $signTargets = @(Get-ChildItem -Path $appDir -Recurse -File -Include '*.exe', '*.dll', '*.node' |
             Select-Object -ExpandProperty FullName -Unique)
-          if ($signTargets.Count -eq 0) {
+          if (-not ($signTargets | Where-Object { $_ -like '*.exe' })) {
             throw "No Windows executables found under $appDir"
           }
 

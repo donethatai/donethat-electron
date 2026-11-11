@@ -37,7 +37,8 @@ async function isLocalLlmConfigured() {
     const result = await ipcRenderer.invoke('get-local-processing-state');
     if (!result || !result.success) return false;
     const state = result.state || {};
-    return !!(state.gemini && state.gemini.hasKey)
+    return !!(state.bundled && state.bundled.enabled)
+      || !!(state.gemini && state.gemini.hasKey)
       || !!(state.openAICompatible && state.openAICompatible.endpoint);
   } catch (e) {
     return false;

@@ -240,3 +240,22 @@ describe('telemetry backlog persistence', () => {
     expect(second.consumeCompletedCycleTelemetry().kind).toBe('session-tail')
   })
 })
+
+describe('window text stats', () => {
+  test('keeps only whitelisted numeric fields in the cycle counters', () => {
+    const t = loadTelemetryModule()
+    t.beginCycle({ captureIntervalMin: 5 })
+    t.recordUiTextStats({ uniqueChars: 9100.4, sentChars: 7990, text: 'secret', entries: [{ text: 'secret' }] })
+    const cycle = t.endCycle({ status: 'success' })
+
+    expect(cycle.counters.uiText).toEqual({ uniqueChars: 9100, sentChars: 7990 })
+    expect(JSON.stringify(cycle)).not.toContain('secret')
+  })
+
+  test('is null when window text was not collected', () => {
+    const t = loadTelemetryModule()
+    t.beginCycle({ captureIntervalMin: 5 })
+    const cycle = t.endCycle({ status: 'success' })
+    expect(cycle.counters.uiText).toBeNull()
+  })
+})
