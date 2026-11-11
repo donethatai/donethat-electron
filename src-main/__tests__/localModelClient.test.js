@@ -166,6 +166,41 @@ describe('local model client', () => {
     await client.shutdown()
   })
 
+  test('kills a worker that does not stop after an abort, and the next request restarts it', async () => {
+    const { client, children, utilityProcess } = setup({ client: { abortKillGraceMs: 20 } })
+    const controller = new AbortController()
+    const request = client.generateStructured({ prompt: 'x', schema: SCHEMA, signal: controller.signal })
+    const child = children[0]
+
+    controller.abort()
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    expect(child.kill).not.toHaveBeenCalled()
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(child.kill).toHaveBeenCalled()
+
+    const next = client.generateStructured({ prompt: 'y', schema: SCHEMA })
+    expect(utilityProcess.fork).toHaveBeenCalledTimes(2)
+    const { id } = children[1].lastGenerate()
+    children[1].emit('message', { type: 'result', id, ok: true, value: { oneline: 'ok' } })
+    await expect(next).resolves.toEqual({ oneline: 'ok' })
+    await client.shutdown()
+  })
+
+  test('a worker that acknowledges the abort in time is kept', async () => {
+    const { client, children } = setup({ client: { abortKillGraceMs: 20 } })
+    const controller = new AbortController()
+    const request = client.generateStructured({ prompt: 'x', schema: SCHEMA, signal: controller.signal })
+    const child = children[0]
+    const { id } = child.lastGenerate()
+
+    controller.abort()
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    child.emit('message', { type: 'result', id, ok: false, error: { code: 'ABORTED', message: 'Generation aborted' } })
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(child.kill).not.toHaveBeenCalled()
+    await client.shutdown()
+  })
+
   test('an already aborted signal never reaches the worker', async () => {
     const { client, utilityProcess } = setup()
     const controller = new AbortController()

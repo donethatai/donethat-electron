@@ -19,6 +19,9 @@ const {
 const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000
 const MAX_REQUEST_TIMEOUT_MS = 30 * 60 * 1000
 const SHUTDOWN_GRACE_MS = 3000
+// After an abort the worker gets this long to stop before it is killed, since
+// native evaluation may ignore the abort and would block every later request.
+const ABORT_KILL_GRACE_MS = 10_000
 const CRASHES_BEFORE_CPU_FALLBACK = 2
 const WORKER_SERVICE_NAME = 'DoneThat On-device Model'
 const STDERR_LOG_LIMIT = 500
@@ -73,7 +76,8 @@ function createLocalModelClient({
   env = process.env,
   idleUnloadMs = IDLE_UNLOAD_MS,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
-  shutdownGraceMs = SHUTDOWN_GRACE_MS
+  shutdownGraceMs = SHUTDOWN_GRACE_MS,
+  abortKillGraceMs = ABORT_KILL_GRACE_MS
 }) {
   let worker = null
   let nextRequestId = 1
@@ -225,14 +229,24 @@ function createLocalModelClient({
     const resolvedTimeoutMs = resolveTimeoutMs(timeoutMs)
 
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let timer = setTimeout(() => {
         log.warn(`[localModel] Generation timed out after ${resolvedTimeoutMs} ms; restarting the on-device model process`)
         entry.fail(codedError('TIMEOUT', `On-device generation timed out after ${resolvedTimeoutMs} ms`))
         killWorker(handle)
       }, resolvedTimeoutMs)
+      // The caller is rejected at once, but the request stays pending until the
+      // worker reports it stopped; if it does not, the worker is killed.
       const onAbort = () => {
+        signal?.removeEventListener?.('abort', onAbort)
         post(handle, { type: 'abort', id })
-        entry.fail(abortError(signal))
+        reject(abortError(signal))
+        clearTimeout(timer)
+        timer = setTimeout(() => {
+          if (!pending.has(id)) return
+          log.warn(`[localModel] Generation did not stop within ${abortKillGraceMs} ms of an abort; restarting the on-device model process`)
+          cleanup()
+          killWorker(handle)
+        }, abortKillGraceMs)
       }
 
       function cleanup() {

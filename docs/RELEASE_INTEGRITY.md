@@ -52,6 +52,10 @@ This means the release version and the source tag are locked together by the rel
 - Linux AppImage builds are produced by the same release workflow.
 - No separate Linux signing flow is configured in this repository today.
 
+## Workflow Dependencies
+
+- Every GitHub Action in `.github/workflows/` is pinned to a full commit SHA, with the release tag noted in a comment.
+
 ## Checksums And Update Metadata
 
 - Electron Builder is configured with `generateUpdatesFilesForAllChannels: true`.
