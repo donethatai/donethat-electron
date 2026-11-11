@@ -42,18 +42,36 @@ function normalizeOcrText(text) {
     .trim()
 }
 
-// Windows OCR only uses the first language and fails when that language pack
-// is missing, so prefer the user's own system language there. macOS Vision
-// keeps the library default.
-function defaultLanguages() {
-  if (process.platform !== 'win32') return null
-  try {
-    const { app } = require('electron')
-    const preferred = app.getPreferredSystemLanguages?.() || []
-    return preferred.length > 0 ? [preferred[0]] : null
-  } catch (error) {
-    return null
+// Width x height from a PNG or JPEG header, for diagnostics only.
+function imageSize(buffer) {
+  if (buffer.length >= 24 && buffer.readUInt32BE(0) === 0x89504e47) {
+    return `${buffer.readUInt32BE(16)}x${buffer.readUInt32BE(20)}`
   }
+  if (buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2
+    while (offset + 9 < buffer.length && buffer[offset] === 0xff) {
+      const marker = buffer[offset + 1]
+      const length = buffer.readUInt16BE(offset + 2)
+      const isFrameHeader = marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)
+      if (isFrameHeader) return `${buffer.readUInt16BE(offset + 7)}x${buffer.readUInt16BE(offset + 5)}`
+      offset += 2 + length
+    }
+  }
+  return 'unknown size'
+}
+
+function describeImage(buffer, index, languages) {
+  return `Image ${index} (${imageSize(buffer)}, ${Math.round(buffer.length / 1024)} KB, languages ${languages ? languages.join(',') : 'default'})`
+}
+
+// On Windows the recognizer picks its image decoder by sniffing the bytes and
+// rejects Electron's JPEG screenshots ("Could not recognize file"), so they are
+// re-encoded as PNG in memory first. macOS Vision decodes them as they are.
+function prepareForRecognizer(buffer) {
+  if (process.platform !== 'win32') return buffer
+  const { nativeImage } = require('electron')
+  const image = nativeImage.createFromBuffer(buffer)
+  return image.isEmpty() ? buffer : image.toPNG()
 }
 
 async function recognizeWithTimeout(recognize, buffer, languages, timeoutMs) {
@@ -79,11 +97,16 @@ async function ocrImage(recognize, dataUrl, index, languages, timeoutMs) {
     return { text: '' }
   }
   try {
-    const result = await recognizeWithTimeout(recognize, buffer, languages, timeoutMs)
-    return { text: normalizeOcrText(result?.text) }
+    const result = await recognizeWithTimeout(recognize, prepareForRecognizer(buffer), languages, timeoutMs)
+    const text = normalizeOcrText(result?.text)
+    if (!text) log.info(`[ocr] ${describeImage(buffer, index, languages)}: no text recognized`)
+    return { text }
   } catch (error) {
-    if (error?.message === NO_TEXT_MESSAGE) return { text: '' }
-    log.warn(`[ocr] Image ${index} failed: ${error?.message || 'unknown error'}`)
+    if (error?.message === NO_TEXT_MESSAGE) {
+      log.info(`[ocr] ${describeImage(buffer, index, languages)}: no text recognized`)
+      return { text: '' }
+    }
+    log.warn(`[ocr] ${describeImage(buffer, index, languages)} failed: ${error?.message || 'unknown error'}`)
     return { text: '' }
   }
 }
@@ -108,7 +131,9 @@ async function ocrImages(dataUrls, { timeoutMs = DEFAULT_OCR_TIMEOUT_MS, languag
     return images.map(() => ({ text: '' }))
   }
 
-  const resolvedLanguages = Array.isArray(languages) && languages.length > 0 ? languages : defaultLanguages()
+  // Without explicit languages, Windows picks the first of the user's languages
+  // that has OCR installed, and macOS Vision uses its own defaults.
+  const resolvedLanguages = Array.isArray(languages) && languages.length > 0 ? languages : null
   const startedAt = Date.now()
   const results = []
   for (let index = 0; index < images.length; index++) {

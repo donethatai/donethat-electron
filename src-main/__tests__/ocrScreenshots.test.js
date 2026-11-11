@@ -1,5 +1,8 @@
 jest.mock('electron-log', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }))
-jest.mock('electron', () => ({ app: { getPreferredSystemLanguages: jest.fn(() => ['de-DE', 'en-US']) } }))
+jest.mock('electron', () => ({
+  app: { getPreferredSystemLanguages: jest.fn(() => ['de-DE', 'en-US']) },
+  nativeImage: { createFromBuffer: jest.fn(() => ({ isEmpty: () => false, toPNG: () => Buffer.from('png-bytes') })) }
+}))
 jest.mock('@napi-rs/system-ocr', () => ({ recognize: jest.fn() }))
 
 const log = require('electron-log')
@@ -25,6 +28,44 @@ function allLogOutput() {
 }
 
 describe('ocrScreenshots', () => {
+  test('re-encodes screenshots as PNG for the Windows recognizer only', async () => {
+    const { nativeImage } = require('electron')
+    recognize.mockResolvedValue({ text: 'hello' })
+
+    setPlatform('win32')
+    try {
+      await ocrImages([imageDataUrl('jpeg-bytes')], { timeoutMs: 1000 })
+    } finally {
+      setPlatform(originalPlatform)
+    }
+    expect(nativeImage.createFromBuffer).toHaveBeenCalledWith(Buffer.from('jpeg-bytes'))
+    expect(recognize.mock.calls[0][0]).toEqual(Buffer.from('png-bytes'))
+
+    recognize.mockClear()
+    nativeImage.createFromBuffer.mockClear()
+    setPlatform('darwin')
+    try {
+      await ocrImages([imageDataUrl('jpeg-bytes')], { timeoutMs: 1000 })
+    } finally {
+      setPlatform(originalPlatform)
+    }
+    expect(nativeImage.createFromBuffer).not.toHaveBeenCalled()
+    expect(recognize.mock.calls[0][0]).toEqual(Buffer.from('jpeg-bytes'))
+  })
+
+  test('logs the image size and languages, never text, when nothing is recognized', async () => {
+    const png = Buffer.alloc(24)
+    png.writeUInt32BE(0x89504e47, 0)
+    png.writeUInt32BE(3840, 16)
+    png.writeUInt32BE(2160, 20)
+    recognize.mockResolvedValueOnce({ text: '' })
+
+    const results = await ocrImages([`data:image/png;base64,${png.toString('base64')}`], { timeoutMs: 1000, languages: ['de-DE'] })
+
+    expect(results).toEqual([{ text: '' }])
+    expect(log.info).toHaveBeenCalledWith('[ocr] Image 0 (3840x2160, 0 KB, languages de-DE): no text recognized')
+  })
+
   beforeEach(() => {
     jest.clearAllMocks()
     setPlatform('darwin')
@@ -68,7 +109,7 @@ describe('ocrScreenshots', () => {
     const results = await ocrImages([imageDataUrl('bad'), imageDataUrl('good')], { timeoutMs: 1000 })
 
     expect(results).toEqual([{ text: '' }, { text: SECRET_TEXT }])
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Image 0 failed'))
+    expect(log.warn).toHaveBeenCalledWith(expect.stringMatching(/Image 0 \(.*\) failed: Vision request failed/))
     expect(allLogOutput()).not.toContain(SECRET_TEXT)
   })
 
@@ -109,11 +150,11 @@ describe('ocrScreenshots', () => {
     expect(recognize).not.toHaveBeenCalled()
   })
 
-  test('uses the first system language on Windows', async () => {
+  test("leaves the language to Windows' installed OCR languages", async () => {
     setPlatform('win32')
     recognize.mockResolvedValueOnce({ text: 'Hallo' })
     await ocrImages([imageDataUrl()], { timeoutMs: 1000 })
-    expect(recognize.mock.calls[0][2]).toEqual(['de-DE'])
+    expect(recognize.mock.calls[0][2]).toBeNull()
   })
 
   test('never throws for empty or invalid input', async () => {

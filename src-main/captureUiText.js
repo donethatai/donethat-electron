@@ -362,7 +362,10 @@ async function attachToApp(target) {
   const xa11y = loadXa11y()
   if (!xa11y) return
   if (isOwnProcess(target.pid)) return
-  if (await isExcludedTarget(target.appName, [target.title])) return
+  if (await isExcludedTarget(target.appName, [target.title])) {
+    target.excluded = true
+    return
+  }
 
   const lookup = runExclusiveNativeCall('lookup', target.pid, () => xa11y.App.byPid(target.pid, { timeout: 0 }))
   if (!lookup) return
@@ -560,6 +563,15 @@ function getLastCycleStats() {
   return lastCycleStats
 }
 
+// Why a cycle produced no window text, for the log. Never names the app or window.
+function describeEmptyCycle() {
+  if (!current) return 'no foreground window found'
+  if (isOwnProcess(current.pid)) return 'DoneThat was in front'
+  if (current.excluded) return 'a masked app was in front'
+  if (!current.app) return 'the accessibility lookup did not return the app in front'
+  return 'the window in front exposed no readable text'
+}
+
 /**
  * Take one last snapshot of the focused window, then return the cycle's UI text.
  * @param {boolean} resetBuffers Clear the buffer after reading it
@@ -587,6 +599,7 @@ async function getUiTextBuffer(resetBuffers = true, { includeWindowTitles = true
   const payload = buildPayload({ includeWindowTitles })
   lastCycleStats = computeCycleStats(payload, includeWindowTitles)
   if (resetBuffers) buffer = createEmptyBuffer()
+  if (!payload) log.info(`[ui-text] No window text this cycle: ${describeEmptyCycle()}`)
   if (payload) {
     log.debug('[ui-text] Collected window text', {
       entries: String(payload.entries.length),
