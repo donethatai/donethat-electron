@@ -434,18 +434,59 @@ async function isLocalProcessingAvailable() {
 /**
  * Get configuration from Firebase with caching
  */
+// Provider names as reported to the backend (prompt selection, analytics); never the endpoint or key.
+const SUBMITTED_PROVIDER_NAMES = {
+  gemini: 'gemini',
+  openai: 'openai-compatible',
+  bundled: 'on-device'
+};
+const MAX_REPORTED_MODEL_LENGTH = 200;
+
+/**
+ * The provider and model this computer processes with, so the backend can pick a prompt
+ * suited to it. Gemini models come from the backend's own config, so Gemini sends no model.
+ * @returns {Promise<{provider: string|null, model: string|null}>}
+ */
+async function describeClientModel() {
+  const provider = await getLocalProvider();
+  let model = null;
+  if (provider === 'bundled') {
+    model = localModel.getModelInfo()?.id || null;
+  } else if (provider === 'openai') {
+    try {
+      model = (await getOpenAICompatibleConfig())?.config?.model || null;
+    } catch (error) {
+      log.warn('Could not read the OpenAI-compatible model for the config request:', error?.name || 'Error');
+    }
+  }
+  return {
+    provider: SUBMITTED_PROVIDER_NAMES[provider] || null,
+    model: typeof model === 'string' && model.trim() ? model.trim().slice(0, MAX_REPORTED_MODEL_LENGTH) : null
+  };
+}
+
+function buildConfigUrl({ provider, model }) {
+  const params = new URLSearchParams();
+  if (provider) params.set('provider', provider);
+  if (model) params.set('model', model);
+  const query = params.toString();
+  return query ? `${FIREBASE_CONFIG_URL}?${query}` : FIREBASE_CONFIG_URL;
+}
+
 async function getConfig(idToken) {
   const now = Date.now();
-  
-  // Return cached config if still valid
-  if (configCache.data && (now - configCache.lastFetch) < configCache.fetchInterval) {
+  const clientModel = await describeClientModel();
+  const cacheKey = `${clientModel.provider || ''}|${clientModel.model || ''}`;
+
+  // Return cached config if still valid and fetched for the same provider and model
+  if (configCache.data && configCache.key === cacheKey && (now - configCache.lastFetch) < configCache.fetchInterval) {
     return configCache.data;
   }
 
   try {
     const fetch = await loadFetch();
     
-    const response = await fetch(FIREBASE_CONFIG_URL, {
+    const response = await fetch(buildConfigUrl(clientModel), {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${idToken}`
@@ -478,6 +519,7 @@ async function getConfig(idToken) {
     // Cache the config
     configCache.data = config;
     configCache.lastFetch = now;
+    configCache.key = cacheKey;
     latestConfig = config;
 
     return config;
@@ -1153,12 +1195,6 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
 /**
  * Submit processed results to Firebase
  */
-// Provider names as reported to the backend for analytics; never the model or endpoint.
-const SUBMITTED_PROVIDER_NAMES = {
-  gemini: 'gemini',
-  openai: 'openai-compatible',
-  bundled: 'on-device'
-};
 
 async function submitResults(idToken, timestamp, structured, parameters, clientTelemetry = null, location = null, provider = null) {
   try {
@@ -1377,6 +1413,7 @@ module.exports = {
     buildBlocks,
     buildBundledPrompt,
     boundBundledOutputSchema,
+    getConfig,
     formatUiText,
     getOcrTimeoutMs,
     setFetchLoader(loader) {
@@ -1385,6 +1422,7 @@ module.exports = {
     resetState() {
       configCache.data = null;
       configCache.lastFetch = 0;
+      configCache.key = null;
       latestConfig = null;
       llmModels = null;
       llmModelNames = null;

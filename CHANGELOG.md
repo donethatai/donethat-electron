@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Tell the backend which local provider and model are used when fetching the prompt, so it can send a prompt suited to that model; the OpenAI-compatible endpoint and key are never sent.
 - Fix the on-device model getting no screen text on Windows: screenshots are converted to PNG before Windows text recognition, which now uses the first of the user's languages that has OCR installed.
 - Add a free on-device model (Qwen3.5 2B, downloaded on request) that summarizes captures privately from screen text on macOS and Windows, and read the focused window's text through accessibility APIs as part of "Active applications" on all processing paths.
 - Sign the Windows app's native modules and DLLs, not just its executables.
