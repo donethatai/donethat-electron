@@ -581,7 +581,9 @@ async function collectNetworkFingerprint() {
 
     if (!scan) {
       logFingerprintFailure(blockedBeforeScan ? 'skipped_after_denial' : 'scan_failed', scanDetails(null));
-      return null;
+      // Off macOS a missing scanner (no NetworkManager, no WLAN service) is no
+      // refusal, so the router MAC still identifies a wired desk.
+      if (process.platform === 'darwin') return null;
     }
 
     // macOS gates network names behind Location. Without that grant the router
@@ -612,17 +614,20 @@ async function collectNetworkFingerprint() {
       gatewayMac = null;
     }
 
-    if (ssids.length === 0) {
+    // A failed scan was already logged above; logging it again under a second
+    // key would defeat the repeat throttle.
+    if (ssids.length === 0 && scan) {
       logFingerprintFailure(gatewayMac ? 'no_networks_gateway_only' : 'empty', {
         ...scanDetails(scan),
         hasGatewayIp: !!gateway.gatewayIp,
         hasGatewayMac: !!gateway.gatewayMac,
         hotspot: isHotspotGateway(gateway.gatewayIp)
       });
-      if (!gatewayMac) return null;
-    } else {
+    } else if (ssids.length > 0) {
       logFingerprintRecovered(ssids.length);
     }
+
+    if (ssids.length === 0 && !gatewayMac) return null;
 
     return { connectedSsid, ssids, gatewayMac };
   } catch (error) {
