@@ -299,21 +299,46 @@ describe('runtime issue reporting', () => {
     expect(issue).toBeDefined()
     expect(issue.authorization).toBe('restricted')
   })
+
+  it('reports an unanswered prompt as notDetermined, so the button raises the prompt', () => {
+    networks.getLastAuthorization.mockReturnValue('notDetermined')
+
+    const flagged = []
+    mainWindow.webContents.send = (channel, payload) => {
+      sent.push({ channel, payload })
+      if (channel === 'flag-permission-issues') flagged.push(payload)
+    }
+
+    for (let i = 0; i < 6; i += 1) {
+      capture.__test__.handleCaptureError(
+        new Error('no fingerprint'),
+        'module-specific',
+        { location: true },
+        false
+      )
+    }
+
+    const issue = flagged.at(-1)?.runtimeIssues?.location
+    expect(issue).toBeDefined()
+    expect(issue.authorization).toBe('notDetermined')
+  })
 })
 
-describe('isLocationDenial', () => {
-  const { isLocationDenial } = capture.__test__
+describe('isLocationPermissionMissing', () => {
+  const { isLocationPermissionMissing } = capture.__test__
 
-  it.each(['denied', 'restricted'])('treats %s as the user being refused', (value) => {
-    expect(isLocationDenial(value)).toBe(true)
+  it.each(['denied', 'restricted', 'notDetermined'])('treats %s as a missing grant', (value) => {
+    // An unanswered prompt leaves the toggle on with nothing recorded, the same
+    // as a refusal; every other input already flags it.
+    expect(isLocationPermissionMissing(value)).toBe(true)
   })
 
-  it.each(['authorized', 'notDetermined', 'unknown', 'unavailable', undefined])(
-    'does not treat %s as a refusal',
+  it.each(['authorized', 'unknown', 'unavailable', undefined])(
+    'does not treat %s as a missing grant',
     (value) => {
-      // Anything else is a hardware state or an unanswered question, and
-      // flagging those would tell the user to fix a permission that is fine.
-      expect(isLocationDenial(value)).toBe(false)
+      // Anything else is a hardware state or a helper failure, and flagging
+      // those would tell the user to fix a permission that is fine.
+      expect(isLocationPermissionMissing(value)).toBe(false)
     }
   )
 })

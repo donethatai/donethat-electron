@@ -1329,8 +1329,8 @@ function getWindowsPermission() {
 }
 
 // Location permission state. Unlike the others this carries the OS authorization
-// alongside the boolean: `notDetermined` is not a denial, and only `denied` is
-// worth sending anyone to System Settings over.
+// alongside the boolean: only `denied` is worth sending anyone to System
+// Settings over; `notDetermined` needs the prompt instead.
 let hasLocationPermission = false;
 let locationAuthorization = 'unknown';
 

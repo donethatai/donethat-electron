@@ -16,8 +16,8 @@ const state = {
   hasMicrophonePermission: false,
   hasSystemAudioPermission: false,
   hasLocationPermission: false,
-  // Location is the only permission with a meaningful tri-state: `notDetermined`
-  // must not render as a failure, so the boolean alone is not enough.
+  // Location carries the OS authorization next to the boolean: the reason picks
+  // the note and whether the recheck button raises the prompt or opens Settings.
   locationAuthorization: 'unknown',
   locationReason: null,
   permissionsReady: false,

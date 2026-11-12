@@ -176,6 +176,16 @@ let managedInputDataSettings = {
 // helper, and — critically on macOS — no permission prompt for a feature that
 // is disabled server-side anyway.
 let locationFeatureEnabled = false;
+let lastLoggedLocationGate = null;
+
+/** Logs when Wi-Fi collection turns on or off for capture cycles, and why. */
+function logLocationGateChange(toggleEnabled, featureEnabled) {
+  const gate = `toggle=${toggleEnabled},feature=${featureEnabled}`;
+  if (gate === lastLoggedLocationGate) return;
+  lastLoggedLocationGate = gate;
+  const active = toggleEnabled && featureEnabled;
+  log.info(`[networks] location capture ${active ? 'active' : 'skipped'}: ${gate}`);
+}
 
 function isManagedValue(value) {
   return value !== null && value !== undefined;
@@ -258,9 +268,13 @@ const RUNTIME_ISSUE_THRESHOLDS = {
   uiText: 6
 };
 
-/** Authorizations that are the user's to fix, as opposed to hardware states. */
-function isLocationDenial(authorization) {
-  return authorization === 'denied' || authorization === 'restricted';
+/**
+ * Authorizations that mean the grant is missing, as opposed to hardware states.
+ * Like every other input, anything short of a grant counts — including a prompt
+ * that was never answered.
+ */
+function isLocationPermissionMissing(authorization) {
+  return authorization === 'denied' || authorization === 'restricted' || authorization === 'notDetermined';
 }
 
 function resetFailureStreak(feature) {
@@ -910,16 +924,18 @@ async function collectInputData(resetBuffers = true, options = {}) {
   
   // Get the Wi-Fi place fingerprint. Best-effort and never fatal: an unknown
   // place is an honest gap, not a reason to lose a capture.
+  logLocationGateChange(!!inputDataSettings.location, locationFeatureEnabled);
   if (inputDataSettings.location && locationFeatureEnabled) {
     try {
       const fingerprint = await networksCapture.collectNetworkFingerprint();
       if (fingerprint) {
         inputData.location = fingerprint;
         resetFailureStreak('location');
-      } else if (isLocationDenial(networksCapture.getLastAuthorization())) {
-        // Only a refusal counts as a failure. An empty room, a switched-off
-        // radio, or an Ethernet-only desk also yield no fingerprint, and
-        // flagging those would tell the user to fix a permission that is fine.
+      } else if (isLocationPermissionMissing(networksCapture.getLastAuthorization())) {
+        // Only a missing grant counts as a failure. An empty room, a
+        // switched-off radio, or an Ethernet-only desk also yield no
+        // fingerprint, and flagging those would tell the user to fix a
+        // permission that is fine.
         captureErrors.location = true;
       } else {
         resetFailureStreak('location');
@@ -1808,7 +1824,7 @@ module.exports = {
   __test__: {
     updateInputDataSettings,
     handleCaptureError,
-    isLocationDenial,
+    isLocationPermissionMissing,
     applyManagedInputDataOverrides,
     buildCloudPayload,
     maskScreenshotsForCycle

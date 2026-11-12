@@ -19,6 +19,7 @@ const log = require('electron-log');
 
 const COMMAND_TIMEOUT_MS = 5000;
 const MAX_SSIDS = 100;
+const REPEAT_FAILURE_LOG_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
  * Subnets that mean "you are tethered to a phone". Both are exact — no MAC
@@ -53,7 +54,17 @@ function isVirtualInterfaceName(name) {
   return VIRTUAL_INTERFACE_NAME_FRAGMENTS.some((fragment) => lowered.includes(fragment));
 }
 
-function execText(command, args, options = {}) {
+function describeExecError(error) {
+  return JSON.stringify({
+    message: error?.message || String(error),
+    code: error?.code ?? null,
+    signal: error?.signal ?? null,
+    killed: !!error?.killed
+  });
+}
+
+/** `logFailures` names the command in the log when it fails without output. */
+function execText(command, args, { logFailures = null, ...options } = {}) {
   return new Promise((resolve) => {
     let child;
     try {
@@ -71,6 +82,9 @@ function execText(command, args, options = {}) {
             log.info('[networks] helper stderr:', String(stderr).trim());
           }
           if (error && !stdout) {
+            if (logFailures) {
+              log.warn(`[networks] ${logFailures} failed:`, describeExecError(error));
+            }
             resolve(null);
             return;
           }
@@ -78,6 +92,9 @@ function execText(command, args, options = {}) {
         }
       );
     } catch (error) {
+      if (logFailures) {
+        log.warn(`[networks] ${logFailures} could not start:`, describeExecError(error));
+      }
       resolve(null);
       return;
     }
@@ -175,9 +192,15 @@ async function scanDarwin(requestAuthorization = false) {
   const stdout = await execText(
     helper,
     requestAuthorization ? ['--authorize'] : [],
-    requestAuthorization ? { timeout: 130000 } : { timeout: 8000 }
+    {
+      timeout: requestAuthorization ? 130000 : 8000,
+      logFailures: 'wifi-scan helper'
+    }
   );
-  if (!stdout) return null;
+  if (!stdout) {
+    if (stdout === '') log.warn('[networks] wifi-scan helper exited without output');
+    return null;
+  }
 
   let parsed;
   try {
@@ -198,7 +221,8 @@ async function scanDarwin(requestAuthorization = false) {
     connectedSsid: typeof parsed.connectedSsid === 'string' ? parsed.connectedSsid : null,
     ssids,
     authorization,
-    error: typeof parsed.error === 'string' ? parsed.error : null
+    error: typeof parsed.error === 'string' ? parsed.error : null,
+    diagnostics: parsed.diagnostics && typeof parsed.diagnostics === 'object' ? parsed.diagnostics : null
   };
 }
 
@@ -216,7 +240,11 @@ async function scanLinux() {
   // `--rescan no` is mandatory, not cosmetic: nmcli defaults to `auto` and
   // forces a fresh scan whenever it judges the cache stale, which would undo
   // the cached-scan decision on every capture cycle.
-  const stdout = await execText('nmcli', ['-t', '-f', 'ACTIVE,SSID', 'dev', 'wifi', 'list', '--rescan', 'no']);
+  const stdout = await execText(
+    'nmcli',
+    ['-t', '-f', 'ACTIVE,SSID', 'dev', 'wifi', 'list', '--rescan', 'no'],
+    { logFailures: 'nmcli' }
+  );
   if (stdout === null) return null;
 
   const ssids = [];
@@ -243,7 +271,11 @@ async function scanLinux() {
  */
 async function scanWindows() {
   // chcp 65001 first: the default OEM code page mangles non-ASCII SSIDs.
-  const networksOut = await execText('cmd.exe', ['/d', '/s', '/c', 'chcp 65001>nul & netsh wlan show networks']);
+  const networksOut = await execText(
+    'cmd.exe',
+    ['/d', '/s', '/c', 'chcp 65001>nul & netsh wlan show networks'],
+    { logFailures: 'netsh wlan show networks' }
+  );
   if (networksOut === null) return null;
 
   const ssids = [];
@@ -416,6 +448,56 @@ function isHotspotGateway(gatewayIp) {
 }
 
 // ---------------------------------------------------------------------------
+// Failure logging
+// ---------------------------------------------------------------------------
+
+let lastFailureKey = null;
+let lastFailureLoggedAt = 0;
+let repeatedFailureCount = 0;
+
+/**
+ * Logs why a cycle produced no (or only a partial) fingerprint. A failure that
+ * repeats every cycle is logged when it starts and then hourly, so a long
+ * outage stays visible without one line per capture. Counts and states only:
+ * network names never reach the log.
+ */
+function logFingerprintFailure(key, details) {
+  const now = Date.now();
+  const isRepeat = key === lastFailureKey;
+  if (isRepeat && now - lastFailureLoggedAt < REPEAT_FAILURE_LOG_INTERVAL_MS) {
+    repeatedFailureCount += 1;
+    return;
+  }
+  const repeats = isRepeat ? repeatedFailureCount : 0;
+  log.warn(
+    `[networks] fingerprint ${key}${repeats ? ` (repeated ${repeats}x since last log)` : ''}:`,
+    JSON.stringify(details)
+  );
+  lastFailureKey = key;
+  lastFailureLoggedAt = now;
+  repeatedFailureCount = 0;
+}
+
+function logFingerprintRecovered(ssidCount) {
+  if (!lastFailureKey) return;
+  log.info(`[networks] fingerprint recovered after ${lastFailureKey}: ${ssidCount} network(s)`);
+  lastFailureKey = null;
+  lastFailureLoggedAt = 0;
+  repeatedFailureCount = 0;
+}
+
+function scanDetails(scan) {
+  return {
+    platform: process.platform,
+    authorization: scan?.authorization ?? lastAuthorization,
+    error: scan?.error ?? null,
+    ssidCount: (scan?.ssids || []).length,
+    connected: !!scan?.connectedSsid,
+    diagnostics: scan?.diagnostics ?? null
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -494,12 +576,21 @@ function permissionFromScan(scan) {
  */
 async function collectNetworkFingerprint() {
   try {
+    const blockedBeforeScan = process.platform === 'darwin' && darwinScanBlocked;
     const scan = await scanWifi();
+
+    if (!scan) {
+      logFingerprintFailure(blockedBeforeScan ? 'skipped_after_denial' : 'scan_failed', scanDetails(null));
+      return null;
+    }
 
     // macOS gates network names behind Location. Without that grant the router
     // MAC would be the only thing left to send, and a stable network identity
     // is not what someone who declined the prompt agreed to.
-    if (process.platform === 'darwin' && scan?.authorization !== 'authorized') return null;
+    if (process.platform === 'darwin' && scan.authorization !== 'authorized') {
+      logFingerprintFailure(`not_authorized_${scan.authorization}`, scanDetails(scan));
+      return null;
+    }
 
     const gateway = await collectGateway();
 
@@ -521,7 +612,17 @@ async function collectNetworkFingerprint() {
       gatewayMac = null;
     }
 
-    if (ssids.length === 0 && !gatewayMac) return null;
+    if (ssids.length === 0) {
+      logFingerprintFailure(gatewayMac ? 'no_networks_gateway_only' : 'empty', {
+        ...scanDetails(scan),
+        hasGatewayIp: !!gateway.gatewayIp,
+        hasGatewayMac: !!gateway.gatewayMac,
+        hotspot: isHotspotGateway(gateway.gatewayIp)
+      });
+      if (!gatewayMac) return null;
+    } else {
+      logFingerprintRecovered(ssids.length);
+    }
 
     return { connectedSsid, ssids, gatewayMac };
   } catch (error) {

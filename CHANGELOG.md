@@ -8,6 +8,7 @@
 - Sign the Windows app's native modules and DLLs, not just its executables.
 - Pin every GitHub Action in the workflows to a commit SHA, and update re2js to fix a regex denial-of-service issue.
 - Restyle the in-app notification banner, capture warning and offline screen to match the web app's design.
+- Flag nearby network detection as missing permission when the macOS location prompt was never answered, like the other permissions, instead of silently recording no networks.
 
 ## 2.4.11
 
