@@ -60,6 +60,7 @@ What DoneThat receives in this flow:
 - capture timestamp
 - text output derived from screenshots, activity, and optional audio
 - processing parameters
+- the provider used (`gemini`, `openai-compatible` or `on-device`), with each upload and with the prompt request to `inputConfig`. The prompt request also carries the model name for the on-device model and for an OpenAI-compatible endpoint, so the backend can pick a prompt suited to it. The endpoint URL and API key are never sent.
 - optional client telemetry when enabled
 
 What DoneThat does not receive in this flow:

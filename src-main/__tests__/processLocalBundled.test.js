@@ -21,6 +21,7 @@ jest.mock('../localModel', () => {
   const { MAX_PROMPT_TOKENS, MAX_OUTPUT_TOKENS } = jest.requireActual('../localModel/modelInfo');
   return {
     generateStructured: jest.fn(),
+    getModelInfo: jest.fn(() => ({ id: 'qwen3.5-2b-q4_k_m' })),
     getModelStatus: jest.fn(),
     isBundledSupported: jest.fn(),
     MAX_PROMPT_TOKENS,
@@ -141,6 +142,45 @@ beforeEach(() => {
   ocr.ocrImages.mockImplementation(async (images) => images.map((image) => ({
     text: image === CURRENT_SHOT ? OCR_CURRENT_SECRET : OCR_PREVIOUS_SECRET
   })));
+});
+
+describe('config request', () => {
+  function configUrls() {
+    return fetchMock.mock.calls.map(([url]) => url).filter((url) => url.includes('inputConfig'));
+  }
+
+  test('tells the backend the on-device model so it can pick a matching prompt', async () => {
+    await __test__.getConfig('token');
+    expect(new URL(configUrls()[0]).searchParams.toString()).toBe('provider=on-device&model=qwen3.5-2b-q4_k_m');
+  });
+
+  test('sends the OpenAI-compatible model name but never the endpoint or key', async () => {
+    setLocalState({ bundled: { enabled: false }, gemini: { hasKey: false }, openAICompatible: { endpoint: 'https://llm.example' } });
+    mainState.getOpenAICompatibleConfig.mockResolvedValue({ config: { endpoint: 'https://llm.example', apiKey: 'sk-secret', model: ' llama3.1:8b ' } });
+
+    await __test__.getConfig('token');
+
+    const url = configUrls()[0];
+    expect(new URL(url).searchParams.toString()).toBe('provider=openai-compatible&model=llama3.1%3A8b');
+    expect(url).not.toContain('llm.example');
+    expect(url).not.toContain('sk-secret');
+  });
+
+  test('sends only the provider for Gemini, whose models come from the backend', async () => {
+    setLocalState({ bundled: { enabled: false }, gemini: { hasKey: true }, openAICompatible: { endpoint: null } });
+    await __test__.getConfig('token');
+    expect(new URL(configUrls()[0]).searchParams.toString()).toBe('provider=gemini');
+  });
+
+  test('refetches when the provider or model changes instead of reusing the cached prompt', async () => {
+    await __test__.getConfig('token');
+    await __test__.getConfig('token');
+    expect(configUrls()).toHaveLength(1);
+
+    setLocalState({ bundled: { enabled: false }, gemini: { hasKey: true }, openAICompatible: { endpoint: null } });
+    await __test__.getConfig('token');
+    expect(configUrls()).toHaveLength(2);
+  });
 });
 
 describe('local provider selection', () => {
