@@ -733,67 +733,88 @@ h6,
 
 /* Shared inline banner (in-flow, directly under the top bar).
    Used by both the notification banner (notify.js) and the dashboard capture
-   warning, so the two cannot visually drift apart again. */
+   warning, so the two cannot visually drift apart again. Mirrors the webapp's
+   neutral note (DESIGN.md "Notes and Banners", VisibilityBanner). */
 .dt-inline-banner {
-  margin: 8px 16px;
-  padding: 8px 12px;
-  border: 1px solid var(--dt-color-border-strong);
-  border-radius: var(--dt-radius-lg);
+  margin: var(--dt-space-2) var(--dt-space-4);
+  padding: var(--dt-space-3) var(--dt-space-4);
+  border: var(--dt-border-width-default) solid var(--dt-color-border-default);
+  border-radius: var(--dt-radius-md);
   background-color: var(--dt-color-surface-subtle);
   color: var(--dt-color-text-muted);
   font-size: var(--dt-font-size-sm);
   font-weight: var(--dt-font-weight-regular);
-  line-height: 1.25rem;
+  line-height: 20px;
   box-sizing: border-box;
   flex: 0 0 auto;
 }
 
-/* Unified Notification Banner Styles */
-.banner-notification {
+.banner-content {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--dt-space-3);
+  width: 100%;
 }
 
-.banner-content {
-  @apply flex justify-between items-center w-full gap-3;
+.banner-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dt-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-/* Keep the alert icon on the text line rather than blowing it up. */
-.banner-content > svg:first-child,
-.banner-content > span:first-child > svg,
-.banner-content > *:first-child > svg {
-  width: 1rem !important;
-  height: 1rem !important;
+/* 20px on a 20px line, so it sits on the first line of text. */
+.banner-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: var(--dt-color-text-subtle);
+}
+
+.banner-title {
+  color: var(--dt-color-text-default);
+  font-weight: var(--dt-font-weight-medium);
+}
+
+.banner-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--dt-space-2);
   flex: 0 0 auto;
 }
 
 .banner-close {
-  @apply ml-3;
-  background-color: transparent;
-  color: var(--dt-color-text-muted);
-  border: 1px solid var(--dt-color-border-strong);
-  transition:
-    background-color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard),
-    border-color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard);
-  font-size: 0.85rem;
-  line-height: 1;
-  height: 1.2rem;
-  width: 1.2rem;
-  min-width: 1.2rem;
-  max-width: 1.2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px !important;
-  overflow: hidden;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  box-sizing: border-box;
   flex: 0 0 auto;
+  border: none;
+  border-radius: var(--dt-radius-sm);
+  background-color: transparent;
+  color: var(--dt-color-text-subtle);
+  transition:
+    background-color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard),
+    color var(--dt-motion-duration-fast) var(--dt-motion-easing-standard);
+}
+
+.banner-close svg {
+  width: 16px;
+  height: 16px;
 }
 
 .banner-close:hover {
-  background-color: color-mix(in srgb, var(--dt-color-text-default) 6%, transparent);
-  border-color: var(--dt-color-text-subtle);
+  background-color: var(--dt-color-brand-primary-soft);
+  color: var(--dt-color-text-default);
+}
+
+.banner-close:focus-visible {
+  outline: 2px solid var(--dt-color-focus-default);
+  outline-offset: 2px;
 }
 
 /* Ensure hidden class works on all elements with !important to override other styles */
@@ -1712,6 +1733,38 @@ h6,
 
 .webview-error.hidden {
   display: none !important;
+}
+
+.webview-error-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--dt-space-8);
+  text-align: center;
+}
+
+.webview-error-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--dt-space-4);
+  color: var(--dt-color-text-subtle);
+}
+
+.webview-error-title {
+  margin-bottom: var(--dt-space-2);
+  color: var(--dt-color-text-default);
+  font-size: var(--dt-font-size-lg);
+  font-weight: var(--dt-font-weight-medium);
+  line-height: var(--dt-line-height-tight);
+}
+
+.webview-error-text {
+  margin-bottom: var(--dt-space-4);
+  color: var(--dt-color-text-muted);
+  font-size: var(--dt-font-size-sm);
+  line-height: 1.45;
 }
 
 .portal-frame {
