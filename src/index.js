@@ -1620,21 +1620,21 @@ function showWebviewError() {
       errorDiv = document.createElement('div');
       errorDiv.className = 'webview-error runtime-webview-error';
       errorDiv.innerHTML = `
-        <div class="flex flex-col items-center justify-center h-full p-8 text-center">
-          <div class="text-gray-500 mb-4">
-            <svg class="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <!-- Balanced, non-tilted no-wifi icon: wifi arcs + small X -->
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.004 11.803A15.5 15.5 0 0122 11.803"></path>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.05 14.753a10.5 10.5 0 0113.9 0"></path>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 17.804a5.5 5.5 0 017.778 0"></path>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.75 19.25l2.5 2.5M13.25 19.25l-2.5 2.5"></path>
-            </svg>
-            <p class="text-lg font-medium mb-2">You seem to be offline</p>
-            <p class="text-sm text-gray-400 mb-4">Check your connection and try again</p>
-            <button id="webviewRetryBtn" class="dt-button dt-button--primary">
-              Try again
-            </button>
-          </div>
+        <div class="webview-error-content">
+          <svg class="webview-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h.01" />
+            <path d="M8.5 16.429a5 5 0 0 1 7 0" />
+            <path d="M5 12.859a10 10 0 0 1 5.17-2.69" />
+            <path d="M19 12.859a10 10 0 0 0-2.007-1.523" />
+            <path d="M2 8.82a15 15 0 0 1 4.177-2.643" />
+            <path d="M22 8.82a15 15 0 0 0-11.288-3.764" />
+            <path d="m2 2 20 20" />
+          </svg>
+          <p class="webview-error-title">You seem to be offline</p>
+          <p class="webview-error-text">Check your connection and try again</p>
+          <button id="webviewRetryBtn" class="dt-button dt-button--primary">
+            Try again
+          </button>
         </div>
       `;
       dashboardEmbed.appendChild(errorDiv);

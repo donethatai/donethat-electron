@@ -64,22 +64,25 @@
       <div id="topbarBlocker" class="topbar-overlay hidden" aria-hidden="true"></div>
     </div>
     <!-- Unified Notification Banner (generic, with optional action) -->
-    <div id="inappNotification" class="dt-inline-banner banner-notification hidden">
+    <div id="inappNotification" class="dt-inline-banner hidden">
       <div class="banner-content">
-        <div class="flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+        <div class="banner-body">
+          <svg xmlns="http://www.w3.org/2000/svg" class="banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4" />
+            <path d="M12 16h.01" />
           </svg>
-          <div class="flex flex-col">
-            <span id="inappNotificationTitle" class="font-medium"></span>
+          <div class="flex flex-col min-w-0">
+            <span id="inappNotificationTitle" class="banner-title"></span>
             <span id="inappNotificationMessage"></span>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="banner-actions">
           <button id="inappNotificationAction" class="dt-button dt-button--secondary dt-button--small dt-topbar-button hidden"></button>
           <button id="inappNotificationClose" class="banner-close" aria-label="Close notification">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
             </svg>
           </button>
         </div>
@@ -433,8 +436,15 @@
     <div id="dashboardView" class="view-container hidden">
       <div class="dashboard-shell">
         <div id="dashboardCaptureWarning" class="dt-inline-banner hidden">
-          <div class="flex items-center justify-between gap-3">
-            <div id="dashboardCaptureWarningText" class="dashboard-warning-text flex-1 min-w-0">We couldn't record Screenshare. That impacts the accuracy of your data. Please check your permissions.</div>
+          <div class="banner-content">
+            <div class="banner-body">
+              <svg xmlns="http://www.w3.org/2000/svg" class="banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 8v4" />
+                <path d="M12 16h.01" />
+              </svg>
+              <div id="dashboardCaptureWarningText" class="dashboard-warning-text flex-1 min-w-0">We couldn't record Screenshare. That impacts the accuracy of your data. Please check your permissions.</div>
+            </div>
             <button id="dashboardCaptureWarningSetupBtn" class="dt-button dt-button--secondary dt-button--small dt-topbar-button whitespace-nowrap">Open Setup</button>
           </div>
         </div>
@@ -442,14 +452,12 @@
         <div class="dashboard-embed">
           <div id="portalMount" class="portal-frame"></div>
           <div id="portalSuspendedPlaceholder" class="webview-error hidden">
-            <div class="flex flex-col items-center justify-center h-full p-8 text-center">
-              <div class="text-gray-500 mb-4">
-                <p class="text-lg font-normal mb-2">Dashboard is not loaded right now</p>
-                <p class="text-sm text-gray-400 mb-4">Reload the dashboard if it does not start automatically.</p>
-                <button id="reloadSuspendedPortalBtn" class="dt-button dt-button--primary dt-button--small">
-                  Reload Dashboard
-                </button>
-              </div>
+            <div class="webview-error-content">
+              <p class="webview-error-title">Dashboard is not loaded right now</p>
+              <p class="webview-error-text">Reload the dashboard if it does not start automatically.</p>
+              <button id="reloadSuspendedPortalBtn" class="dt-button dt-button--primary dt-button--small">
+                Reload Dashboard
+              </button>
             </div>
           </div>
         </div>
