@@ -16,12 +16,22 @@ import CoreLocation
 // Cached results only: a forced rescan interrupts the association, and
 // re-association refreshes the cache when the user moves.
 
+// Counts and states only, never network names: read by the app's logs when a
+// scan comes back empty.
+struct ScanDiagnostics: Codable {
+    let settleReason: String
+    let powerOn: Bool?
+    let cachedScanCount: Int?
+    let namedCachedScanCount: Int
+}
+
 struct ScanResult: Codable {
     let ok: Bool
     let authorization: String
     let connectedSsid: String?
     let ssids: [String]
     let error: String?
+    let diagnostics: ScanDiagnostics?
 }
 
 private let scanTimeoutSeconds: TimeInterval = 3
@@ -50,7 +60,7 @@ func emit(_ result: ScanResult) {
     if let data = try? encoder.encode(result), let text = String(data: data, encoding: .utf8) {
         print(text)
     } else {
-        print("{\"ok\":false,\"authorization\":\"unknown\",\"connectedSsid\":null,\"ssids\":[],\"error\":\"encode_failed\"}")
+        print("{\"ok\":false,\"authorization\":\"unknown\",\"connectedSsid\":null,\"ssids\":[],\"error\":\"encode_failed\",\"diagnostics\":null}")
     }
 }
 
@@ -65,7 +75,7 @@ func isAuthorized(_ status: CLAuthorizationStatus) -> Bool {
     }
 }
 
-func readCachedScan(authorization: CLAuthorizationStatus) -> ScanResult {
+func readCachedScan(authorization: CLAuthorizationStatus, settleReason: String) -> ScanResult {
     let authorizationLabel = authorizationName(authorization)
 
     guard let interface = CWWiFiClient.shared().interface() else {
@@ -74,18 +84,26 @@ func readCachedScan(authorization: CLAuthorizationStatus) -> ScanResult {
             authorization: authorizationLabel,
             connectedSsid: nil,
             ssids: [],
-            error: "no_wifi_interface"
+            error: "no_wifi_interface",
+            diagnostics: ScanDiagnostics(
+                settleReason: settleReason,
+                powerOn: nil,
+                cachedScanCount: nil,
+                namedCachedScanCount: 0
+            )
         )
     }
 
     var names = Set<String>()
-    if let networks = interface.cachedScanResults() {
+    let cached = interface.cachedScanResults()
+    if let networks = cached {
         for network in networks {
             if let ssid = network.ssid, !ssid.isEmpty {
                 names.insert(ssid)
             }
         }
     }
+    let namedCachedScanCount = names.count
 
     let connected = interface.ssid()
     if let connected = connected, !connected.isEmpty {
@@ -97,7 +115,13 @@ func readCachedScan(authorization: CLAuthorizationStatus) -> ScanResult {
         authorization: authorizationLabel,
         connectedSsid: (connected?.isEmpty ?? true) ? nil : connected,
         ssids: names.sorted(),
-        error: nil
+        error: nil,
+        diagnostics: ScanDiagnostics(
+            settleReason: settleReason,
+            powerOn: interface.powerOn(),
+            cachedScanCount: cached?.count,
+            namedCachedScanCount: namedCachedScanCount
+        )
     )
 }
 
@@ -128,7 +152,7 @@ final class Scanner: NSObject, CLLocationManagerDelegate {
             return
         }
 
-        settle()
+        settle(reason: "notAuthorized")
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -138,11 +162,11 @@ final class Scanner: NSObject, CLLocationManagerDelegate {
             manager.startUpdatingLocation()
             return
         }
-        settle()
+        settle(reason: "authorizationChanged")
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        settle()
+        settle(reason: "locationUpdate")
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -150,14 +174,14 @@ final class Scanner: NSObject, CLLocationManagerDelegate {
         // open. Only a determined status means there is nothing left to wait
         // for; no GPS fix still leaves the Wi-Fi cache readable.
         guard manager.authorizationStatus != .notDetermined else { return }
-        settle()
+        settle(reason: "locationError")
     }
 
-    func settle() {
+    func settle(reason: String) {
         guard !settled else { return }
         settled = true
         manager.stopUpdatingLocation()
-        emit(readCachedScan(authorization: manager.authorizationStatus))
+        emit(readCachedScan(authorization: manager.authorizationStatus, settleReason: reason))
         NSApp.stop(nil)
         exit(0)
     }
@@ -175,6 +199,6 @@ if prompt {
 }
 scanner.run()
 DispatchQueue.main.asyncAfter(deadline: .now() + (prompt ? authorizeTimeoutSeconds : scanTimeoutSeconds)) {
-    scanner.settle()
+    scanner.settle(reason: "timeout")
 }
 app.run()

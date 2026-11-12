@@ -5,6 +5,10 @@ jest.mock('electron-log', () => ({
   debug: jest.fn()
 }))
 
+jest.mock('child_process', () => ({ execFile: jest.fn() }))
+
+const childProcess = require('child_process')
+const os = require('os')
 const networks = require('../captureNetworks')
 const { __test__ } = networks
 const { permissionFromScan } = __test__
@@ -123,5 +127,39 @@ describe('getLastAuthorization', () => {
     expect(networks.getLastAuthorization()).toBe('denied')
 
     __test__.setDarwinScanBlocked(false)
+  })
+})
+
+describe('collectNetworkFingerprint off macOS', () => {
+  afterEach(() => {
+    childProcess.execFile.mockReset()
+    jest.restoreAllMocks()
+  })
+
+  it('keeps the gateway-only fingerprint when the Wi-Fi scanner is missing', async () => {
+    // systemd-networkd or iwd machines have no nmcli, but the wired router
+    // still identifies the place.
+    setPlatform('linux')
+    jest.spyOn(os, 'networkInterfaces').mockReturnValue({
+      eth0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }]
+    })
+    childProcess.execFile.mockImplementation((command, args, _options, callback) => {
+      if (command === 'nmcli') {
+        callback(Object.assign(new Error('spawn nmcli ENOENT'), { code: 'ENOENT' }), '', '')
+      } else if (command === 'ip' && args[0] === '-4') {
+        callback(null, 'default via 192.168.1.1 dev eth0 proto dhcp\n', '')
+      } else if (command === 'ip' && args[0] === 'neigh') {
+        callback(null, '192.168.1.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE\n', '')
+      } else {
+        callback(new Error(`unexpected ${command}`), '', '')
+      }
+      return {}
+    })
+
+    await expect(networks.collectNetworkFingerprint()).resolves.toEqual({
+      connectedSsid: null,
+      ssids: [],
+      gatewayMac: 'aa:bb:cc:dd:ee:ff'
+    })
   })
 })

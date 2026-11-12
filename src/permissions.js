@@ -135,11 +135,11 @@ function setupRuntimePermissionIssueListener() {
     }
 
     if (runtimeIssues.location) {
-      // Only a real refusal reaches here — the capture cycle never flags an
-      // empty room — but which refusal matters: `restricted` is an MDM policy
-      // no button can undo, so it must not be relabelled as `denied`.
-      const authorization = runtimeIssues.location.authorization === 'restricted'
-        ? 'restricted'
+      // Only a missing grant reaches here — the capture cycle never flags an
+      // empty room — but which one matters: `restricted` is an MDM policy no
+      // button can undo, and `notDetermined` needs the prompt, not Settings.
+      const authorization = LOCATION_BLOCKING_REASONS.has(runtimeIssues.location.authorization)
+        ? runtimeIssues.location.authorization
         : 'denied';
       applyLocationPermissionUpdate({
         hasPermission: false,
@@ -412,6 +412,7 @@ ipcRenderer.on('systemAudioPermission-recheck', () => {
 // System Settings; the rest are hardware states that lead nowhere.
 const LOCATION_NOTE_MESSAGES = {
   denied: 'Location access is off. Enable DoneThat in System Settings.',
+  notDetermined: 'Location access has not been granted yet.',
   restricted: 'Location access is restricted on this machine.',
   disabled: 'Nearby networks are not enabled for this account.',
   unknown: 'Couldn\'t read nearby networks.',
@@ -424,11 +425,12 @@ const LOCATION_NOTE_MESSAGES = {
 //
 // BLOCKING: the grant is what stops the fingerprint — worth a tooltip and a
 // `permission_issue_visible` event, whether or not the user can do anything.
-// ACTIONABLE: the user can actually change it, so a Settings button leads
-// somewhere. `restricted` is an MDM policy and the main process refuses to open
-// Settings for it, so offering the button would be offering a no-op.
-const LOCATION_BLOCKING_REASONS = new Set(['denied', 'restricted']);
-const LOCATION_ACTIONABLE_REASONS = new Set(['denied']);
+// ACTIONABLE: the user can actually change it, so the recheck button leads
+// somewhere: the prompt for `notDetermined`, Settings for `denied`.
+// `restricted` is an MDM policy and the main process refuses to open Settings
+// for it, so offering the button would be offering a no-op.
+const LOCATION_BLOCKING_REASONS = new Set(['denied', 'restricted', 'notDetermined']);
+const LOCATION_ACTIONABLE_REASONS = new Set(['denied', 'notDetermined']);
 
 ipcRenderer.on('locationPermission', (data) => {
   applyLocationPermissionUpdate(data, data?.source || 'location-channel');
@@ -599,7 +601,7 @@ function updateLocationCheckbox(hasPermission, reason = null) {
   // The note speaks for both axes; the button only for the actionable one.
   const note = document.getElementById('locationPermissionNote');
   if (note) {
-    const message = enabledByToggle && reason && reason !== 'notDetermined'
+    const message = enabledByToggle && reason
       ? (LOCATION_NOTE_MESSAGES[reason] || LOCATION_NOTE_MESSAGES.unavailable)
       : null;
     note.textContent = message || '';
