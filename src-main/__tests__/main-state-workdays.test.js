@@ -2219,6 +2219,77 @@ describe('work-end check timer', () => {
     expect(state.isPaused()).toBe(true);
     expect(mockStore.get('pauseState').endTime).toBe(atTime(mondayNoon, 1, 9, 0).getTime());
   });
+
+  // Work hours that start before the day end (03:00): the next work start comes
+  // before the Finish day pause ends, so re-pausing at work end would shorten it.
+  test.each([
+    ['00:00', '23:00', 21],
+    ['01:00', '22:00', 20]
+  ])('work hours %s-%s: the work-end check keeps a Finish day pause until the day end', (start, end, finishHour) => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([0, 1, 2, 3, 4, 5, 6]);
+    setWorkhoursInStore(start, end);
+    mainStateModule.loadWorkSettings();
+
+    const tuesdayNoon = createTestDate(2, 12, 0);
+    jest.setSystemTime(tuesdayNoon);
+    state.resume(); // arms the work-end check; the heartbeat keeps running
+
+    jest.advanceTimersByTime(atTime(tuesdayNoon, 0, finishHour, 0) - tuesdayNoon);
+    state.pauseForToday(makeMockWindow());
+    const dayEnd = atTime(tuesdayNoon, 1, 3, 0).getTime();
+    expect(mockStore.get('pauseState').endTime).toBe(dayEnd);
+
+    // Past the work end, and past the next work start.
+    jest.advanceTimersByTime(atTime(tuesdayNoon, 1, 1, 30) - Date.now());
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('pause-today');
+    expect(mockStore.get('pauseState').endTime).toBe(dayEnd);
+
+    // At the day end it expires inside work hours and recording resumes.
+    jest.advanceTimersByTime(dayEnd - Date.now() + 1000);
+    expect(state.isPaused()).toBe(false);
+  });
+
+  test('after keeping a Finish day pause, the next work end still pauses', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([0, 1, 2, 3, 4, 5, 6]);
+    setWorkhoursInStore('00:00', '23:00');
+    mainStateModule.loadWorkSettings();
+
+    const tuesdayNoon = createTestDate(2, 12, 0);
+    jest.setSystemTime(tuesdayNoon);
+    state.resume();
+    jest.advanceTimersByTime(atTime(tuesdayNoon, 0, 21, 0) - tuesdayNoon);
+    state.pauseForToday(makeMockWindow());
+
+    // Wednesday 23:00 is the next work end.
+    jest.advanceTimersByTime(atTime(tuesdayNoon, 1, 23, 1) - Date.now());
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('workday-start');
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNoon, 2, 0, 0).getTime());
+  });
+
+  test('daytime hours: a Finish day pause still hands over to the next work start', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('09:00', '17:00');
+    mainStateModule.loadWorkSettings();
+
+    const tuesdayNoon = createTestDate(2, 12, 0);
+    jest.setSystemTime(tuesdayNoon);
+    state.resume();
+    jest.advanceTimersByTime(atTime(tuesdayNoon, 0, 15, 0) - tuesdayNoon);
+    state.pauseForToday(makeMockWindow());
+
+    jest.advanceTimersByTime(atTime(tuesdayNoon, 1, 3, 0) - Date.now() + 1000);
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('workday-start');
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNoon, 1, 9, 0).getTime());
+
+    jest.advanceTimersByTime(atTime(tuesdayNoon, 1, 9, 0) - Date.now() + 1000);
+    expect(state.isPaused()).toBe(false);
+  });
 });
 
 describe('client telemetry setting', () => {

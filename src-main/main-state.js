@@ -2483,6 +2483,15 @@ function _scheduleNextWorkEndCheck() {
       return;
     }
 
+    // Keep an unexpired Finish day pause: it already runs to the day end, and
+    // with work hours that start before the day end (e.g. 00:00-23:00) the
+    // work-hours pause would end sooner and record into the finished day.
+    // When it expires, _validateState pauses until the next work start.
+    if (isPaused() && pauseState.reason === PAUSE_REASON_PAUSE_TODAY) {
+      _scheduleNextWorkEndCheck();
+      return;
+    }
+
     // If this timer fires significantly late (e.g., device resumed next day),
     // avoid showing a stale end-of-day notification
     const now = Date.now();
