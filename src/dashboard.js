@@ -4,6 +4,7 @@ const ipcRenderer = window.electronAPI;
 const { logAnalyticsEvent } = require('./analytics.js');
 const { getIsPaused } = require('./app-state.js');
 const { showBanner } = require('./notify.js');
+const { formatSummaryHeadline } = require('./summary-headline.js');
 
 function emitTelemetrySignal(name, fields = {}) {
   try {
@@ -53,47 +54,6 @@ let taskProjectEdits = {};   // taskId -> projectId (only real taskIds)
 let projects = [];           // {id, name, color, status, description}
 let customTasks = [];        // {title, durationMinutes?, projectId?}
 let activePickerCleanups = [];
-
-// Helper function to format date for headline
-function formatHeadlineDate(timestamp) {
-  if (!timestamp) return "Today";
-
-  const date = new Date(timestamp);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-
-  let dateString = "";
-  const timeString = date.toLocaleTimeString('en-US', {
-    hour: 'numeric', 
-    minute: '2-digit',
-    hour12: false
-  });
-
-  // Create a copy for date comparison without time
-  const dateOnly = new Date(date);
-  dateOnly.setHours(0, 0, 0, 0);
-
-  // Reset time parts for today/yesterday comparison
-  today.setHours(0, 0, 0, 0);
-  yesterday.setHours(0, 0, 0, 0);
-
-  if (dateOnly.getTime() === today.getTime()) {
-    dateString = "Today";
-  } else if (dateOnly.getTime() === yesterday.getTime()) {
-    dateString = "Yesterday";
-  } else {
-    const day = date.getDate();
-    const month = date.toLocaleString('en-US', { month: 'short' });
-    let suffix = 'th';
-    if (day % 10 === 1 && day !== 11) suffix = 'st';
-    if (day % 10 === 2 && day !== 12) suffix = 'nd';
-    if (day % 10 === 3 && day !== 13) suffix = 'rd';
-    dateString = `${month} ${day}${suffix}`;
-  }
-
-  return `${dateString} ${timeString}`; // Combine date and time
-}
 
 
 // Helper function to format duration in minutes to readable format
@@ -350,16 +310,20 @@ if (summarySubmitBtn) {
             taskVisibility[task.taskId || index] = true;
           });
 
+          const headline = formatSummaryHeadline({
+            logicalDate: result.data.logicalDate,
+            periodEnd: period?.end
+          });
           const headlineElement = document.getElementById('dashboardHeadline');
           if (headlineElement) {
-            headlineElement.textContent = formatHeadlineDate(period?.end);
+            headlineElement.textContent = headline;
           }
           if (summaryHeadline) {
-            summaryHeadline.textContent = formatHeadlineDate(period?.end);
+            summaryHeadline.textContent = headline;
           }
 
           if (summaryTasks.length === 0) {
-             showBanner('No activities found for today. Check if DoneThat is paused and try again in an hour.', {
+             showBanner('No activities found to summarize. If you are still working, resume DoneThat and try again later.', {
                title: 'Empty Summary',
                sticky: false
              });

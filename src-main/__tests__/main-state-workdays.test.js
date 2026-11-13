@@ -536,7 +536,7 @@ describe('pauseUntilNextWorkPeriod', () => {
 });
 
 describe('pauseForToday', () => {
-  test('should pause until local midnight with pause-today reason', () => {
+  test('should pause until the next day end (03:00 by default) with pause-today reason', () => {
     jest.useFakeTimers();
 
     try {
@@ -558,9 +558,10 @@ describe('pauseForToday', () => {
       const savedPauseState = mockStore.get('pauseState');
       expect(savedPauseState.reason).toBe('pause-today');
 
-      const expectedMidnight = new Date(now);
-      expectedMidnight.setHours(24, 0, 0, 0);
-      expect(savedPauseState.endTime).toBe(expectedMidnight.getTime());
+      const expectedDayEnd = new Date(now);
+      expectedDayEnd.setDate(expectedDayEnd.getDate() + 1);
+      expectedDayEnd.setHours(3, 0, 0, 0);
+      expect(savedPauseState.endTime).toBe(expectedDayEnd.getTime());
     } finally {
       jest.useRealTimers();
     }
@@ -599,7 +600,7 @@ describe('pauseForToday', () => {
     }
   });
 
-  test('pause-today timeout should validate state at midnight', () => {
+  test('pause-today timeout should validate state at the day end', () => {
     jest.useFakeTimers();
 
     try {
@@ -615,9 +616,9 @@ describe('pauseForToday', () => {
         isDestroyed: () => false
       };
 
-      const mondayLate = createTestDate(1, 23, 59);
-      mondayLate.setSeconds(50, 0);
-      jest.setSystemTime(mondayLate);
+      const tuesdayBeforeDayEnd = createTestDate(2, 2, 59);
+      tuesdayBeforeDayEnd.setSeconds(50, 0);
+      jest.setSystemTime(tuesdayBeforeDayEnd);
 
       pauseForToday(mockWindow);
       expect(isPaused()).toBe(true);
@@ -625,9 +626,12 @@ describe('pauseForToday', () => {
 
       jest.advanceTimersByTime(11000);
 
-      // After midnight, validation runs and should keep us paused until next work period.
+      // After the day end, validation runs and should keep us paused until next work period.
       expect(isPaused()).toBe(true);
       expect(mockStore.get('pauseState').reason).toBe('workday-start');
+      const expectedWorkStart = new Date(tuesdayBeforeDayEnd);
+      expectedWorkStart.setHours(9, 0, 0, 0);
+      expect(mockStore.get('pauseState').endTime).toBe(expectedWorkStart.getTime());
     } finally {
       jest.useRealTimers();
     }
@@ -1833,6 +1837,387 @@ describe('Hibernation/Suspend Edge Cases', () => {
       // State should remain consistent
       expect(typeof isPaused()).toBe('boolean');
     }
+  });
+});
+
+function makeMockWindow() {
+  return {
+    webContents: { send: jest.fn() },
+    show: jest.fn(),
+    focus: jest.fn(),
+    isDestroyed: () => false
+  };
+}
+
+function makeMockEvent() {
+  return { sender: { getOwnerBrowserWindow: () => makeMockWindow() } };
+}
+
+function setDayEndTimeViaIPC(value) {
+  const handler = getIpcOnHandler('updateDayEndTime');
+  if (!handler) {
+    throw new Error('updateDayEndTime IPC handler was never registered');
+  }
+  handler(makeMockEvent(), value);
+}
+
+function atTime(baseDate, dayOffset, hour, minute) {
+  const date = new Date(baseDate);
+  date.setDate(date.getDate() + dayOffset);
+  date.setHours(hour, minute, 0, 0);
+  return date;
+}
+
+function localIsoDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+describe('pauseForToday ends at the day end, not calendar midnight', () => {
+  beforeEach(() => {
+    // Work settings live in module state that outlives a test; pin them.
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('09:00', '17:00');
+    mainStateModule.loadWorkSettings();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('finishing the day after midnight resumes at 03:00 the same night (all-day work hours)', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([0, 1, 2, 3, 4, 5, 6]);
+    setWorkhoursInStore('00:00', '23:59');
+    mainStateModule.loadWorkSettings();
+
+    const tuesdayAfterMidnight = createTestDate(2, 0, 21);
+    jest.setSystemTime(tuesdayAfterMidnight);
+
+    state.pauseForToday(makeMockWindow());
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('pause-today');
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayAfterMidnight, 0, 3, 0).getTime());
+
+    // At 03:00 the pause expires inside work hours, so recording resumes.
+    jest.advanceTimersByTime(atTime(tuesdayAfterMidnight, 0, 3, 0) - tuesdayAfterMidnight + 1000);
+    expect(state.isPaused()).toBe(false);
+  });
+
+  test('finishing exactly at the day end pauses until the next day end', () => {
+    jest.useFakeTimers();
+    const tuesdayDayEnd = createTestDate(2, 3, 0);
+    jest.setSystemTime(tuesdayDayEnd);
+
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayDayEnd, 1, 3, 0).getTime());
+  });
+
+  test('uses dayEndTime from settings', () => {
+    jest.useFakeTimers();
+    setDayEndTimeViaIPC('05:00');
+
+    const tuesdayNight = createTestDate(2, 1, 0);
+    jest.setSystemTime(tuesdayNight);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNight, 0, 5, 0).getTime());
+
+    const tuesdayMorning = createTestDate(2, 6, 0);
+    jest.setSystemTime(tuesdayMorning);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayMorning, 1, 5, 0).getTime());
+  });
+
+  test('dayEndTime is stored and restored when work settings load', () => {
+    jest.useFakeTimers();
+    setDayEndTimeViaIPC('04:30');
+    expect(mockStore.get('userDayEndTime')).toBe('04:30');
+
+    mockStore.set('userDayEndTime', '02:00');
+    mainStateModule.loadWorkSettings();
+
+    const tuesdayNight = createTestDate(2, 1, 0);
+    jest.setSystemTime(tuesdayNight);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNight, 0, 2, 0).getTime());
+  });
+
+  test('clearing dayEndTime restores the 03:00 default', () => {
+    jest.useFakeTimers();
+    setDayEndTimeViaIPC('05:00');
+    setDayEndTimeViaIPC(null);
+    expect(mockStore.get('userDayEndTime')).toBe(null);
+
+    const tuesdayNight = createTestDate(2, 1, 0);
+    jest.setSystemTime(tuesdayNight);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNight, 0, 3, 0).getTime());
+  });
+
+  test('without dayEndTime, overnight work hours end the day at the shift end', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('22:00', '06:00');
+    mainStateModule.loadWorkSettings();
+
+    const tuesdayShiftTail = createTestDate(2, 5, 30);
+    jest.setSystemTime(tuesdayShiftTail);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayShiftTail, 0, 6, 0).getTime());
+
+    // After the shift ends, validation waits for the next shift instead of resuming.
+    jest.advanceTimersByTime(atTime(tuesdayShiftTail, 0, 6, 0) - tuesdayShiftTail + 1000);
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('workday-start');
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayShiftTail, 0, 22, 0).getTime());
+  });
+
+  test('finishing an overnight shift before midnight does not resume at midnight', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('20:00', '02:00');
+    mainStateModule.loadWorkSettings();
+
+    const tuesdayEvening = createTestDate(2, 23, 0);
+    jest.setSystemTime(tuesdayEvening);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayEvening, 1, 2, 0).getTime());
+
+    jest.advanceTimersByTime(atTime(tuesdayEvening, 1, 0, 30) - tuesdayEvening);
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('pause-today');
+  });
+
+  test('an explicit dayEndTime wins over the shift end', () => {
+    jest.useFakeTimers();
+    setWorkhoursInStore('22:00', '06:00');
+    mainStateModule.loadWorkSettings();
+    setDayEndTimeViaIPC('04:00');
+
+    const tuesdayNight = createTestDate(2, 3, 0);
+    jest.setSystemTime(tuesdayNight);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNight, 0, 4, 0).getTime());
+  });
+
+  test('dayEndTime is trimmed and malformed values fall back like the server', () => {
+    jest.useFakeTimers();
+    const tuesdayNight = createTestDate(2, 1, 0);
+    jest.setSystemTime(tuesdayNight);
+
+    setDayEndTimeViaIPC(' 05:00 ');
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNight, 0, 5, 0).getTime());
+
+    for (const malformed of ['9:00', '24:00', 'abc', 5]) {
+      setDayEndTimeViaIPC(malformed);
+      state.pauseForToday(makeMockWindow());
+      expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNight, 0, 3, 0).getTime());
+    }
+  });
+
+  test('a midnight dayEndTime keeps calendar-day behaviour', () => {
+    jest.useFakeTimers();
+    setDayEndTimeViaIPC('00:00');
+
+    const tuesdayNight = createTestDate(2, 1, 0);
+    jest.setSystemTime(tuesdayNight);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayNight, 1, 0, 0).getTime());
+  });
+
+  test('an evening dayEndTime (legacy, after 11:59) falls back to midnight', () => {
+    jest.useFakeTimers();
+    setDayEndTimeViaIPC('18:00');
+
+    const tuesdayMorning = createTestDate(2, 10, 0);
+    jest.setSystemTime(tuesdayMorning);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayMorning, 1, 0, 0).getTime());
+
+    const tuesdayEvening = createTestDate(2, 18, 30);
+    jest.setSystemTime(tuesdayEvening);
+    state.pauseForToday(makeMockWindow());
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayEvening, 1, 0, 0).getTime());
+  });
+
+  test('pauseUntilTomorrow (Finish day) uses the same day end', () => {
+    jest.useFakeTimers();
+    const tuesdayAfterMidnight = createTestDate(2, 0, 21);
+    jest.setSystemTime(tuesdayAfterMidnight);
+
+    getIpcOnHandler('pauseUntilTomorrow')(makeMockEvent());
+    expect(mockStore.get('pauseState').reason).toBe('pause-today');
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(tuesdayAfterMidnight, 0, 3, 0).getTime());
+  });
+});
+
+describe('overnight work hours belong to the day the shift started', () => {
+  test('the tail of a workday shift counts on the next (non-work) day', () => {
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('22:00', '06:00');
+    mainStateModule.loadWorkSettings();
+
+    expect(state.isActiveWorkPeriod(createTestDate(6, 2, 0))).toBe(true); // Sat 02:00, Friday's shift
+    expect(state.isActiveWorkPeriod(createTestDate(2, 2, 0))).toBe(true); // Tue 02:00, Monday's shift
+    expect(state.isActiveWorkPeriod(createTestDate(5, 23, 0))).toBe(true); // Fri 23:00
+  });
+
+  test('the tail after a non-workday does not count on the next workday', () => {
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('22:00', '06:00');
+    mainStateModule.loadWorkSettings();
+
+    expect(state.isActiveWorkPeriod(createTestDate(1, 2, 0))).toBe(false); // Mon 02:00, no Sunday shift
+    expect(state.isActiveWorkPeriod(createTestDate(6, 23, 0))).toBe(false); // Sat 23:00
+  });
+
+  test('equal start and end (24h period) attributes the morning to the previous day', () => {
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('09:00', '09:00');
+    mainStateModule.loadWorkSettings();
+
+    expect(state.isActiveWorkPeriod(createTestDate(6, 8, 0))).toBe(true); // Sat 08:00, Friday's period
+    expect(state.isActiveWorkPeriod(createTestDate(6, 9, 30))).toBe(false); // Sat 09:30
+    expect(state.isActiveWorkPeriod(createTestDate(1, 8, 0))).toBe(false); // Mon 08:00, no Sunday period
+  });
+
+  test('a holiday on the shift start day stops its tail too', () => {
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('22:00', '06:00');
+    mainStateModule.loadWorkSettings();
+
+    const saturdayTail = createTestDate(6, 2, 0);
+    const friday = atTime(saturdayTail, -1, 12, 0);
+    getIpcOnHandler('updateHoliday')(makeMockEvent(), {
+      label: 'Vacation',
+      from: localIsoDate(friday),
+      to: localIsoDate(friday),
+      weekdays: [0, 1, 2, 3, 4, 5, 6]
+    });
+
+    expect(state.isActiveWorkPeriod(saturdayTail)).toBe(false);
+  });
+
+  test('daytime work hours are unaffected', () => {
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('09:00', '17:00');
+    mainStateModule.loadWorkSettings();
+
+    expect(state.isActiveWorkPeriod(createTestDate(1, 12, 0))).toBe(true);
+    expect(state.isActiveWorkPeriod(createTestDate(6, 12, 0))).toBe(false);
+    expect(state.isActiveWorkPeriod(createTestDate(1, 2, 0))).toBe(false);
+  });
+
+  test('starting on Monday 02:00 with a Mon-Fri night shift pauses until the shift starts', () => {
+    jest.useFakeTimers();
+    try {
+      setWorkdaysInStore([1, 2, 3, 4, 5]);
+      setWorkhoursInStore('22:00', '06:00');
+      mainStateModule.loadWorkSettings();
+
+      const mondayNight = createTestDate(1, 2, 0);
+      jest.setSystemTime(mondayNight);
+      mainStateModule.resetSessionState();
+      state.resume();
+
+      expect(state.isPaused()).toBe(true);
+      expect(mockStore.get('pauseState').reason).toBe('workday-start');
+      expect(mockStore.get('pauseState').endTime).toBe(atTime(mondayNight, 0, 22, 0).getTime());
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('work-end check timer', () => {
+  beforeEach(() => {
+    // Pause state lives in module state that outlives a test; start clean.
+    mainStateModule.resetSessionState();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('on time at the work end, it pauses until the next work start', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('09:00', '17:00');
+    mainStateModule.loadWorkSettings();
+
+    const mondayNoon = createTestDate(1, 12, 0);
+    jest.setSystemTime(mondayNoon);
+    state.resume();
+    state.stopStateValidation(); // isolate the work-end timer from the heartbeat
+    expect(state.isPaused()).toBe(false);
+
+    jest.advanceTimersByTime(atTime(mondayNoon, 0, 17, 0) - mondayNoon + 1000);
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('workday-start');
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(mondayNoon, 1, 9, 0).getTime());
+  });
+
+  test('firing late inside the next work period does not pause it, and re-arms for that period end', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('09:00', '17:00');
+    mainStateModule.loadWorkSettings();
+
+    const mondayNoon = createTestDate(1, 12, 0);
+    jest.setSystemTime(mondayNoon);
+    state.resume(); // arms the Monday 17:00 check, 5h away
+    state.stopStateValidation();
+
+    // Simulate a sleep with no wake event: the clock jumps, the timer fires late at Tue 10:00.
+    const msUntilCheck = atTime(mondayNoon, 0, 17, 0) - mondayNoon;
+    jest.setSystemTime(new Date(atTime(mondayNoon, 1, 10, 0).getTime() - msUntilCheck));
+    jest.advanceTimersByTime(msUntilCheck + 1000);
+    expect(state.isPaused()).toBe(false);
+
+    // The re-armed check still ends Tuesday's work period at 17:00.
+    jest.advanceTimersByTime(7 * 60 * 60 * 1000);
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').reason).toBe('workday-start');
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(mondayNoon, 2, 9, 0).getTime());
+  });
+
+  test('all-day work hours: a check delayed past midnight does not pause the new day', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([0, 1, 2, 3, 4, 5, 6]);
+    setWorkhoursInStore('00:00', '23:59');
+    mainStateModule.loadWorkSettings();
+
+    const mondayNoon = createTestDate(1, 12, 0);
+    jest.setSystemTime(mondayNoon);
+    state.resume(); // arms the Monday 23:59 check
+    state.stopStateValidation();
+
+    // Delayed 11 minutes (inside the 30-minute "late" grace): fires at Tue 00:10.
+    const msUntilCheck = atTime(mondayNoon, 0, 23, 59) - mondayNoon;
+    jest.setSystemTime(new Date(atTime(mondayNoon, 1, 0, 10).getTime() - msUntilCheck));
+    jest.advanceTimersByTime(msUntilCheck + 1000);
+    expect(state.isPaused()).toBe(false);
+  });
+
+  test('firing late outside work hours still pauses', () => {
+    jest.useFakeTimers();
+    setWorkdaysInStore([1, 2, 3, 4, 5]);
+    setWorkhoursInStore('09:00', '17:00');
+    mainStateModule.loadWorkSettings();
+
+    const mondayNoon = createTestDate(1, 12, 0);
+    jest.setSystemTime(mondayNoon);
+    state.resume();
+    state.stopStateValidation();
+
+    // Fires at Monday 20:00 instead of 17:00.
+    const msUntilCheck = atTime(mondayNoon, 0, 17, 0) - mondayNoon;
+    jest.setSystemTime(new Date(atTime(mondayNoon, 0, 20, 0).getTime() - msUntilCheck));
+    jest.advanceTimersByTime(msUntilCheck + 1000);
+    expect(state.isPaused()).toBe(true);
+    expect(mockStore.get('pauseState').endTime).toBe(atTime(mondayNoon, 1, 9, 0).getTime());
   });
 });
 

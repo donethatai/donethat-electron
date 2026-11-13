@@ -43,6 +43,7 @@ const validSendChannels = [
   'updateWorkhours',
   'updateWorkdays',
   'updateHoliday',
+  'updateDayEndTime',
   'audio-device-changed',
 
   // Chat

@@ -17,7 +17,16 @@ const PAUSE_REASON_PAUSE_TODAY = 'pause-today';
 let userWorkdays = [1, 2, 3, 4, 5]; // Default Mon-Fri (0=Sun, 6=Sat)
 let userWorkhours = { start: "09:00", end: "17:00" }; // Default 9 AM to 5 PM
 let userHoliday = null; // Active holiday window, or null when none configured
+let userDayEndTime = null; // "HH:MM" day end from settings (org policy applied), or null when unset
 let lastSummaryTimestamp = null;
+
+// Mirrors resolveDayEndMinutes in the backend (functions/src/utils/logicalDay.ts),
+// so "pause for today" ends exactly when the server closes the day.
+const CLOCK_TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const DEFAULT_DAY_END_MINUTES = 3 * 60;
+// The server still reads day ends after 11:59 (legacy evening values). Pausing
+// until one would skip the next workday, so those fall back to midnight here.
+const MAX_PAUSE_DAY_END_MINUTES = 11 * 60 + 59;
 let hasScreenCapturePermission = false;
 let idToken = null; // User authentication token
 let workPeriodCheckTimeoutId = null; // For scheduling next workday/workhours check
@@ -900,9 +909,76 @@ function isWithinWorkHours(date = new Date()) {
   }
 }
 
-// Helper function to check if it's currently an active work period
+// Helper function to check if it's currently an active work period.
+// The tail of a period that spans midnight (02:00 in a 22:00-06:00 shift)
+// belongs to the day the period started, as _scheduleNextWorkEndCheck treats it.
 function isActiveWorkPeriod(date = new Date()) {
-  return isWorkday(date) && isWithinWorkHours(date);
+  if (!isWithinWorkHours(date)) {
+    return false;
+  }
+  if (_isInOvernightTail(date)) {
+    const periodStartDay = new Date(date);
+    periodStartDay.setDate(periodStartDay.getDate() - 1);
+    return isWorkday(periodStartDay);
+  }
+  return isWorkday(date);
+}
+
+// True when a time inside work hours comes before today's start time, which
+// only happens in the after-midnight part of a period that started yesterday.
+function _isInOvernightTail(date) {
+  const startParts = userWorkhours.start.split(':');
+  if (startParts.length < 2) {
+    return false;
+  }
+  const startHour = parseInt(startParts[0], 10);
+  const startMinute = parseInt(startParts[1], 10);
+  if (isNaN(startHour) || isNaN(startMinute)) {
+    return false;
+  }
+  const todayStartTime = new Date(date);
+  todayStartTime.setHours(startHour, startMinute, 0, 0);
+  return date < todayStartTime;
+}
+
+function _parseClockMinutes(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const match = CLOCK_TIME_REGEX.exec(value.trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+// When the user's day ends, in minutes after local midnight: the dayEndTime
+// setting, else the end of work hours that span midnight, else 03:00.
+function _resolveDayEndMinutes() {
+  const explicit = _parseClockMinutes(userDayEndTime);
+  if (explicit !== null) {
+    return explicit;
+  }
+  const parseWorkTime = (value) => (
+    typeof value === 'string' && value.trim() === '24:00' ? 24 * 60 : _parseClockMinutes(value)
+  );
+  const start = parseWorkTime(userWorkhours?.start);
+  const end = parseWorkTime(userWorkhours?.end);
+  if (start !== null && end !== null && end < start) {
+    return end;
+  }
+  return DEFAULT_DAY_END_MINUTES;
+}
+
+// The next moment the user's day ends after `now`.
+function _nextDayEnd(now) {
+  let dayEndMinutes = _resolveDayEndMinutes();
+  if (dayEndMinutes > MAX_PAUSE_DAY_END_MINUTES) {
+    dayEndMinutes = 0;
+  }
+  const dayEnd = new Date(now);
+  dayEnd.setHours(0, dayEndMinutes, 0, 0);
+  if (dayEnd <= now) {
+    dayEnd.setDate(dayEnd.getDate() + 1);
+  }
+  return dayEnd;
 }
 
 function _checkWorkdayEndNotification() {
@@ -1010,11 +1086,12 @@ function pauseRecording(duration, mainWindow, reason = null) {
   }
 }
 
+// Pauses until the user's day ends (03:00 by default), not calendar midnight:
+// finishing at 00:21 closes the previous day and must not pause the next one.
 function pauseForToday(mainWindow) {
   const now = new Date();
-  const midnight = new Date(now);
-  midnight.setHours(24, 0, 0, 0);
-  const duration = midnight.getTime() - now.getTime();
+  const dayEnd = _nextDayEnd(now);
+  const duration = dayEnd.getTime() - now.getTime();
 
   setManualOverrideWorkHours(false);
 
@@ -1022,7 +1099,7 @@ function pauseForToday(mainWindow) {
     recordSignal('pause_today_request', getPauseTelemetryFields({
       source: 'pauseForToday',
       wasPaused: isPaused(),
-      newEndTimeMs: midnight.getTime()
+      newEndTimeMs: dayEnd.getTime()
     }));
     pauseRecording(duration, mainWindow, PAUSE_REASON_PAUSE_TODAY);
     return;
@@ -1266,6 +1343,9 @@ function loadWorkSettings() {
   // failure, so normalize to null - isHoliday treats both as "no holiday".
   userHoliday = safeStoreOperation(() => store.get('userHoliday'), 'load holiday') ?? null;
 
+  // Load day end. Unset (null) falls back to work hours or 03:00 in _resolveDayEndMinutes.
+  userDayEndTime = safeStoreOperation(() => store.get('userDayEndTime'), 'load day end time') ?? null;
+
   // Load autoSubmit setting from store
   const storedAutoSubmit = safeStoreOperation(() => store.get('autoSubmit'), 'load autoSubmit');
   if (typeof storedAutoSubmit === 'boolean') {
@@ -1452,6 +1532,22 @@ function setupIPCHandlers() {
     }, 'save holiday');
 
     _handleWorkSettingsChanged(event.sender.getOwnerBrowserWindow());
+  });
+
+  // Listen for day end updates from renderer ("HH:MM" or null when unset).
+  // Only read when a pause-today starts, so an active pause keeps its end time.
+  ipcMain.on('updateDayEndTime', (event, dayEndTime) => {
+    // Normalize to null before storing: electron-store throws on undefined.
+    const next = typeof dayEndTime === 'string' ? dayEndTime : null;
+    userDayEndTime = next;
+
+    safeStoreOperation(() => {
+      if (store) {
+        store.set('userDayEndTime', next);
+      } else {
+        log.warn('Store not initialized, cannot save userDayEndTime.');
+      }
+    }, 'save day end time');
   });
 
   // Listen for workhours updates from renderer
@@ -2379,8 +2475,14 @@ function _scheduleNextWorkEndCheck() {
 
   // Set timeout for next check - when work period ends, pause until next work period
   workPeriodCheckTimeoutId = setTimeout(() => {
-    // Use the stored mainWindow reference
-    
+    // A timer can fire late (sleep without a wake event) and land inside the
+    // next work period. Pausing then would pause that period until the one
+    // after it; the period this check was armed for is over, so re-arm instead.
+    if (isActiveWorkPeriod(new Date())) {
+      _scheduleNextWorkEndCheck();
+      return;
+    }
+
     // If this timer fires significantly late (e.g., device resumed next day),
     // avoid showing a stale end-of-day notification
     const now = Date.now();

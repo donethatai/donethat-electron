@@ -659,6 +659,7 @@ function stopSettingsListener(resetManagedState = true) {
   // session that reported it. Left set, a previous user's vacation would keep
   // suppressing recording for the next login until settings resync.
   try { ipcRenderer.send('updateHoliday', null); } catch (_) {}
+  try { ipcRenderer.send('updateDayEndTime', null); } catch (_) {}
 }
 
 /**
@@ -1051,6 +1052,10 @@ async function updateSettingsUI(settings) {
   // guard: a missing or malformed holiday can only ever mean "not on holiday",
   // which keeps recording on, so clearing is always the safe direction.
   ipcRenderer.send('updateHoliday', settings?.holiday ?? null);
+
+  // Day end (org policy already applied by the server). Finish day pauses until
+  // it; null means unset and falls back to work hours or 03:00 in main.
+  ipcRenderer.send('updateDayEndTime', settings?.dayEndTime ?? null);
 
   updateSettingsReady(true);
   refreshCaptureDependentVisibility();

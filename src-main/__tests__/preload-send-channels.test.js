@@ -39,6 +39,11 @@ describe('preload send channel allowlist', () => {
     // Regression: shipped missing, silently dropping every holiday update.
     expect(allowed.has('updateHoliday')).toBe(true);
   });
+
+  test('settings sync forwards dayEndTime through an allowlisted channel', () => {
+    expect(readSentChannels('src/settings.js')).toContain('updateDayEndTime');
+    expect(allowed.has('updateDayEndTime')).toBe(true);
+  });
 });
 
 function readPreloadList(name) {
