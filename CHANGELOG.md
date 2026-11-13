@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Read window text only when the on-device model is used: cloud, Gemini and OpenAI-compatible processing no longer load the accessibility library or send window text, as a safeguard while we investigate macOS window tracking failing more often since 2.5.0.
 - Fix Finish day after midnight pausing recording for the whole next day: "pause for today" now ends when your day ends (your Day ends at setting, the end of overnight work hours, or 3 AM) instead of at midnight. The summary title names the day it covers, overnight work hours count toward the day the shift started, and a work-end check that fires late after sleep no longer pauses the next workday.
 - Tell the backend which local provider and model are used when fetching the prompt, so it can send a prompt suited to that model; the OpenAI-compatible endpoint and key are never sent.
 - Fix the on-device model getting no screen text on Windows: screenshots are converted to PNG before Windows text recognition, which now uses the first of the user's languages that has OCR installed.

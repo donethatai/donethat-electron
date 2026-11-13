@@ -12,7 +12,7 @@ The desktop client can collect sensitive workstation data depending on user sett
 
 - Screenshots: may include on-screen work content across one or more displays.
 - Activity tracking: may include app names, window titles, durations, and idle-time summaries.
-- Window text (accessibility): part of "Active applications" (macOS and Windows only), may include visible text from the focused window, read through the operating system's accessibility APIs.
+- Window text (accessibility): part of "Active applications" when the on-device model is used (macOS and Windows only), may include visible text from the focused window, read through the operating system's accessibility APIs.
 - Microphone capture: may include spoken audio recorded from the microphone when enabled.
 - System audio capture: may include playback audio when enabled and supported by the operating system.
 - Client telemetry: may include diagnostic metrics and logs when enabled.
@@ -51,7 +51,7 @@ When local processing is configured, the desktop client still uses remote servic
 2. Capture inputs are processed by the configured provider:
    - the on-device model, which runs inside the app on the user's machine. It is text-only: the client runs the operating system's OCR on the current and previous screenshots and passes that text, optional window text, and activity summaries to the model. Screenshots and audio are not given to the model, and no capture data leaves the device for processing.
    - Google Gemini using the stored Gemini API key, or
-   - a user-configured OpenAI-compatible endpoint, which can also point to an LLM running locally on the user's machine. For these two, raw screenshots, optional audio, and optional window text are sent to the configured provider.
+   - a user-configured OpenAI-compatible endpoint, which can also point to an LLM running locally on the user's machine. For these two, raw screenshots and optional audio are sent to the configured provider.
 3. The model returns text output.
 4. The client sends that text output to DoneThat via `inputProcess`.
 
@@ -80,7 +80,6 @@ The client sends `captureScreenshot`:
 - previous screenshot context
 - activity summaries derived from active-window tracking and idle detection
 - optional audio capture payload for the cycle
-- optional window text (`uiText`), only while "Active applications" is on
 - optional client telemetry when enabled
 
 In this flow, raw screenshots, activity data, and optional audio are sent directly to DoneThat services for processing.
@@ -89,7 +88,7 @@ This cloud path is a convenience flow. Backend processing still converges on the
 
 ## Window Text (Accessibility)
 
-Window text is part of the "Active applications" input: it is collected while that setting is on, and managed settings that enforce "Active applications" govern it too. It is not available on Linux.
+Window text is part of the "Active applications" input and is used only by the on-device model: it is collected while that setting is on and the on-device model is the active provider, and managed settings that enforce "Active applications" govern it too. With cloud processing, Gemini, or an OpenAI-compatible endpoint, the accessibility library is not loaded and no window text is read. It is not available on Linux.
 
 While it is on, the client reads the accessibility tree of the window in front when an app comes to the front, when it activates a window, and once at the end of each capture cycle. It keeps the app name, the window title, and the names and text of non-editable elements such as labels, headings, buttons, links, and static text. Limits:
 
@@ -100,8 +99,7 @@ While it is on, the client reads the accessibility tree of the window in front w
 
 Where it goes:
 
-- Cloud path: sent to `captureScreenshot` as `uiText` with the rest of the cycle. The backend validates and caps it and does not store it.
-- Local path: given to the configured provider (on-device model, Gemini, or OpenAI-compatible endpoint) as text. It is never included in what the client sends to `inputProcess`.
+- It is given to the on-device model as text and never leaves the device. It is not included in what the client sends to `captureScreenshot` or `inputProcess`.
 
 Window text is never included in client telemetry. When telemetry is enabled, it carries only two per-cycle numbers: characters available before the cap and characters sent.
 
