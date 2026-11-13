@@ -1,7 +1,7 @@
 const log = require('electron-log')
 const { activeWindow, openWindows } = require('get-windows')
 const { systemPreferences, ipcMain, shell, app, screen } = require('electron')
-const { recordPermissionCheck, recordActiveWindowProbeTimeout } = require('./telemetry')
+const { recordPermissionCheck, recordActiveWindowProbeTimeout, recordWindowHelperRun, recordWindowHelperInFlight } = require('./telemetry')
 
 // Helper to normalize app name
 function normalizeAppName(appName) {
@@ -181,12 +181,57 @@ const ACTIVE_WINDOW_TIMEOUT = Symbol('active-window-timeout')
 let activeWindowProbePromise = null
 let activeWindowProbeTimeoutStreak = 0
 let activeWindowProbeCooldownUntil = 0
+let windowHelpersInFlight = 0
+
+/**
+ * Why a get-windows helper failed, as a short label. On a failed permission
+ * check the helper prints a fixed message; any other output can hold window
+ * titles, so it is never kept.
+ */
+function classifyWindowHelperError(error) {
+  if (error?.signal) return `signal:${error.signal}`
+  const stdout = typeof error?.stdout === 'string' ? error.stdout : ''
+  if (stdout.startsWith('get-windows requires the screen recording')) return 'screen-recording'
+  if (stdout.startsWith('get-windows requires the accessibility')) return 'accessibility'
+  if (error?.message === 'Error parsing window data') return 'parse'
+  if (Number.isInteger(error?.code)) return `exit:${error.code}`
+  if (typeof error?.code === 'string') return error.code.slice(0, 32)
+  return error?.name || 'Error'
+}
+
+/**
+ * Runs one get-windows helper and records how it ended. A caller that stops
+ * waiting sets `abandoned`, so a helper still running past that point is
+ * recorded as late with its full run time.
+ */
+function trackWindowHelper(kind, run) {
+  const startedAt = Date.now()
+  const handle = { abandoned: false, promise: null }
+  const settle = (outcome, reason) => {
+    windowHelpersInFlight = Math.max(0, windowHelpersInFlight - 1)
+    recordWindowHelperRun(kind, handle.abandoned ? `late-${outcome}` : outcome, reason, Date.now() - startedAt)
+  }
+  windowHelpersInFlight += 1
+  recordWindowHelperInFlight(windowHelpersInFlight)
+  handle.promise = Promise.resolve().then(run).then(
+    (result) => {
+      settle('ok', null)
+      return result
+    },
+    (error) => {
+      settle('error', classifyWindowHelperError(error))
+      throw error
+    }
+  )
+  return handle
+}
 
 // Helper: call activeWindow with a hard timeout to avoid hangs/crashes
 async function safeActiveWindow(timeoutMs = 300) {
   const now = Date.now()
   if (now < activeWindowProbeCooldownUntil) {
     recordActiveWindowProbeTimeout()
+    recordWindowHelperRun('active', 'skipped', 'cooldown')
     return ACTIVE_WINDOW_TIMEOUT
   }
 
@@ -196,15 +241,18 @@ async function safeActiveWindow(timeoutMs = 300) {
 
   activeWindowProbePromise = (async () => {
     let timeoutId = null
+    const helper = trackWindowHelper('active', () => activeWindow())
     try {
       const result = await Promise.race([
-        activeWindow(),
+        helper.promise,
         new Promise((resolve) => {
           timeoutId = setTimeout(() => resolve(ACTIVE_WINDOW_TIMEOUT), timeoutMs)
         })
       ])
 
       if (result === ACTIVE_WINDOW_TIMEOUT) {
+        helper.abandoned = true
+        recordWindowHelperRun('active', 'timeout', null, timeoutMs)
         recordActiveWindowProbeTimeout()
         activeWindowProbeTimeoutStreak = Math.min(activeWindowProbeTimeoutStreak + 1, 6)
         const cooldownMs = Math.min(250 * Math.pow(2, activeWindowProbeTimeoutStreak - 1), 8000)
@@ -860,9 +908,9 @@ async function getAllVisibleWindows() {
     // Enumerate windows on-demand
     let windows = []
     try {
-      windows = await openWindows()
+      windows = await trackWindowHelper('enum', () => openWindows()).promise
     } catch (error) {
-      log.warn('Error enumerating windows:', error)
+      log.warn(`Error enumerating windows (${classifyWindowHelperError(error)})`)
       
       // Try to reconstruct windows from z-order cache and timeline
       windows = reconstructWindowsFromCache()
@@ -1027,6 +1075,8 @@ module.exports = {
   convertBoundsToDIP,
   getActiveWindowSafe: (ms = 300) => safeActiveWindow(ms),
   __test__: {
+    classifyWindowHelperError,
+    safeActiveWindow,
     setWindowTimeline(entries = []) {
       windowTimeline = Array.isArray(entries) ? [...entries] : []
     },

@@ -64,7 +64,9 @@ jest.mock('../telemetry', () => ({
   recordAudioRestart: jest.fn(),
   recordAudioConversion: jest.fn(),
   recordCyclePhaseDuration: jest.fn(),
-  recordActiveWindowProbeTimeout: jest.fn()
+  recordActiveWindowProbeTimeout: jest.fn(),
+  recordWindowHelperRun: jest.fn(),
+  recordWindowHelperInFlight: jest.fn()
 }))
 
 const capture = require('../capture')
