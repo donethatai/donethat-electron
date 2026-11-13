@@ -967,18 +967,43 @@ function _resolveDayEndMinutes() {
   return DEFAULT_DAY_END_MINUTES;
 }
 
+// The instant `minutes` after local midnight on `date`'s local day, resolved
+// like the server's resolveWallClockInstant: a time skipped by a daylight
+// saving change snaps to the change; a repeated time takes the earlier instant
+// (what Date does by itself).
+function _localTimeOn(date, minutes) {
+  let instant = new Date(date);
+  instant.setHours(0, minutes, 0, 0);
+  const minutesOfDay = (d) => d.getHours() * 60 + d.getMinutes();
+  if (minutesOfDay(instant) !== minutes) {
+    // Date moved a skipped time past the gap (02:30 -> 03:30). Step back to
+    // the first minute that is still at or after the requested time.
+    const day = instant.getDate();
+    let previous = new Date(instant.getTime() - 60 * 1000);
+    while (previous.getDate() === day && minutesOfDay(previous) >= minutes) {
+      instant = previous;
+      previous = new Date(instant.getTime() - 60 * 1000);
+    }
+  }
+  return instant;
+}
+
 // The next moment the user's day ends after `now`.
 function _nextDayEnd(now) {
   let dayEndMinutes = _resolveDayEndMinutes();
   if (dayEndMinutes > MAX_PAUSE_DAY_END_MINUTES) {
     dayEndMinutes = 0;
   }
-  const dayEnd = new Date(now);
-  dayEnd.setHours(0, dayEndMinutes, 0, 0);
-  if (dayEnd <= now) {
-    dayEnd.setDate(dayEnd.getDate() + 1);
+  const today = _localTimeOn(now, dayEndMinutes);
+  if (today > now) {
+    return today;
   }
-  return dayEnd;
+  // Move the date first, then set the time, so today's daylight saving
+  // adjustment cannot carry into tomorrow.
+  const tomorrow = new Date(now);
+  tomorrow.setHours(12, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return _localTimeOn(tomorrow, dayEndMinutes);
 }
 
 function _checkWorkdayEndNotification() {
