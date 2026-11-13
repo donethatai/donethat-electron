@@ -27,7 +27,9 @@ jest.mock('@crowecawcaw/xa11y', () => mockXa11y)
 jest.mock('get-windows', () => ({ activeWindow: jest.fn(), openWindows: jest.fn() }))
 jest.mock('../telemetry', () => ({
   recordPermissionCheck: jest.fn(),
-  recordActiveWindowProbeTimeout: jest.fn()
+  recordActiveWindowProbeTimeout: jest.fn(),
+  recordWindowHelperRun: jest.fn(),
+  recordWindowHelperInFlight: jest.fn()
 }))
 jest.mock('electron-store', () => ({
   __esModule: true,

@@ -482,12 +482,38 @@ async function _startWindowTracking() {
 }
 
 /**
+ * Window text is read only for the on-device model; the cloud, Gemini and
+ * OpenAI-compatible paths never load the accessibility library.
+ * @returns {Promise<boolean>}
+ */
+async function isUiTextEnabled() {
+  if (!inputDataSettings.windows || !uiTextCapture.isUiTextSupported()) return false;
+  return (await getLocalProvider()) === 'bundled';
+}
+
+/**
+ * Starts or stops UI text tracking to match the current provider, so switching
+ * to or from the on-device model takes effect on the next capture cycle.
+ */
+async function syncUiTextTracking() {
+  const enabled = await isUiTextEnabled();
+  if (enabled && !uiTextCapture.isTracking()) {
+    await _startUiTextTracking();
+    return;
+  }
+  if (!enabled && uiTextCapture.isTracking()) {
+    resetFailureStreak('uiText');
+    uiTextCapture.stopTracking();
+  }
+}
+
+/**
  * Starts UI text (accessibility) tracking. A refusal is retried on the next
  * capture cycle; a missing Accessibility grant surfaces through captureErrors.
  * @returns {Promise<boolean>} Success status
  */
 async function _startUiTextTracking() {
-  if (!uiTextCapture.isUiTextSupported()) return false;
+  if (!(await isUiTextEnabled())) return false;
   try {
     const started = await uiTextCapture.startTracking();
     if (started) resetFailureStreak('uiText');
@@ -1010,7 +1036,7 @@ async function collectInputData(resetBuffers = true, options = {}) {
     }
   }
   
-  if (inputDataSettings.windows && uiTextCapture.isUiTextSupported()) {
+  if (await isUiTextEnabled()) {
     try {
       const uiText = await uiTextCapture.getUiTextBuffer(resetBuffers);
       if (uiText) {
@@ -1084,10 +1110,6 @@ function buildCloudPayload(screenshots, inputData, previousScreenshotData, clien
     if (inputData.location) {
       payload.location = inputData.location;
     }
-    if (inputData.uiText && inputDataSettings.windows) {
-      payload.uiText = inputData.uiText;
-    }
-    
     if (inputData.activity && inputData.activity.length > 0) {
       // Format all timestamps to local time in activity data
       payload.activity = inputData.activity.map(item => {
@@ -1662,9 +1684,7 @@ async function _runCaptureCycle() {
       await _startWindowTracking();
     }
 
-    if (inputDataSettings.windows && !uiTextCapture.isTracking()) {
-      await _startUiTextTracking();
-    }
+    await syncUiTextTracking();
 
     // Capture and send data, passing the fetched token
     cycleCaptureResult = await captureAndSend(currentIdToken); // Pass currentIdToken
@@ -1743,9 +1763,7 @@ function startCaptureInterval() {
     _startWindowTracking();
   }
 
-  if (inputDataSettings.windows && !uiTextCapture.isTracking()) {
-    _startUiTextTracking();
-  }
+  syncUiTextTracking().catch((error) => log.warn('Failed to sync UI text tracking:', error?.name || 'Error'));
 
   // Wait 1 minute before first capture
   initialCaptureDelayTimer = setTimeout(() => {
@@ -1827,6 +1845,7 @@ module.exports = {
     isLocationPermissionMissing,
     applyManagedInputDataOverrides,
     buildCloudPayload,
-    maskScreenshotsForCycle
+    maskScreenshotsForCycle,
+    syncUiTextTracking
   }
 }; 

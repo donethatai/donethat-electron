@@ -12,7 +12,9 @@ jest.mock('get-windows', () => ({
 }))
 jest.mock('../telemetry', () => ({
   recordPermissionCheck: jest.fn(),
-  recordActiveWindowProbeTimeout: jest.fn()
+  recordActiveWindowProbeTimeout: jest.fn(),
+  recordWindowHelperRun: jest.fn(),
+  recordWindowHelperInFlight: jest.fn()
 }))
 jest.mock('electron', () => ({
   systemPreferences: {
@@ -68,5 +70,39 @@ describe('captureWindows timeline sanitization', () => {
       }
     ])
     expect(result[0].displayId).toBeUndefined()
+  })
+})
+
+describe('get-windows helper diagnostics', () => {
+  const { activeWindow } = require('get-windows')
+  const telemetry = require('../telemetry')
+  const { classifyWindowHelperError, safeActiveWindow } = captureWindows.__test__
+
+  test.each([
+    [{ signal: 'SIGKILL', code: null }, 'signal:SIGKILL'],
+    [{ code: 1, stdout: 'get-windows requires the screen recording permission in System Settings.\n' }, 'screen-recording'],
+    [{ code: 1, stdout: 'get-windows requires the accessibility permission in System Settings.\n' }, 'accessibility'],
+    [{ code: 1, stdout: '{"title":"Secret plan"}' }, 'exit:1'],
+    [{ code: 'ENOENT' }, 'ENOENT'],
+    [new Error('Error parsing window data'), 'parse']
+  ])('classifies %o as %s without keeping helper output', (error, expected) => {
+    expect(classifyWindowHelperError(error)).toBe(expected)
+  })
+
+  test('records a helper that outlives the probe timeout as late with its full run time', async () => {
+    let finish
+    activeWindow.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+
+    await expect(safeActiveWindow(5)).resolves.not.toEqual(expect.objectContaining({ id: expect.anything() }))
+    expect(telemetry.recordWindowHelperRun).toHaveBeenCalledWith('active', 'timeout', null, 5)
+    expect(telemetry.recordWindowHelperInFlight).toHaveBeenCalledWith(1)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    finish({ id: 1 })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const late = telemetry.recordWindowHelperRun.mock.calls.find(([kind, outcome]) => kind === 'active' && outcome === 'late-ok')
+    expect(late).toBeDefined()
+    expect(late[3]).toBeGreaterThanOrEqual(20)
   })
 })

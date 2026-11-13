@@ -36,6 +36,8 @@ function createAggregate() {
     screenLock: Object.create(null),
     audioRestart: Object.create(null),
     activeWindowProbeTimeoutCount: 0,
+    windowHelper: Object.create(null),
+    windowHelperPeakInFlight: 0,
     captureCycleSkippedOverlapCount: 0,
     localQuotaCooldownSkipCount: 0,
     localBudgetExceededCount: 0,
@@ -49,6 +51,8 @@ function cloneAggregate(source) {
     screenLock: { ...source.screenLock },
     audioRestart: { ...source.audioRestart },
     activeWindowProbeTimeoutCount: source.activeWindowProbeTimeoutCount || 0,
+    windowHelper: Object.fromEntries(Object.entries(source.windowHelper || {}).map(([key, value]) => [key, { ...value }])),
+    windowHelperPeakInFlight: source.windowHelperPeakInFlight || 0,
     captureCycleSkippedOverlapCount: source.captureCycleSkippedOverlapCount || 0,
     localQuotaCooldownSkipCount: source.localQuotaCooldownSkipCount || 0,
     localBudgetExceededCount: source.localBudgetExceededCount || 0,
@@ -61,6 +65,8 @@ function resetAggregate(target) {
   target.screenLock = Object.create(null)
   target.audioRestart = Object.create(null)
   target.activeWindowProbeTimeoutCount = 0
+  target.windowHelper = Object.create(null)
+  target.windowHelperPeakInFlight = 0
   target.captureCycleSkippedOverlapCount = 0
   target.localQuotaCooldownSkipCount = 0
   target.localBudgetExceededCount = 0
@@ -255,6 +261,26 @@ function recordActiveWindowProbeTimeout() {
   target.activeWindowProbeTimeoutCount += 1
 }
 
+/**
+ * One get-windows helper run, aggregated per cycle by kind (`active` probe or
+ * `enum` window list), outcome and a short reason. Reasons are fixed labels or
+ * exit codes, never helper output.
+ */
+function recordWindowHelperRun(kind, outcome, reason, durationMs = 0) {
+  const target = getTargetAggregate()
+  const key = `${clampString(kind, 'unknown', 16)}|${clampString(outcome, 'unknown', 24)}|${clampString(reason, 'none', 48)}`
+  const duration = Math.round(parsePositiveNumber(durationMs, 0))
+  const entry = target.windowHelper[key] || (target.windowHelper[key] = { count: 0, totalMs: 0, maxMs: 0 })
+  entry.count += 1
+  entry.totalMs += duration
+  entry.maxMs = Math.max(entry.maxMs, duration)
+}
+
+function recordWindowHelperInFlight(count) {
+  const target = getTargetAggregate()
+  target.windowHelperPeakInFlight = Math.max(target.windowHelperPeakInFlight, Math.round(parsePositiveNumber(count, 0)))
+}
+
 function recordCaptureCycleSkippedOverlap() {
   const target = getTargetAggregate()
   target.captureCycleSkippedOverlapCount += 1
@@ -335,6 +361,11 @@ function endCycle(metadata = {}) {
         }
       }),
       activeWindowProbeTimeoutCount: aggregate.activeWindowProbeTimeoutCount,
+      windowHelper: mapToArray(aggregate.windowHelper, (key, value) => {
+        const [kind, outcome, reason] = key.split('|')
+        return { kind, outcome, reason, count: value.count, totalMs: value.totalMs, maxMs: value.maxMs }
+      }),
+      windowHelperPeakInFlight: aggregate.windowHelperPeakInFlight,
       captureCycleSkippedOverlapCount: aggregate.captureCycleSkippedOverlapCount,
       localQuotaCooldownSkipCount: aggregate.localQuotaCooldownSkipCount,
       localBudgetExceededCount: aggregate.localBudgetExceededCount,
@@ -572,6 +603,8 @@ module.exports = {
   recordScreenLock,
   recordAudioRestart,
   recordActiveWindowProbeTimeout,
+  recordWindowHelperRun,
+  recordWindowHelperInFlight,
   recordCaptureCycleSkippedOverlap,
   recordLocalQuotaCooldownSkip,
   recordLocalBudgetExceeded,

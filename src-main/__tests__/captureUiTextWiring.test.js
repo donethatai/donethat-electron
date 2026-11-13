@@ -53,6 +53,8 @@ jest.mock('../telemetry', () => ({
   recordAudioConversion: jest.fn(),
   recordCyclePhaseDuration: jest.fn(),
   recordActiveWindowProbeTimeout: jest.fn(),
+  recordWindowHelperRun: jest.fn(),
+  recordWindowHelperInFlight: jest.fn(),
   recordUiTextStats: jest.fn()
 }))
 
@@ -67,6 +69,7 @@ jest.mock('../captureUiText', () => ({
 }))
 
 const capture = require('../capture')
+const { getLocalProvider } = require('../processLocal')
 const uiTextCapture = require('../captureUiText')
 const telemetry = require('../telemetry')
 const { applyAppExclusionsToDetailedScreenshots } = require('../appExclusionMasking')
@@ -84,6 +87,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  getLocalProvider.mockResolvedValue('bundled')
+  uiTextCapture.isTracking.mockReturnValue(false)
   uiTextCapture.isUiTextSupported.mockReturnValue(true)
   uiTextCapture.getStatus.mockReturnValue(HEALTHY_STATUS)
   uiTextCapture.getUiTextBuffer.mockResolvedValue(null)
@@ -174,17 +179,46 @@ test('a managed Active applications setting also controls window text', async ()
   expect(uiTextCapture.getUiTextBuffer).not.toHaveBeenCalled()
 })
 
-test('cloud payload carries window text only while Active applications is on', () => {
+test('cloud payload never carries window text', () => {
   capture.__test__.updateInputDataSettings({ windows: true })
-  const enabledPayload = capture.__test__.buildCloudPayload([], { uiText: UI_TEXT, activity: [] }, null, null)
-  expect(enabledPayload.uiText).toEqual(UI_TEXT)
+  const payload = capture.__test__.buildCloudPayload([], { uiText: UI_TEXT, activity: [] }, null, null)
+  expect(payload).not.toHaveProperty('uiText')
+})
 
-  capture.__test__.updateInputDataSettings({ windows: false })
-  const disabledPayload = capture.__test__.buildCloudPayload([], { uiText: UI_TEXT, activity: [] }, null, null)
-  expect(disabledPayload).not.toHaveProperty('uiText')
+describe('window text is limited to the on-device model', () => {
+  test.each([null, 'gemini', 'openai'])('provider %s neither collects nor starts window text', async (provider) => {
+    getLocalProvider.mockResolvedValue(provider)
+    capture.__test__.updateInputDataSettings({ windows: true })
+    uiTextCapture.getUiTextBuffer.mockResolvedValue(UI_TEXT)
 
-  const emptyPayload = capture.__test__.buildCloudPayload([], { activity: [] }, null, null)
-  expect(emptyPayload).not.toHaveProperty('uiText')
+    const inputData = await capture.collectInputData(true)
+    await capture.__test__.syncUiTextTracking()
+
+    expect(uiTextCapture.getUiTextBuffer).not.toHaveBeenCalled()
+    expect(inputData).not.toHaveProperty('uiText')
+    expect(inputData.captureErrors.uiText).toBe(false)
+    expect(uiTextCapture.startTracking).not.toHaveBeenCalled()
+  })
+
+  test('the on-device model starts window text on the next cycle', async () => {
+    capture.__test__.updateInputDataSettings({ windows: true })
+    uiTextCapture.startTracking.mockClear()
+
+    await capture.__test__.syncUiTextTracking()
+
+    expect(uiTextCapture.startTracking).toHaveBeenCalledTimes(1)
+  })
+
+  test('leaving the on-device model stops window text on the next cycle', async () => {
+    capture.__test__.updateInputDataSettings({ windows: true })
+    getLocalProvider.mockResolvedValue('gemini')
+    uiTextCapture.isTracking.mockReturnValue(true)
+
+    await capture.__test__.syncUiTextTracking()
+
+    expect(uiTextCapture.stopTracking).toHaveBeenCalled()
+    expect(uiTextCapture.startTracking).not.toHaveBeenCalled()
+  })
 })
 
 function initWithRecordingWindow() {
