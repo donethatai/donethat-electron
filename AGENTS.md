@@ -37,7 +37,7 @@ This document explains the DoneThat Desktop app to autonomous coding agents. It 
 - `src-main/captureAudio.js`: rolling audio capture (chunks sent as multimodal input to LLM).
 - `src-main/processLocal.js`: local summarization path (if available).
 - `src-main/localModel/`: on-device model (provider `bundled`): pinned model info, verified download/delete (`modelManager.js`), node-llama-cpp in a `utilityProcess` (`client.js`/`worker.js`), Sentry filter for its crash dumps.
-- `src-main/captureUiText.js` / `src-main/ocrScreenshots.js`: accessibility window text capture (part of the Active applications `windows` setting, sent as `uiText`) and OCR of masked screenshots for the on-device model.
+- `src-main/ocrScreenshots.js`: OCR of masked screenshots for the on-device model.
 - `src-main/main-state.js`: work scheduling, pause/resume, permissions, encrypted settings, auth token SOT.
 - Renderer: `src/index.html/js`, `src/chat.html/js`, `src/firebase.js`.
 

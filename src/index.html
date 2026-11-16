@@ -560,7 +560,7 @@
                 <div class="flex items-center justify-between">
                   <div>
                     <div class="dt-section-title">Active applications</div>
-                    <div class="dt-supporting-text">This allows us to know which apps are active. This helps to understand what happens in between screenshots. On macOS, you may see a permission request to control your browser to capture the active URL. On macOS and Windows it also reads the text of the window you are working in through accessibility APIs; password fields and masked apps are skipped.</div>
+                    <div class="dt-supporting-text">This allows us to know which apps are active. This helps to understand what happens in between screenshots. On macOS, you may see a permission request to control your browser to capture the active URL.</div>
                     <div class="mt-2">
                       <button id="recheckWindowsPermissionBtn" class="dt-button dt-button--primary dt-button--small dt-button--inline hidden">Check Permissions</button>
                     </div>
@@ -741,7 +741,7 @@
                     </div>
                     <label class="toggle"><input type="checkbox" id="bundledModelCheckbox" disabled aria-label="Use the on-device model"><span class="slider"></span></label>
                   </div>
-                  <p class="dt-supporting-text mt-2">Runs on this computer and downloads the model when you turn it on. It reads screen text (OCR) and window text only, not images, so summaries are likely somewhat less accurate. Meeting audio isn't supported yet and is not used while the on-device model is on.</p>
+                  <p class="dt-supporting-text mt-2">Runs on this computer and downloads the model when you turn it on. It reads screen text (OCR) only, not images, so summaries are likely somewhat less accurate. Meeting audio isn't supported yet and is not used while the on-device model is on.</p>
                   <p class="dt-supporting-text mt-1">When on, it is used instead of Gemini or the OpenAI-compatible API.</p>
                   <div id="bundledModelProgress" class="hidden mt-3">
                     <div id="bundledModelProgressTrack" class="w-full rounded-full overflow-hidden" style="height: 6px; background-color: var(--dt-color-surface-subtle);" role="progressbar" aria-label="On-device model download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
