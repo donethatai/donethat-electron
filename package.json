@@ -1,6 +1,6 @@
 {
   "name": "donethat",
-  "version": "2.5.4",
+  "version": "2.5.5",
   "description": "DoneThat",
   "main": "main.js",
   "config": {
@@ -76,7 +76,6 @@
     "webpack-cli": "^7.0.2"
   },
   "dependencies": {
-    "@crowecawcaw/xa11y": "0.15.4",
     "@firebase/analytics": "^0.10.22",
     "@firebase/app": "^0.16.0",
     "@firebase/auth": "^1.13.1",
@@ -117,8 +116,7 @@
       "**/*.node",
       "bin/**/*",
       "node_modules/@node-llama-cpp/**/*",
-      "node_modules/@napi-rs/system-ocr-*/**/*",
-      "node_modules/@crowecawcaw/xa11y-*/**/*"
+      "node_modules/@napi-rs/system-ocr-*/**/*"
     ],
     "afterSign": "scripts/notarize.js",
     "icon": "resources/icon-launcher.png",
@@ -144,8 +142,7 @@
       "!node_modules/node-llama-cpp/llama/gitRelease.bundle",
       "!node_modules/node-llama-cpp/llama/localBuilds/**/*",
       "!node_modules/@node-llama-cpp/**/*",
-      "node_modules/@node-llama-cpp/${os}-${arch}{,-metal,-vulkan}/**/*",
-      "!node_modules/@crowecawcaw/xa11y/bin/**/*"
+      "node_modules/@node-llama-cpp/${os}-${arch}{,-metal,-vulkan}/**/*"
     ],
     "directories": {
       "buildResources": "resources",

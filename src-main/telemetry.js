@@ -40,8 +40,7 @@ function createAggregate() {
     windowHelperPeakInFlight: 0,
     captureCycleSkippedOverlapCount: 0,
     localQuotaCooldownSkipCount: 0,
-    localBudgetExceededCount: 0,
-    uiText: null
+    localBudgetExceededCount: 0
   }
 }
 
@@ -55,8 +54,7 @@ function cloneAggregate(source) {
     windowHelperPeakInFlight: source.windowHelperPeakInFlight || 0,
     captureCycleSkippedOverlapCount: source.captureCycleSkippedOverlapCount || 0,
     localQuotaCooldownSkipCount: source.localQuotaCooldownSkipCount || 0,
-    localBudgetExceededCount: source.localBudgetExceededCount || 0,
-    uiText: source.uiText ? { ...source.uiText } : null
+    localBudgetExceededCount: source.localBudgetExceededCount || 0
   }
 }
 
@@ -70,7 +68,6 @@ function resetAggregate(target) {
   target.captureCycleSkippedOverlapCount = 0
   target.localQuotaCooldownSkipCount = 0
   target.localBudgetExceededCount = 0
-  target.uiText = null
 }
 
 function getTargetAggregate() {
@@ -296,21 +293,6 @@ function recordLocalBudgetExceeded() {
   target.localBudgetExceededCount += 1
 }
 
-const UI_TEXT_STAT_FIELDS = ['uniqueChars', 'sentChars']
-
-/**
- * Window-text size for this cycle. Only whitelisted numeric fields are kept,
- * so captured text can never reach telemetry through this path.
- */
-function recordUiTextStats(stats) {
-  if (!stats || typeof stats !== 'object') return
-  const clean = {}
-  for (const field of UI_TEXT_STAT_FIELDS) {
-    clean[field] = Math.round(parsePositiveNumber(stats[field], 0))
-  }
-  getTargetAggregate().uiText = clean
-}
-
 function endCycle(metadata = {}) {
   if (!activeCycle) {
     return null
@@ -368,8 +350,7 @@ function endCycle(metadata = {}) {
       windowHelperPeakInFlight: aggregate.windowHelperPeakInFlight,
       captureCycleSkippedOverlapCount: aggregate.captureCycleSkippedOverlapCount,
       localQuotaCooldownSkipCount: aggregate.localQuotaCooldownSkipCount,
-      localBudgetExceededCount: aggregate.localBudgetExceededCount,
-      uiText: aggregate.uiText ? { ...aggregate.uiText } : null
+      localBudgetExceededCount: aggregate.localBudgetExceededCount
     },
     memoryMb: {
       rss: memoryUsage ? Math.round((memoryUsage.rss / (1024 * 1024)) * 100) / 100 : null,
@@ -608,7 +589,6 @@ module.exports = {
   recordCaptureCycleSkippedOverlap,
   recordLocalQuotaCooldownSkip,
   recordLocalBudgetExceeded,
-  recordUiTextStats,
   restorePersistedTelemetry,
   flushTelemetryForShutdown,
   __test__: {

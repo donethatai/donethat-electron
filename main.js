@@ -308,7 +308,7 @@ Sentry.init({
       return null
     }
 
-    // Its crash dumps can hold prompt text (screen and window text).
+    // Its crash dumps can hold prompt text (screen text).
     if (isLocalModelWorkerSentryEvent(event, hint)) {
       return null
     }

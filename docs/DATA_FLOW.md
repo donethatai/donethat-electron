@@ -12,7 +12,6 @@ The desktop client can collect sensitive workstation data depending on user sett
 
 - Screenshots: may include on-screen work content across one or more displays.
 - Activity tracking: may include app names, window titles, durations, and idle-time summaries.
-- Window text (accessibility): part of "Active applications" when the on-device model is used (macOS and Windows only), may include visible text from the focused window, read through the operating system's accessibility APIs.
 - Microphone capture: may include spoken audio recorded from the microphone when enabled.
 - System audio capture: may include playback audio when enabled and supported by the operating system.
 - Client telemetry: may include diagnostic metrics and logs when enabled.
@@ -49,7 +48,7 @@ When local processing is configured, the desktop client still uses remote servic
 
 1. The client collects screenshots, activity summaries, and optional audio for the capture cycle.
 2. Capture inputs are processed by the configured provider:
-   - the on-device model, which runs inside the app on the user's machine. It is text-only: the client runs the operating system's OCR on the current and previous screenshots and passes that text, optional window text, and activity summaries to the model. Screenshots and audio are not given to the model, and no capture data leaves the device for processing.
+   - the on-device model, which runs inside the app on the user's machine. It is text-only: the client runs the operating system's OCR on the current and previous screenshots and passes that text and activity summaries to the model. Screenshots and audio are not given to the model, and no capture data leaves the device for processing.
    - Google Gemini using the stored Gemini API key, or
    - a user-configured OpenAI-compatible endpoint, which can also point to an LLM running locally on the user's machine. For these two, raw screenshots and optional audio are sent to the configured provider.
 3. The model returns text output.
@@ -67,7 +66,7 @@ What DoneThat does not receive in this flow:
 
 - raw screenshots from the capture cycle
 - raw microphone/system-audio payloads
-- OCR text, window text, or transcripts
+- OCR text or transcripts
 
 ## Cloud Processing Flow
 
@@ -85,23 +84,6 @@ The client sends `captureScreenshot`:
 In this flow, raw screenshots, activity data, and optional audio are sent directly to DoneThat services for processing.
 
 This cloud path is a convenience flow. Backend processing still converges on the same text-output path used by local processing, and raw capture inputs are not stored as persistent backend data.
-
-## Window Text (Accessibility)
-
-Window text is part of the "Active applications" input and is used only by the on-device model: it is collected while that setting is on and the on-device model is the active provider, and managed settings that enforce "Active applications" govern it too. With cloud processing, Gemini, or an OpenAI-compatible endpoint, the accessibility library is not loaded and no window text is read. It is not available on Linux.
-
-While it is on, the client reads the accessibility tree of the window in front when an app comes to the front, when it activates a window, and once at the end of each capture cycle. It keeps the app name, the window title, and the names and text of non-editable elements such as labels, headings, buttons, links, and static text. Limits:
-
-- Editable elements (text fields, text areas, combo boxes, spin buttons, documents) contribute only their label. Their value, and any text nested below them, is dropped before anything is buffered, so what you type, including into password fields, is never kept. Values of elements labelled like a password, passcode, secret, or PIN are dropped too.
-- Apps and windows matched by your app exclusions are never read, and our own app is skipped.
-- Caps: tree depth 20 levels, 300 characters per element, 8,000 characters per cycle. When the cycle cap is hit, the most recent text is kept and older text is dropped (`truncated` is set). The buffer is cleared after each cycle.
-- Window text is held in memory only. It is not written to disk (except in the opt-in capture dump) and not logged; logs carry counts and lengths only.
-
-Where it goes:
-
-- It is given to the on-device model as text and never leaves the device. It is not included in what the client sends to `captureScreenshot` or `inputProcess`.
-
-Window text is never included in client telemetry. When telemetry is enabled, it carries only two per-cycle numbers: characters available before the cap and characters sent.
 
 ## Crash Reports
 
@@ -143,13 +125,12 @@ You can inspect the client code directly:
 - Read [main.js](../main.js) for updater, auth-window, and embedded-webview behavior.
 - Read [src-main/capture.js](../src-main/capture.js) for the main capture-cycle upload flow.
 - Read [src-main/processLocal.js](../src-main/processLocal.js) for the local-processing submission path.
-- Read [src-main/captureUiText.js](../src-main/captureUiText.js) for window-text collection and [src-main/localModel/](../src-main/localModel/) for the on-device model download and runtime.
+- Read [src-main/ocrScreenshots.js](../src-main/ocrScreenshots.js) for on-device OCR and [src-main/localModel/](../src-main/localModel/) for the on-device model download and runtime.
 - Read [src-main/main-state.js](../src-main/main-state.js) for token handling and persisted capture-related settings.
 
 Useful checks:
 
 - Search for `captureScreenshot`, `inputProcess`, and `inputConfig`.
-- Search for `uiText` to see where window text is collected and sent.
 - Search for `huggingface.co` to see the only host used for the model download.
 - Search for `clientTelemetry` to see where diagnostic payloads are attached.
 - Search for `app.donethat.ai` and `checkout.stripe.com` to inspect embedded web flows.

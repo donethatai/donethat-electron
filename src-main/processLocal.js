@@ -63,12 +63,10 @@ const OCR_MIN_TIMEOUT_MS = 2_000;
 const OCR_MAX_TIMEOUT_MS = 15_000;
 const MIN_TRUNCATED_SECTION_CHARS = 200;
 const TRUNCATION_MARKER = '\n[truncated to fit the on-device model input limit]';
-const NO_IMAGES_NOTE = 'No images are attached. The activity text recognized by OCR and the window text below are provided instead.';
-const DEFAULT_UI_TEXT_LABEL = 'WINDOW TEXT (accessibility):';
+const NO_IMAGES_NOTE = 'No images are attached. The activity text recognized by OCR below is provided instead.';
 const DEFAULT_TEXT_BLOCK_LABELS = {
   currentScreenTextLabel: 'CURRENT ACTIVITY TEXT (OCR):',
-  previousScreenTextLabel: 'PREVIOUS ACTIVITY TEXT (OCR, from the previous capture):',
-  uiTextLabel: DEFAULT_UI_TEXT_LABEL
+  previousScreenTextLabel: 'PREVIOUS ACTIVITY TEXT (OCR, from the previous capture):'
 };
 const BUNDLED_UNAVAILABLE_CODES = new Set(['MODEL_NOT_READY', 'UNSUPPORTED']);
 const BUNDLED_ABORT_CODES = new Set(['ABORTED', 'TIMEOUT']);
@@ -725,9 +723,8 @@ function validateAndProcessImage(imageData) {
  * @param {Object|null} audioCycle - Audio cycle payload for multimodal input
  * @param {number} idleTime - Idle time in seconds
  * @param {string} provider - 'gemini' or 'openai' to determine image format
- * @param {Object|null} uiText - Window text (accessibility) payload for this cycle
  */
-function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioCycle, idleTime, provider = 'gemini', uiText = null) {
+function buildBlocks(config, validScreenshots, previousScreenshots, applicationActivity, audioCycle, idleTime, provider = 'gemini') {
   const spec = config.contentBlocksSpec || {};
   const imageKey = spec.imagePartKey || 'image_url';
   const blocks = [ { type: 'text', text: config.prefilledPrompt } ];
@@ -794,12 +791,6 @@ function buildBlocks(config, validScreenshots, previousScreenshots, applicationA
     blocks.push({ type: 'text', text: formatIdleTime(idleTime) });
   }
 
-  const windowText = formatUiText(uiText);
-  if (windowText) {
-    const label = config.textContentBlocksSpec?.uiTextLabel || DEFAULT_UI_TEXT_LABEL;
-    blocks.push({ type: 'text', text: `${label}\n${windowText}` });
-  }
-
   // Previous screenshots as context (from ~5 min ago)
   const prevArr = Array.isArray(previousScreenshots)
     ? previousScreenshots
@@ -856,23 +847,6 @@ function formatIdleTime(idleTime) {
   return `System Idle Time: ${idleMinutes}m ${idleSeconds}s`;
 }
 
-/**
- * Format window text (accessibility) entries as `[App — Title]\ntext` blocks.
- */
-function formatUiText(uiText) {
-  const entries = Array.isArray(uiText?.entries) ? uiText.entries : [];
-  const parts = entries
-    .filter(entry => typeof entry?.text === 'string' && entry.text.trim())
-    .map(entry => {
-      const app = typeof entry.app === 'string' && entry.app.trim() ? entry.app.trim() : 'Unknown app';
-      const title = typeof entry.windowTitle === 'string' && entry.windowTitle.trim() ? entry.windowTitle.trim() : null;
-      return `${title ? `[${app} — ${title}]` : `[${app}]`}\n${entry.text.trim()}`;
-    });
-  if (parts.length === 0) return '';
-  const text = parts.join('\n\n');
-  return uiText.truncated ? `${text}\n[window text truncated]` : text;
-}
-
 function formatScreenText(ocrResults) {
   const texts = (ocrResults || []).map(result => (typeof result?.text === 'string' ? result.text.trim() : ''));
   if (texts.length <= 1) return texts[0] || '';
@@ -905,10 +879,10 @@ function pickTextBlockLabels(spec) {
 /**
  * Build the single text prompt for the on-device model and fit it into its input limit.
  * Truncation priority: instructions and activity are kept, then current screen text, then
- * window text, then previous screen text. Cut or dropped sections are marked in the text.
+ * previous screen text. Cut or dropped sections are marked in the text.
  * @param {Object} config inputConfig response
  * @param {{ applicationActivity: string, idleTime?: number, currentScreenText: string,
- *   previousScreenText: string, windowText: string }} inputs
+ *   previousScreenText: string }} inputs
  * @param {number} charsPerToken Estimate used to turn the token limit into a char budget
  * @returns {{ prompt: string, truncatedSections: string[] }}
  */
@@ -946,7 +920,6 @@ function buildBundledPrompt(config, inputs, charsPerToken = BUNDLED_CHARS_PER_TO
   };
 
   const currentSection = fitSection('current', labels.currentScreenTextLabel, inputs.currentScreenText);
-  const windowSection = fitSection('window', labels.uiTextLabel, inputs.windowText);
   const previousSection = fitSection('previous', labels.previousScreenTextLabel, inputs.previousScreenText);
 
   const prompt = [
@@ -954,8 +927,7 @@ function buildBundledPrompt(config, inputs, charsPerToken = BUNDLED_CHARS_PER_TO
     `${activityLabel}${activity.text}`,
     idleSection,
     currentSection,
-    previousSection,
-    windowSection
+    previousSection
   ].filter(Boolean).join(separator);
   return { prompt, truncatedSections };
 }
@@ -1032,10 +1004,10 @@ async function generateBundled(prompt, schema, deadlineMs) {
 
 /**
  * Summarize a cycle with the on-device model from text only: OCR of the (already masked)
- * current and previous screenshots, window text, activity and idle time. Audio is not used.
+ * current and previous screenshots, activity and idle time. Audio is not used.
  * Recognized text stays in memory for this call and is never logged.
  */
-async function analyzeWithBundledModel({ screenshots, previousScreenshots, applicationActivity, idleTime, uiText, idToken, cycleBudgetMs }) {
+async function analyzeWithBundledModel({ screenshots, previousScreenshots, applicationActivity, idleTime, idToken, cycleBudgetMs }) {
   const unavailableError = getBundledUnavailableError();
   if (unavailableError) throw unavailableError;
 
@@ -1059,8 +1031,7 @@ async function analyzeWithBundledModel({ screenshots, previousScreenshots, appli
     idleTime,
     currentScreenText: currentScreenText
       || (currentImages.length > 0 ? 'none (no text recognized)' : 'none (no captures this cycle)'),
-    previousScreenText,
-    windowText: formatUiText(uiText)
+    previousScreenText
   };
   let { prompt, truncatedSections } = buildBundledPrompt(config, inputs);
   const startedAt = Date.now();
@@ -1073,7 +1044,7 @@ async function analyzeWithBundledModel({ screenshots, previousScreenshots, appli
     ({ prompt, truncatedSections } = buildBundledPrompt(config, inputs, BUNDLED_RETRY_CHARS_PER_TOKEN));
     response = await generateBundled(prompt, config.outputSchema, deadlineMs);
   }
-  log.info(`[local-llm] bundled ok in ${Date.now() - startedAt}ms (OCR ${currentImages.length}+${previousImages.length} image(s) in ${ocrMs}ms, screen text ${currentScreenText.length}+${previousScreenText.length} chars, window text ${inputs.windowText.length} chars, prompt ${prompt.length} chars${truncatedSections.length > 0 ? `, truncated: ${truncatedSections.join(',')}` : ''})`);
+  log.info(`[local-llm] bundled ok in ${Date.now() - startedAt}ms (OCR ${currentImages.length}+${previousImages.length} image(s) in ${ocrMs}ms, screen text ${currentScreenText.length}+${previousScreenText.length} chars, prompt ${prompt.length} chars${truncatedSections.length > 0 ? `, truncated: ${truncatedSections.join(',')}` : ''})`);
 
   if (!response || typeof response !== 'object') {
     throw createBundledError('INVALID_OUTPUT', bundledFailureMessage('INVALID_OUTPUT'));
@@ -1093,7 +1064,7 @@ async function analyzeWithBundledModel({ screenshots, previousScreenshots, appli
  * @param {number} idleTime - Idle time in seconds
  * @param {string} idToken - Firebase ID token
  * @param {boolean} testMode - If true, skip Firebase submission
- * @param {Object} options - { cycleBudgetMs, uiText } time allowed for all LLM attempts this cycle, window text
+ * @param {Object} options - { cycleBudgetMs } time allowed for all LLM attempts this cycle
  */
 async function analyzeScreenshots(screenshots, previousScreenshots, activity, audioCycle, idleTime, idToken, testMode = false, options = {}) {
   try {
@@ -1113,8 +1084,7 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
     // Ensure we have up-to-date config
     const config = latestConfig || await getConfig(idToken);
     // Build content blocks using spec with correct provider format
-    const uiText = options.uiText ?? null;
-    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioCycle, idleTime, provider, uiText);
+    const blocks = buildBlocks(config, validScreenshots, previousScreenshots, activity, audioCycle, idleTime, provider);
 
     // Import HumanMessage
     const { HumanMessage } = await import('@langchain/core/messages');
@@ -1149,7 +1119,7 @@ async function analyzeScreenshots(screenshots, previousScreenshots, activity, au
           : 'unknown';
         log.warn(`LLM failed (${error.name || 'Error'}); payload: ${imgCount} image(s) ~${(imgBytes / 1024).toFixed(0)}KB; audio ~${(audioBytes / 1024).toFixed(0)}KB ${audioDurationSec}s; total ~${((imgBytes + audioBytes) / 1024).toFixed(0)}KB`);
         log.warn('Retrying without audio payload...');
-        const blocksNoAudio = buildBlocks(config, validScreenshots, previousScreenshots, activity, null, idleTime, provider, uiText);
+        const blocksNoAudio = buildBlocks(config, validScreenshots, previousScreenshots, activity, null, idleTime, provider);
         response = await invokeWithFallback(
           [new HumanMessage({ content: blocksNoAudio })],
           testMode,
@@ -1294,7 +1264,6 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
     }
 
     const prevImages = inputData?.previousScreenshotData?.images?.map(i => i.base64Data) ?? [];
-    const uiText = inputData?.uiText ?? null;
     const cycleBudgetMs = getLocalCycleBudgetMs(inputData?.captureIntervalMinutes);
     let structured;
     try {
@@ -1304,7 +1273,6 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
           previousScreenshots: prevImages,
           applicationActivity,
           idleTime,
-          uiText,
           idToken,
           cycleBudgetMs: testMode ? Math.max(cycleBudgetMs, BUNDLED_TEST_MIN_BUDGET_MS) : cycleBudgetMs
         });
@@ -1317,7 +1285,7 @@ async function processDataLocally(idToken, screenshots, inputData, testMode = fa
           idleTime,
           idToken,
           testMode,
-          { cycleBudgetMs, uiText }
+          { cycleBudgetMs }
         );
       }
       resetLocalBudgetStreak();
@@ -1414,7 +1382,6 @@ module.exports = {
     buildBundledPrompt,
     boundBundledOutputSchema,
     getConfig,
-    formatUiText,
     getOcrTimeoutMs,
     setFetchLoader(loader) {
       loadFetch = loader;

@@ -1,5 +1,5 @@
 // Native crash reports (minidumps) of the on-device model process hold its
-// memory, which can include prompt text (OCR and window text). They must never
+// memory, which can include prompt text (OCR). They must never
 // reach Sentry.
 //
 // @sentry/electron's SentryMinidump integration builds these events:

@@ -6,7 +6,7 @@ This project uses third-party open-source dependencies. All production dependenc
 
 | License | Count |
 |---------|-------|
-| MIT | 277 |
+| MIT | 275 |
 | Apache-2.0 | 72 |
 | ISC | 60 |
 | BSD-3-Clause | 15 |
@@ -29,7 +29,7 @@ This project uses third-party open-source dependencies. All production dependenc
 - **GPL-3.0-or-later**: `donethat`. Project package included in the license-checker output.
 - **0BSD**: `tslib`. Permissive license, GPL-compatible.
 
-Platform-specific native packages (for example `@node-llama-cpp/*`, `@napi-rs/system-ocr-*`, `@crowecawcaw/xa11y-*`) are MIT and differ per operating system; the counts above were taken on macOS arm64.
+Platform-specific native packages (for example `@node-llama-cpp/*`, `@napi-rs/system-ocr-*`) are MIT and differ per operating system; the counts above were taken on macOS arm64.
 
 ## Bundled Native Binaries
 

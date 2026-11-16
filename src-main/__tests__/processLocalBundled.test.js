@@ -47,7 +47,6 @@ const CURRENT_SHOT = 'data:image/jpeg;base64,Q1VSUkVOVA==';
 const PREVIOUS_SHOT = 'data:image/jpeg;base64,UFJFVklPVVM=';
 const OCR_CURRENT_SECRET = 'OCR-CURRENT-SECRET invoice 4711';
 const OCR_PREVIOUS_SECRET = 'OCR-PREVIOUS-SECRET draft notes';
-const UI_TEXT_SECRET = 'UITEXT-SECRET reply to Anna';
 const AUDIO_SECRET = 'QVVESU8tU0VDUkVU';
 const SCHEMA = { type: 'object', properties: { ONELINE: { type: 'string' }, DESCRIPTION: { type: 'string' }, CATEGORY: { type: 'string' } } };
 
@@ -58,8 +57,7 @@ function baseConfig(overrides = {}) {
     textPrefilledPrompt: 'TEXT PROMPT: caption the screen text.',
     textContentBlocksSpec: {
       currentScreenTextLabel: 'CURRENT ACTIVITY TEXT (OCR):',
-      previousScreenTextLabel: 'PREVIOUS ACTIVITY TEXT (OCR, from 5 minutes ago):',
-      uiTextLabel: 'WINDOW TEXT (accessibility):'
+      previousScreenTextLabel: 'PREVIOUS ACTIVITY TEXT (OCR, from 5 minutes ago):'
     },
     outputSchema: SCHEMA,
     parameters: { user_name: 'Sam', application_activity: '', audio_transcript: '', selectedCategories: [] },
@@ -67,21 +65,10 @@ function baseConfig(overrides = {}) {
   };
 }
 
-function uiTextPayload() {
-  return {
-    entries: [
-      { app: 'Mail', windowTitle: 'Inbox', text: UI_TEXT_SECRET, capturedAtMs: 1 },
-      { app: 'Notes', windowTitle: null, text: 'shopping list', capturedAtMs: 2 }
-    ],
-    truncated: false
-  };
-}
-
 function cycleInput(overrides = {}) {
   return {
     activity: [{ name: 'Mail', formattedDuration: '3m' }],
     idleTime: 75,
-    uiText: uiTextPayload(),
     audioCycle: { base64Data: AUDIO_SECRET, mimeType: 'audio/webm', cycleStartMs: 0, cycleEndMs: 1000 },
     previousScreenshotData: { timestamp: 1, images: [{ base64Data: PREVIOUS_SHOT, index: 0 }] },
     clientTelemetry: { cycles: 1 },
@@ -257,7 +244,7 @@ describe('on-device model not ready', () => {
 });
 
 describe('on-device prompt assembly', () => {
-  test('uses the text prompt with OCR, window text, activity and idle time, and no audio or images', async () => {
+  test('uses the text prompt with OCR, activity and idle time, and no audio or images', async () => {
     await processDataLocally('token', [CURRENT_SHOT], cycleInput());
 
     expect(ocr.ocrImages).toHaveBeenCalledWith([CURRENT_SHOT], { timeoutMs: expect.any(Number) });
@@ -278,9 +265,8 @@ describe('on-device prompt assembly', () => {
     expect(prompt).toContain('System Idle Time: 1m 15s');
     expect(prompt).toContain(`CURRENT ACTIVITY TEXT (OCR):\n${OCR_CURRENT_SECRET}`);
     expect(prompt).toContain(`PREVIOUS ACTIVITY TEXT (OCR, from 5 minutes ago):\n${OCR_PREVIOUS_SECRET}`);
-    expect(prompt).toContain(`WINDOW TEXT (accessibility):\n[Mail — Inbox]\n${UI_TEXT_SECRET}\n\n[Notes]\nshopping list`);
     expect(prompt.indexOf('CURRENT ACTIVITY TEXT')).toBeLessThan(prompt.indexOf('PREVIOUS ACTIVITY TEXT'));
-    expect(prompt.indexOf('PREVIOUS ACTIVITY TEXT')).toBeLessThan(prompt.indexOf('WINDOW TEXT'));
+    expect(prompt).not.toContain('WINDOW TEXT');
     expect(prompt).not.toContain(AUDIO_SECRET);
     expect(prompt).not.toContain('base64');
   });
@@ -292,15 +278,12 @@ describe('on-device prompt assembly', () => {
     const prompt = lastPrompt();
     expect(prompt.startsWith('IMAGE PROMPT: caption the screenshots.\n\nNo images are attached.')).toBe(true);
     expect(prompt).toContain(`CURRENT ACTIVITY TEXT (OCR):\n${OCR_CURRENT_SECRET}`);
-    expect(prompt).toContain('WINDOW TEXT (accessibility):\n[Mail — Inbox]');
     expect(prompt).not.toContain('PREVIOUS ACTIVITY TEXT');
   });
 
-  test('states when no screen text is available and leaves window text out when absent', async () => {
-    await processDataLocally('token', [], cycleInput({ uiText: undefined, previousScreenshotData: null }));
-    const prompt = lastPrompt();
-    expect(prompt).toContain('CURRENT ACTIVITY TEXT (OCR):\nnone (no captures this cycle)');
-    expect(prompt).not.toContain('WINDOW TEXT');
+  test('states when no screen text is available', async () => {
+    await processDataLocally('token', [], cycleInput({ previousScreenshotData: null }));
+    expect(lastPrompt()).toContain('CURRENT ACTIVITY TEXT (OCR):\nnone (no captures this cycle)');
   });
 
   test('labels each screen when several displays are captured', async () => {
@@ -324,7 +307,6 @@ describe('on-device prompt budget', () => {
     idleTime: 0,
     currentScreenText: 'current',
     previousScreenText: 'previous',
-    windowText: 'window',
     ...overrides
   });
 
@@ -334,29 +316,21 @@ describe('on-device prompt budget', () => {
     expect(prompt).not.toContain('[truncated');
   });
 
-  test('drops previous screen text first, then window text, then cuts current screen text', () => {
+  test('cuts previous screen text first, then current screen text', () => {
     const big = (char) => char.repeat(9_000);
 
     const previousCut = __test__.buildBundledPrompt(baseConfig(), inputs({
-      currentScreenText: big('c'), windowText: big('w').slice(0, 7_000), previousScreenText: big('p')
+      currentScreenText: big('c'), previousScreenText: big('p')
     }));
     expect(previousCut.prompt).toContain(big('c'));
-    expect(previousCut.prompt).toContain(big('w').slice(0, 7_000));
     expect(previousCut.truncatedSections).toEqual(['previous']);
+    expect(previousCut.prompt).toContain('[truncated to fit the on-device model input limit]');
     expect(previousCut.prompt.length).toBeLessThanOrEqual(maxCharsFor(2.5));
 
-    const windowCut = __test__.buildBundledPrompt(baseConfig(), inputs({
-      currentScreenText: big('c'), windowText: big('w'), previousScreenText: big('p')
-    }));
-    expect(windowCut.prompt).toContain(big('c'));
-    expect(windowCut.truncatedSections).toEqual(['window', 'previous']);
-    expect(windowCut.prompt).toContain('[truncated to fit the on-device model input limit]');
-    expect(windowCut.prompt.length).toBeLessThanOrEqual(maxCharsFor(2.5));
-
     const currentCut = __test__.buildBundledPrompt(baseConfig(), inputs({
-      currentScreenText: 'c'.repeat(40_000), windowText: big('w'), previousScreenText: big('p')
+      currentScreenText: 'c'.repeat(40_000), previousScreenText: big('p')
     }));
-    expect(currentCut.truncatedSections).toEqual(['current', 'window', 'previous']);
+    expect(currentCut.truncatedSections).toEqual(['current', 'previous']);
     expect(currentCut.prompt).toContain('Application Activity:\nMail: 3m');
     expect(currentCut.prompt.startsWith('TEXT PROMPT')).toBe(true);
     expect(currentCut.prompt.length).toBeLessThanOrEqual(maxCharsFor(2.5));
@@ -400,11 +374,11 @@ describe('on-device result handling', () => {
     expect(body.localProvider).toBe('on-device');
   });
 
-  test('never sends OCR text, window text or audio to DoneThat and never logs them', async () => {
+  test('never sends OCR text or audio to DoneThat and never logs them', async () => {
     await processDataLocally('token', [CURRENT_SHOT], cycleInput());
 
     const bodies = fetchMock.mock.calls.map(([, options]) => options?.body || '').join('\n');
-    for (const secret of [OCR_CURRENT_SECRET, OCR_PREVIOUS_SECRET, UI_TEXT_SECRET, 'shopping list', AUDIO_SECRET]) {
+    for (const secret of [OCR_CURRENT_SECRET, OCR_PREVIOUS_SECRET, AUDIO_SECRET]) {
       expect(bodies).not.toContain(secret);
       expect(allLogText()).not.toContain(secret);
     }
@@ -539,29 +513,5 @@ describe('on-device error mapping', () => {
     localModel.generateStructured.mockResolvedValueOnce(null);
     await expect(processDataLocally('token', [CURRENT_SHOT], cycleInput())).rejects.toThrow('Local Processing');
     expect(sentNotifications()[0].message).toContain('could not summarize');
-  });
-});
-
-describe('window text for API providers', () => {
-  test('adds a labelled window text block for Gemini and OpenAI-compatible', () => {
-    for (const provider of ['gemini', 'openai']) {
-      const blocks = __test__.buildBlocks(baseConfig({ textContentBlocksSpec: { uiTextLabel: 'UI LABEL:' } }), [CURRENT_SHOT], [], 'Mail: 3m', null, 10, provider, uiTextPayload());
-      const textBlocks = blocks.filter(block => block.type === 'text').map(block => block.text);
-      expect(textBlocks).toContain(`UI LABEL:\n[Mail — Inbox]\n${UI_TEXT_SECRET}\n\n[Notes]\nshopping list`);
-    }
-  });
-
-  test('uses the default label on old backends and adds nothing without window text', () => {
-    const withText = __test__.buildBlocks(baseConfig({ textContentBlocksSpec: undefined }), [CURRENT_SHOT], [], 'Mail', null, 0, 'gemini', uiTextPayload());
-    expect(withText.some(block => block.type === 'text' && block.text.startsWith('WINDOW TEXT (accessibility):\n'))).toBe(true);
-
-    const withoutText = __test__.buildBlocks(baseConfig(), [CURRENT_SHOT], [], 'Mail', null, 0, 'openai', null);
-    expect(withoutText.some(block => block.type === 'text' && block.text.includes('WINDOW TEXT'))).toBe(false);
-  });
-
-  test('marks window text the capture had to cut', () => {
-    expect(__test__.formatUiText({ entries: [{ app: 'A', windowTitle: 'B', text: 't' }], truncated: true }))
-      .toBe('[A — B]\nt\n[window text truncated]');
-    expect(__test__.formatUiText({ entries: [{ app: 'A', text: '   ' }], truncated: false })).toBe('');
   });
 });

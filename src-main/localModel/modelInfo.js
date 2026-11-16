@@ -18,7 +18,7 @@ const MODEL = Object.freeze({
   url: `https://huggingface.co/${MODEL_REPO}/resolve/${MODEL_REVISION}/${MODEL_FILE_NAME}`
 })
 
-// Prompt budget: ~6k tokens of instructions + screen/window text, up to 1000
+// Prompt budget: ~6k tokens of instructions + screen text, up to 1000
 // tokens of JSON out, plus chat-template overhead. 8192 covers that with ~1k
 // tokens of headroom; Qwen3.5's hybrid attention keeps the KV cache for this
 // small, so a larger window would only cost memory.
