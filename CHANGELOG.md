@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix macOS downloads of 2.5.4 and 2.5.5 being blocked with "Apple could not verify DoneThat": the app is notarized again, and a release now fails instead of shipping when notarization fails.
 - Stop reading window text through accessibility APIs: "Active applications" is back to app names, window titles and URLs, which fixes window tracking timing out and using a lot of CPU on macOS since 2.5.0.
 - Fix Finish day after midnight pausing recording for the whole next day: "pause for today" now ends when your day ends (your Day ends at setting, the end of overnight work hours, or 3 AM) instead of at midnight. The summary title names the day it covers, overnight work hours count toward the day the shift started, and a work-end check that fires late after sleep no longer pauses the next workday.
 - Tell the backend which local provider and model are used when fetching the prompt, so it can send a prompt suited to that model; the OpenAI-compatible endpoint and key are never sent.
